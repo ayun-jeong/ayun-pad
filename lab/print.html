@@ -7,7 +7,8 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
 @page{size:A4 portrait;margin:0}
-:root{--red:#EC3535;--blue:#0064E8;--purple:#4D00E8;--hl-r:rgba(236,53,53,.2);--hl-y:rgba(255,203,16,.2);--hl-b:rgba(0,100,232,.2);--hl-g:rgba(82,212,7,.2);--hl-p:rgba(77,0,232,.2);
+:root{--red:#EC3535;--blue:#0064E8;--hl-r:rgba(236,53,53,.2);--hl-y:rgba(255,203,16,.2);--hl-b:rgba(0,100,232,.2);--hl-g:rgba(82,212,7,.2);--hl-p:rgba(77,0,232,.2);
+  --mt:3mm;--mo:3mm;--mi:2mm;--rows:81;--lh:calc((297mm - 2 * var(--mt)) / var(--rows));--ind:3.4mm;
   font-family:"Pretendard Variable",Pretendard,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -16,92 +17,108 @@ body{background:#E7EAEE;color:#000;-webkit-print-color-adjust:exact;print-color-
 .guide h1{font-size:26px;margin:0 0 6px;letter-spacing:-.02em}
 .guide p{margin:0;color:#555C66}
 .guide ol{padding-left:20px;margin:14px 0 0;display:grid;gap:5px}
-.scroll{overflow-x:auto;padding:0 16px 40px}
-.sheet{width:210mm;height:297mm;margin:0 auto;background:#fff;display:flex;position:relative;overflow:hidden;box-shadow:0 2px 14px rgba(0,0,0,.14)}
-.half{position:relative;width:105mm;height:297mm;padding:6mm 5mm;flex:none;word-break:keep-all}
-.fold{position:absolute;left:105mm;top:0;bottom:0;border-left:.25mm dashed #8A9099}
-.cap{font-size:6.5pt;line-height:3mm;color:#555}
-.hbar{position:absolute;left:7.5mm;top:11mm;width:90mm;height:7mm}
-.vbar{position:absolute;left:86mm;top:23.5mm;width:14mm;height:250mm}
-svg text{font-family:inherit}
-.blk{position:absolute;left:5mm;right:5mm}
-.right .blk{right:20mm}
-.lbl{font-size:6.5pt;line-height:3mm;color:#555;margin-bottom:1mm}
-.tree{--lh:3.6mm;--ind:3.6mm;font-size:8pt;line-height:var(--lh)}
+.scroll{overflow-x:auto;padding:0 16px 40px;display:grid;gap:24px;justify-content:center}
+.sheet{width:210mm;height:297mm;background:#fff;display:flex;position:relative;overflow:hidden;box-shadow:0 2px 14px rgba(0,0,0,.14);break-after:page}
+.sheet:last-child{break-after:auto}
+.fold{position:absolute;left:105mm;top:0;bottom:0;border-left:.25mm dashed #8A9099;z-index:2}
+.half{position:relative;width:105mm;height:297mm;flex:none;padding-top:var(--mt);padding-bottom:var(--mt)}
+.half.l{padding-left:var(--mo);padding-right:var(--mi)}
+.half.r{padding-left:var(--mi);padding-right:var(--mo)}
+.cap{font-size:6pt;line-height:var(--lh);height:var(--lh);color:#666;white-space:nowrap;overflow:hidden}
+.note{font-size:8pt;line-height:var(--lh);height:calc(var(--lh) * (var(--rows) - 1));overflow:hidden;word-break:break-all}
+.shift{transform:translateY(calc(var(--lh) * (1 - var(--rows))))}
 .ln{display:flex}
 .g{display:flex;flex:none}
 .tc{display:block;width:var(--ind);flex:none;position:relative}
 .tc.v::before,.tc.t::before,.tc.l::before{content:"";position:absolute;left:calc(50% - .1mm);top:0;width:.2mm;background:var(--red)}
 .tc.v::before,.tc.t::before{bottom:0}
 .tc.l::before{height:calc(var(--lh) / 2)}
-.tc.t::after,.tc.l::after{content:"";position:absolute;left:50%;right:.5mm;top:calc(var(--lh) / 2 - .1mm);height:.2mm;background:var(--red)}
+.tc.t::after,.tc.l::after{content:"";position:absolute;left:50%;right:.4mm;top:calc(var(--lh) / 2 - .1mm);height:.2mm;background:var(--red)}
 .tx{flex:1 1 auto;min-width:0}
-.r{color:var(--red)} .b{color:var(--blue)} .p{color:var(--purple)}
+.r{color:var(--red)} .b{color:var(--blue)}
 .hl{--hc:var(--hl-y);padding:0 .12em;margin:0 -.12em;border-radius:.25em .55em .3em .6em / .35em .6em .45em .7em;background:linear-gradient(97deg,transparent 0,var(--hc) .32em,var(--hc) calc(100% - .38em),transparent 100%) 0 84%/100% 48% no-repeat;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.hl.v2{border-radius:.5em .25em .6em .3em / .6em .35em .7em .4em;background-image:linear-gradient(94deg,transparent 0,var(--hc) .26em,var(--hc) calc(100% - .3em),transparent 100%);background-position:0 88%}
+.hl.v3{background-image:linear-gradient(100deg,transparent 0,var(--hc) .4em,var(--hc) calc(100% - .28em),transparent 100%);background-position:0 80%}
 .hl-r{--hc:var(--hl-r)} .hl-y{--hc:var(--hl-y)} .hl-b{--hc:var(--hl-b)} .hl-g{--hc:var(--hl-g)} .hl-p{--hc:var(--hl-p)}
-.circ{padding:.22em .42em;margin:0 -.42em;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%23EC3535' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat;-webkit-box-decoration-break:clone;box-decoration-break:clone}
-.ul{text-decoration:underline;text-decoration-color:var(--blue);text-decoration-thickness:.25mm;text-underline-offset:.6mm}
+.circ{padding:.22em .42em;margin:0 -.42em;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%23EC3535' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat}
+/* 2쪽: 측정 */
+.frames{position:absolute;inset:0;width:210mm;height:297mm;z-index:1}
+.frames text{font-family:inherit}
+.blk{position:absolute}
+.lbl{font-size:6.5pt;line-height:3.2mm;color:#555;margin:0 0 1mm}
+.hbar{width:90mm;height:7mm;display:block}
 .chk{display:grid;gap:1.2mm;font-size:7pt;line-height:3.4mm}
 .chk div{display:flex;align-items:center;gap:2mm}
 .sw{display:inline-block;width:14mm;height:3.4mm;flex:none}
 .sw.hl-band{background:linear-gradient(97deg,transparent 0,var(--hl-y) 1mm,var(--hl-y) calc(100% - 1.2mm),transparent 100%) 0 80%/100% 55% no-repeat}
 .sw.tree-band{background:linear-gradient(var(--red),var(--red)) center/100% .3mm no-repeat}
-.dens{overflow:hidden;background-image:repeating-linear-gradient(to bottom,transparent 0 calc(var(--lh) - .1mm),#E3E6EA calc(var(--lh) - .1mm) var(--lh))}
-.d9{--lh:4.5mm;font-size:9pt;line-height:var(--lh);height:calc(var(--lh) * 6)}
-.d8{--lh:3.6mm;font-size:8pt;line-height:var(--lh);height:calc(var(--lh) * 8)}
-.d65{--lh:2.9mm;font-size:6.5pt;line-height:var(--lh);height:calc(var(--lh) * 10);word-break:break-all}
-.measure{font-size:7pt;line-height:3.6mm;border:.25mm solid #000;padding:2mm 2.5mm}
-.measure b{font-weight:700}
+.dens{overflow:hidden;background-image:repeating-linear-gradient(to bottom,transparent 0 calc(var(--dl) - .1mm),#E3E6EA calc(var(--dl) - .1mm) var(--dl))}
+.d9{--dl:4.5mm;font-size:9pt;line-height:var(--dl);height:calc(var(--dl) * 6);word-break:break-all}
+.d65{--dl:2.9mm;font-size:6.5pt;line-height:var(--dl);height:calc(var(--dl) * 10);word-break:break-all}
+.measure{font-size:7.5pt;line-height:4.2mm;border:.25mm solid #000;padding:2.5mm 3mm}
 @media print{
-  html,body{background:#fff;height:297mm;overflow:hidden}
+  body{background:#fff}
   .guide{display:none}
-  .scroll{padding:0;overflow:visible}
-  .sheet{box-shadow:none;margin:0}
+  .scroll{padding:0;overflow:visible;display:block}
+  .sheet{box-shadow:none}
 }
 </style>
 </head>
 <body>
 <div class="guide">
   <h1>인쇄 시험</h1>
-  <p>ayun pad 0단계 실측 · A4를 세로로 반 접는 규격이 실제 종이와 PDF에서 정확한지 봅니다.</p>
+  <p>ayun pad 0단계 실측 · 2쪽짜리입니다. 1쪽은 여백을 최대한 줄여 꽉 채운 필기, 2쪽은 자로 재고 프린터 한계를 보는 측정용입니다.</p>
   <ol>
-    <li><b>⌘P</b>(윈도는 Ctrl+P)를 눌러 대상은 프린터나 ‘PDF로 저장’, 용지는 A4, 배율은 100%(기본값)로 둡니다. 여백은 이 페이지가 0으로 정해 두었으니 손대지 않아도 됩니다.</li>
-    <li>‘배경 그래픽’ 칸은 <b>꺼진 채로</b> 한 번 찍어 보세요. 그래도 형광펜 · 빨간 가지선 · 동그라미가 보여야 정상입니다.</li>
-    <li>자로 세 곳을 잽니다. 위쪽 가로 막대 0~90이 <b>90mm</b>, 오른쪽 세로 막대 0~250이 <b>250mm</b>, 종이 왼쪽 끝에서 가운데 점선까지 <b>105mm</b>입니다.</li>
-    <li>잰 값 세 개와 빠진 게 있었는지 대화창에 알려 주세요. PDF로 받았다면 미리보기에서 ‘실제 크기’로 인쇄해서 재면 됩니다.</li>
+    <li><b>⌘P</b>(윈도는 Ctrl+P)로 대상은 프린터나 ‘PDF로 저장’, 용지는 A4, 배율은 100%(기본값)로 둡니다. ‘배경 그래픽’은 꺼진 채로 둡니다.</li>
+    <li><b>1쪽</b>: 위아래 · 바깥쪽 여백 3mm, 접는 선 쪽 2mm입니다. 줄 간격은 반쪽 높이에 꼭 맞게 조정해서 아래에 남는 자투리가 없습니다. 이 정도면 꽉 찬 느낌인지 봐 주세요.</li>
+    <li><b>2쪽</b>: 종이 가장자리에서 1 · 2 · 3 · 4 · 5mm 안쪽에 테두리가 하나씩 있습니다. <b>끊기지 않고 온전히 찍힌 가장 바깥 테두리 숫자</b>가 이 프린터로 줄일 수 있는 최소 여백입니다.</li>
+    <li>2쪽 가로 막대 0~90이 <b>90mm</b>, 종이 왼쪽 끝에서 가운데 점선까지 <b>105mm</b>인지 자로 재 주세요.</li>
+    <li>테두리 숫자 · 잰 값 두 개 · 빠진 표시가 있었는지 대화창에 알려 주세요.</li>
   </ol>
 </div>
 
 <div class="scroll">
-<div class="sheet">
-  <div class="fold"></div>
+  <!-- 1쪽: 꽉 채운 필기 -->
+  <div class="sheet">
+    <div class="fold"></div>
+    <div class="half l">
+      <p class="cap" id="cap-l">1-1 · 8pt · 줄 간격 자동 · 여백 위아래·바깥 3mm / 접는 쪽 2mm · 글자 단위 줄바꿈</p>
+      <div class="note" id="note-l"></div>
+    </div>
+    <div class="half r">
+      <p class="cap">1-2 · 왼쪽에서 이어짐 · 꺾쇠 줄은 설정 없이 빨강 + 깊이별 형광펜(빨강·노랑·파랑·초록·보라)</p>
+      <div class="note" id="note-r"></div>
+    </div>
+  </div>
 
-  <!-- 왼쪽 반쪽 1-1 -->
-  <div class="half left">
-    <p class="cap">ayun pad 인쇄 시험 · 1-1 왼쪽 반쪽</p>
-    <svg class="hbar" viewBox="0 0 90 7" aria-label="90mm 가로 막대">
-      <path d="M0 .5H90M0 .5V3.5M10 .5V3.5M20 .5V3.5M30 .5V3.5M40 .5V3.5M50 .5V3.5M60 .5V3.5M70 .5V3.5M80 .5V3.5M90 .5V3.5M5 .5V2.2M15 .5V2.2M25 .5V2.2M35 .5V2.2M45 .5V2.2M55 .5V2.2M65 .5V2.2M75 .5V2.2M85 .5V2.2" fill="none" stroke="#000" stroke-width=".2"/>
-      <g font-size="2.4" fill="#000"><text x="0" y="6.2">0</text><text x="20" y="6.2" text-anchor="middle">20</text><text x="40" y="6.2" text-anchor="middle">40</text><text x="60" y="6.2" text-anchor="middle">60</text><text x="90" y="6.2" text-anchor="end">90mm</text></g>
+  <!-- 2쪽: 측정 -->
+  <div class="sheet">
+    <div class="fold"></div>
+    <svg class="frames" viewBox="0 0 210 297" aria-label="가장자리 1~5mm 테두리">
+      <g fill="none" stroke="#000" stroke-width=".15">
+        <rect x="1" y="1" width="208" height="295"/>
+        <rect x="2" y="2" width="206" height="293"/>
+        <rect x="3" y="3" width="204" height="291"/>
+        <rect x="4" y="4" width="202" height="289"/>
+        <rect x="5" y="5" width="200" height="287"/>
+      </g>
+      <g font-size="1.7" fill="#000">
+        <text x="30" y="2.6">1</text><text x="40" y="3.6">2</text><text x="50" y="4.6">3</text><text x="60" y="5.6">4</text><text x="70" y="6.6">5mm</text>
+        <text x="30" y="295.6">1</text><text x="40" y="294.6">2</text><text x="50" y="293.6">3</text><text x="60" y="292.6">4</text><text x="70" y="291.6">5mm</text>
+        <text x="1.4" y="60">1</text><text x="2.4" y="70">2</text><text x="3.4" y="80">3</text><text x="4.4" y="90">4</text><text x="5.4" y="100">5</text>
+        <text x="207.6" y="60" text-anchor="end">1</text><text x="206.6" y="70" text-anchor="end">2</text><text x="205.6" y="80" text-anchor="end">3</text><text x="204.6" y="90" text-anchor="end">4</text><text x="203.6" y="100" text-anchor="end">5</text>
+      </g>
     </svg>
 
-    <div class="blk" style="top:24mm">
-      <p class="lbl">트리 견본 · 8pt / 줄 3.6mm · 가지선 빨강</p>
-      <div class="tree">
-        <div class="ln"><span class="tx"><span class="r hl hl-r">경영학</span></span></div>
-        <div class="ln"><span class="g"><i class="tc t"></i></span><span class="tx"><span class="r hl hl-y">마케팅</span></span></div>
-        <div class="ln"><span class="g"><i class="tc v"></i><i class="tc t"></i></span><span class="tx"><span class="r hl hl-b">STP 전략</span>: 세분화 → 표적 → 포지셔닝 <span class="b">(예: 나이키 러닝족)</span></span></div>
-        <div class="ln"><span class="g"><i class="tc v"></i><i class="tc l"></i></span><span class="tx"><span class="r hl hl-b">4P 전략</span>: 제품 · 가격 · 유통 · 촉진</span></div>
-        <div class="ln"><span class="g"><i class="tc v"></i><i class="tc"></i><i class="tc l"></i></span><span class="tx"><span class="b">예: 스타벅스 사이렌오더 = 유통 혁신</span></span></div>
-        <div class="ln"><span class="g"><i class="tc l"></i></span><span class="tx"><span class="r hl hl-y">인사관리</span></span></div>
-        <div class="ln"><span class="g"><i class="tc"></i><i class="tc t"></i></span><span class="tx"><span class="r hl hl-b">모집</span>: 내부모집 vs 외부모집</span></div>
-        <div class="ln"><span class="g"><i class="tc"></i><i class="tc v"></i><i class="tc l"></i></span><span class="tx"><span class="r hl hl-g">내부모집</span>: 승진 · 배치전환 → 사기↑ 비용↓</span></div>
-        <div class="ln"><span class="g"><i class="tc"></i><i class="tc v"></i><i class="tc"></i><i class="tc l"></i></span><span class="tx"><span class="r hl hl-p">단점</span>: 근친번식, 파벌</span></div>
-        <div class="ln"><span class="g"><i class="tc"></i><i class="tc l"></i></span><span class="tx"><span class="r hl hl-b">선발</span></span></div>
-        <div class="ln"><span class="g"><i class="tc"></i><i class="tc"></i><i class="tc l"></i></span><span class="tx">면접은 <span class="hl hl-y">구조화</span>할수록 <span class="circ">타당도</span>가 <span class="ul">높다</span></span></div>
-      </div>
+    <div class="blk" style="left:10mm;top:12mm;width:90mm">
+      <p class="lbl">2쪽 · 측정용 · 90mm 가로 막대</p>
+      <svg class="hbar" viewBox="0 0 90 7" aria-label="90mm 가로 막대">
+        <path d="M0 .5H90M0 .5V3.5M10 .5V3.5M20 .5V3.5M30 .5V3.5M40 .5V3.5M50 .5V3.5M60 .5V3.5M70 .5V3.5M80 .5V3.5M90 .5V3.5M5 .5V2.2M15 .5V2.2M25 .5V2.2M35 .5V2.2M45 .5V2.2M55 .5V2.2M65 .5V2.2M75 .5V2.2M85 .5V2.2" fill="none" stroke="#000" stroke-width=".2"/>
+        <g font-size="2.4" fill="#000"><text x="0" y="6.2">0</text><text x="20" y="6.2" text-anchor="middle">20</text><text x="40" y="6.2" text-anchor="middle">40</text><text x="60" y="6.2" text-anchor="middle">60</text><text x="90" y="6.2" text-anchor="end">90mm</text></g>
+      </svg>
     </div>
 
-    <div class="blk" style="top:72mm">
+    <div class="blk" style="left:10mm;top:32mm;width:90mm">
       <p class="lbl">배경 확인 · ‘배경 그래픽’을 꺼도 셋 다 보여야 정상</p>
       <div class="chk">
         <div><span class="sw hl-band"></span>형광펜 띠</div>
@@ -110,42 +127,146 @@ svg text{font-family:inherit}
       </div>
     </div>
 
-    <div class="blk" style="top:96mm">
-      <p class="lbl">촘촘(기본) · 8pt / 줄 3.6mm · 8줄</p>
-      <div class="dens d8">마케팅 믹스(4P)는 제품 · 가격 · 유통 · 촉진을 표적시장에 맞게 조합하는 것이다. 제품수명주기(PLC)는 도입 → 성장 → 성숙 → 쇠퇴로 나뉘고 단계마다 4P 전략이 달라진다. 예: 성숙기에는 가격 경쟁과 판촉이 커진다. 시장세분화 기준은 인구통계 · 지리 · 심리 · 행동 변수다. 포지셔닝 맵은 소비자 인식 속 경쟁 제품의 위치를 두 축으로 나타낸다. 손익분기점은 고정비를 단위당 공헌이익으로 나눈 판매량이다.</div>
+    <div class="blk measure" style="left:10mm;top:56mm;width:90mm">
+      <b>적어서 알려 주기</b><br>
+      온전히 찍힌 가장 바깥 테두리: ______ mm<br>
+      가로 막대 0~90: ______ mm (90이 정상)<br>
+      종이 왼쪽 끝 ~ 가운데 점선: ______ mm (105가 정상)
     </div>
-  </div>
 
-  <!-- 오른쪽 반쪽 1-2 -->
-  <div class="half right">
-    <p class="cap">1-2 오른쪽 반쪽 · 왼쪽 끝에서 가운데 점선까지 105mm</p>
-    <svg class="hbar" viewBox="0 0 90 7" aria-label="90mm 가로 막대">
-      <path d="M0 .5H90M0 .5V3.5M10 .5V3.5M20 .5V3.5M30 .5V3.5M40 .5V3.5M50 .5V3.5M60 .5V3.5M70 .5V3.5M80 .5V3.5M90 .5V3.5M5 .5V2.2M15 .5V2.2M25 .5V2.2M35 .5V2.2M45 .5V2.2M55 .5V2.2M65 .5V2.2M75 .5V2.2M85 .5V2.2" fill="none" stroke="#000" stroke-width=".2"/>
-      <g font-size="2.4" fill="#000"><text x="0" y="6.2">0</text><text x="20" y="6.2" text-anchor="middle">20</text><text x="40" y="6.2" text-anchor="middle">40</text><text x="60" y="6.2" text-anchor="middle">60</text><text x="90" y="6.2" text-anchor="end">90mm</text></g>
-    </svg>
-    <svg class="vbar" viewBox="0 0 14 250" aria-label="250mm 세로 막대">
-      <path d="M.5 0V250M.5 0H3.5M.5 10H2.5M.5 20H2.5M.5 30H2.5M.5 40H2.5M.5 50H3.5M.5 60H2.5M.5 70H2.5M.5 80H2.5M.5 90H2.5M.5 100H3.5M.5 110H2.5M.5 120H2.5M.5 130H2.5M.5 140H2.5M.5 150H3.5M.5 160H2.5M.5 170H2.5M.5 180H2.5M.5 190H2.5M.5 200H3.5M.5 210H2.5M.5 220H2.5M.5 230H2.5M.5 240H2.5M.5 250H3.5" fill="none" stroke="#000" stroke-width=".2"/>
-      <g font-size="2.4" fill="#000"><text x="4.5" y="2.2">0</text><text x="4.5" y="50.9">50</text><text x="4.5" y="100.9">100</text><text x="4.5" y="150.9">150</text><text x="4.5" y="200.9">200</text><text x="4.5" y="249.6">250mm</text></g>
-    </svg>
-
-    <div class="blk" style="top:24mm">
+    <div class="blk" style="left:112mm;top:12mm;width:88mm">
       <p class="lbl">보통 · 9pt / 줄 4.5mm · 6줄</p>
       <div class="dens d9">경제학에서 수요의 가격탄력성은 가격이 1% 오를 때 수요량이 몇 % 줄어드는지를 나타낸다. 탄력성이 1보다 크면 탄력적이라 가격을 내리면 총수입이 늘어난다. 대체재가 많을수록, 소득에서 차지하는 비중이 클수록 탄력성은 커진다.</div>
     </div>
-
-    <div class="blk" style="top:58mm">
-      <p class="lbl">초고밀도 · 6.5pt / 줄 2.9mm · 10줄 · 글자 단위 줄바꿈</p>
+    <div class="blk" style="left:112mm;top:46mm;width:88mm">
+      <p class="lbl">초고밀도 · 6.5pt / 줄 2.9mm · 10줄</p>
       <div class="dens d65">재무회계의 수익 인식은 고객과의 계약 식별 → 수행의무 식별 → 거래가격 산정 → 거래가격 배분 → 수행의무 이행 시 수익 인식의 5단계를 따른다. 재고자산은 취득원가와 순실현가능가치 중 낮은 금액으로 측정하고, 원가흐름은 선입선출법이나 가중평균법을 쓴다. 유형자산은 원가모형이나 재평가모형 중 하나를 골라 같은 분류 전체에 적용한다. 감가상각은 정액법 · 정률법 · 생산량비례법이 있고, 내용연수와 잔존가치는 매 회계연도 말에 다시 검토한다. 리스는 사용권자산과 리스부채를 인식하고, 단기리스와 소액리스는 예외로 둘 수 있다.</div>
-    </div>
-
-    <div class="blk measure" style="top:96mm">
-      <b>자로 잰 값</b><br>
-      가로 막대 0~90: ______ mm (90이 정상)<br>
-      세로 막대 0~250: ______ mm (250이 정상)<br>
-      종이 왼쪽 끝 ~ 가운데 점선: ______ mm (105가 정상)
     </div>
   </div>
 </div>
-</div>
+
+<script>
+(function(){
+  // [깊이, 종류, 글] 종류: t = 대제목(꺾쇠 없음), b = 꺾쇠 줄('-' + 스페이스), p = 보통 줄
+  var LEFT = [
+    [1,'t','경영학'],
+    [2,'b','마케팅'],
+    [3,'b','STP 전략: 세분화 → 표적 → 포지셔닝 (예: 나이키 러닝족)'],
+    [4,'b','세분화 기준: 인구통계 · 지리 · 심리 · 행동'],
+    [4,'b','표적시장: 비차별 · 차별 · 집중 · 미시'],
+    [3,'b','4P 전략: 제품 · 가격 · 유통 · 촉진'],
+    [4,'b','예: 스타벅스 사이렌오더 = 유통 혁신'],
+    [4,'b','가격: 침투가격 ↔ 스키밍, 심리가격 9,900원'],
+    [3,'b','제품수명주기(PLC): 도입 → 성장 → 성숙 → 쇠퇴'],
+    [4,'p','성숙기에는 가격 경쟁과 판촉이 커지고 쇠퇴기에는 철수나 수확 전략을 고른다'],
+    [3,'b','서비스 특성: 무형성 · 비분리성 · 이질성 · 소멸성'],
+    [2,'b','인사관리'],
+    [3,'b','모집: 내부모집 vs 외부모집'],
+    [4,'b','내부모집: 승진 · 배치전환 → 사기↑ 비용↓'],
+    [5,'b','단점: 근친번식, 파벌'],
+    [4,'b','외부모집: 새 관점 유입, 적응 기간 필요'],
+    [3,'b','선발'],
+    [4,'p','면접은 구조화할수록 타당도가 높다'],
+    [4,'b','신뢰성: 같은 사람을 다시 재도 같은 결과'],
+    [4,'b','타당성: 재려던 것을 제대로 재는 정도'],
+    [3,'b','평가 오류: 후광효과 · 관대화 · 중심화 · 최근효과'],
+    [3,'b','보상: 기본급 · 수당 · 상여 · 복리후생'],
+    [2,'b','조직행동'],
+    [3,'b','동기부여 이론'],
+    [4,'b','매슬로: 생리 → 안전 → 사회 → 존경 → 자아실현'],
+    [4,'b','허즈버그: 위생요인(불만 제거) vs 동기요인(만족 증대)'],
+    [4,'b','브룸 기대이론: 동기 = 기대 × 수단성 × 유의성'],
+    [3,'b','리더십: 특성 → 행동 → 상황 이론 순으로 발전'],
+    [4,'b','피들러: LPC 점수로 과업형 · 관계형 구분'],
+    [4,'b','허시-블랜차드: 부하 성숙도에 따라 지시 → 설득 → 참여 → 위임'],
+    [2,'b','생산운영'],
+    [3,'b','EOQ: √(2DS/H), 주문비용 = 재고유지비용일 때'],
+    [3,'b','JIT: 필요한 만큼만 생산, 재고 = 낭비'],
+    [3,'b','품질: TQM · 6시그마(DMAIC) · 관리도'],
+    [2,'b','재무관리'],
+    [3,'b','NPV: 미래현금흐름 현재가치 − 투자액, 0보다 크면 채택'],
+    [3,'b','IRR: NPV = 0이 되는 할인율, 자본비용보다 크면 채택'],
+    [3,'b','WACC: 자기자본비용과 세후 타인자본비용의 가중평균'],
+    [2,'b','전략경영'],
+    [3,'b','SWOT: 내부 강점 · 약점 × 외부 기회 · 위협'],
+    [3,'b','포터 5 Forces: 기존 경쟁 · 신규 진입 · 대체재 · 구매자 · 공급자'],
+    [3,'b','BCG 매트릭스: 별 · 캐시카우 · 물음표 · 개'],
+    [4,'p','시장성장률과 상대적 시장점유율 두 축으로 나눈다'],
+    [3,'b','VRIO: 가치 · 희소성 · 모방 불가 · 조직'],
+    [3,'b','본원적 전략: 원가우위 · 차별화 · 집중화']
+  ];
+  var RIGHT = [
+    [1,'t','회계'],
+    [2,'b','수익 인식 5단계: 계약 → 수행의무 → 거래가격 → 배분 → 인식'],
+    [2,'b','재고자산: 원가와 순실현가능가치 중 낮은 금액'],
+    [3,'b','원가흐름: 선입선출법 · 가중평균법 (예: 물가 상승기 FIFO 이익↑)'],
+    [2,'b','유형자산: 원가모형 또는 재평가모형'],
+    [3,'b','감가상각: 정액법 · 정률법 · 생산량비례법'],
+    [2,'b','현금흐름표: 영업 · 투자 · 재무 활동'],
+    [3,'b','간접법: 당기순이익에서 비현금 항목을 조정'],
+    [2,'b','충당부채: 현재의무 + 유출 가능성 높음 + 신뢰성 있는 추정'],
+    [2,'b','리스: 사용권자산과 리스부채를 인식'],
+    [3,'b','예외: 단기리스 · 소액리스'],
+    [2,'b','손익분기점: 고정비 ÷ 단위당 공헌이익'],
+    [1,'t','경제'],
+    [2,'b','수요의 가격탄력성: 가격 1% 변화에 대한 수요량 변화율'],
+    [3,'b','탄력적(>1): 가격 내리면 총수입↑'],
+    [3,'p','대체재가 많을수록, 소득 중 비중이 클수록 탄력성이 커진다'],
+    [2,'b','시장 구조: 완전경쟁 · 독점적경쟁 · 과점 · 독점'],
+    [3,'b','독점: MR = MC에서 생산, P > MC'],
+    [2,'b','IS-LM: 재정정책 → IS 이동, 통화정책 → LM 이동'],
+    [3,'b','유동성함정: LM 수평, 통화정책 무력'],
+    [2,'b','필립스곡선: 단기 인플레이션 ↔ 실업 상충'],
+    [2,'b','GDP: 일정 기간 국내에서 생산된 최종재의 시장가치'],
+    [3,'b','GDP 디플레이터: 명목 GDP ÷ 실질 GDP × 100'],
+    [2,'b','화폐수량설: MV = PY'],
+    [2,'b','비교우위: 기회비용이 더 작은 쪽이 특화'],
+    [2,'b','관세: 소비자잉여↓ 생산자잉여↑ 정부수입↑, 사중손실 발생'],
+    [2,'b','외부효과: 사회적 비용 ≠ 사적 비용 → 피구세로 교정'],
+    [3,'b','예: 공장 매연 = 부정적 외부효과'],
+    [2,'b','게임이론: 내쉬균형 · 우월전략 · 죄수의 딜레마']
+  ];
+  var HL = ['hl-r', 'hl-y', 'hl-b', 'hl-g', 'hl-p'];
+  function esc(s){ return s.replace(/[&<>"]/g, function(c){ return {'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;'}[c]; }); }
+  function inlineEx(s){ return esc(s).replace(/\((?:예|예시)\s*:[^)]*\)/g, function(m){ return '<span class="b">' + m + '</span>'; }); }
+  function styleText(text, depth, kind, idx){
+    if (/^(예|예시|ex)\s*[:)]/i.test(text)) return '<span class="b">' + esc(text) + '</span>';
+    var ci = text.indexOf(':');
+    if (kind === 'p' && ci < 1) return inlineEx(text);
+    var head = ci > 0 ? text.slice(0, ci) : text, rest = ci > 0 ? text.slice(ci) : '';
+    var cls = 'r' + (depth <= 5 ? ' hl ' + HL[depth - 1] + ['', ' v2', ' v3'][idx % 3] : '');
+    return '<span class="' + cls + '">' + esc(head) + '</span>' + inlineEx(rest);
+  }
+  // 깊이 배열만 보고 꺾쇠를 계산한다. 뒤에서부터 훑으며 "같은 깊이 꺾쇠 형제가 뒤에 남았나"를 기억.
+  function render(lines){
+    var cells = [], hasNext = [];
+    for (var i = lines.length - 1; i >= 0; i--) {
+      var d = lines[i][0], kind = lines[i][1], c = [];
+      for (var k = 1; k <= d - 2; k++) c.push(hasNext[k + 1] ? 'v' : '');
+      if (d >= 2) c.push(kind === 'b' ? (hasNext[d] ? 't' : 'l') : (hasNext[d] ? 'v' : ''));
+      cells[i] = c;
+      for (var x = d + 1; x < 12; x++) hasNext[x] = false;
+      if (kind === 'b') hasNext[d] = true;
+    }
+    return lines.map(function(l, i){
+      return '<div class="ln"><span class="g">' + cells[i].map(function(t){ return '<i class="tc ' + t + '"></i>'; }).join('') +
+        '</span><span class="tx">' + styleText(l[2], l[0], l[1], i) + '</span></div>';
+    }).join('');
+  }
+  // 한 칼럼으로 길게 그린 뒤 왼쪽 반쪽은 1~80줄, 오른쪽 반쪽은 81~160줄 창으로 보여 준다(실제 앱과 같은 방식).
+  function go(){
+    var L = document.getElementById('note-l'), R = document.getElementById('note-r');
+    var src = LEFT.concat(RIGHT), guard = 0;
+    L.innerHTML = '<div class="col">' + render(src) + '</div>';
+    while (L.firstChild.offsetHeight < L.clientHeight * 2 && guard++ < 3) {
+      src = src.concat([[1, 'p', '※ 여기부터는 밀도 확인용으로 같은 내용을 되풀이합니다']], LEFT, RIGHT);
+      L.innerHTML = '<div class="col">' + render(src) + '</div>';
+    }
+    R.innerHTML = '<div class="col shift">' + L.firstChild.innerHTML + '</div>';
+  }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(go); else go();
+  go();
+})();
+</script>
 </body>
 </html>
