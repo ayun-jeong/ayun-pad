@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ayun pad 단축키 시험</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+:root{--bg:#F2F4F7;--surface:#FFFFFF;--ink:#14171C;--ink2:#555C66;--ink3:#858C96;--rule:#DCE0E6;--ok:#1D7438;--okw:rgba(29,116,56,.10);--warn:#9A5B00;--warnw:rgba(154,91,0,.10);--kbd:#BCC3CC;--red:#EC3535;
+  font-family:"Pretendard Variable",Pretendard,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+@media (prefers-color-scheme:dark){:root{--bg:#0F1115;--surface:#181B20;--ink:#E7E9EC;--ink2:#A6ADB6;--ink3:#777F8A;--rule:#2B3037;--ok:#66D08A;--okw:rgba(102,208,138,.12);--warn:#F0B35A;--warnw:rgba(240,179,90,.12);--kbd:#454C56;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);line-height:1.65;word-break:keep-all}
+.wrap{max-width:1000px;margin:0 auto;padding:28px max(16px,env(safe-area-inset-right)) 80px max(16px,env(safe-area-inset-left))}
+h1{font-size:28px;letter-spacing:-.02em;margin:0 0 4px}
+h2{font-size:17px;margin:0 0 8px}
+p{margin:0}
+.sub{color:var(--ink2)}
+ol.how{margin:18px 0 0;padding-left:20px;display:grid;gap:4px}
+.warn{margin-top:14px;padding:10px 14px;border-radius:8px;background:var(--warnw);color:var(--warn);font-size:14.5px}
+.editor{margin-top:22px;min-height:150px;padding:16px 18px;border:2px solid var(--ink);border-radius:10px;background:var(--surface);font-size:18px;line-height:1.7;outline:none;white-space:pre-wrap}
+.editor:focus{box-shadow:0 0 0 4px rgba(0,100,232,.18)}
+.bar{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin-top:10px;font-size:14.5px;color:var(--ink2)}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;background:var(--rule);color:var(--ink);font-size:13px}
+.pill.on{background:var(--warnw);color:var(--warn)}
+.pill.ok{background:var(--okw);color:var(--ok)}
+.btns{display:flex;gap:8px;margin-left:auto}
+button{font:inherit;font-size:14px;padding:7px 14px;border-radius:8px;border:1px solid var(--kbd);background:var(--surface);color:var(--ink);cursor:pointer}
+button.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button:focus-visible{outline:2px solid #0064E8;outline-offset:2px}
+.groups{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));margin-top:28px}
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:14px 16px;min-width:0}
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+td{padding:6px 8px 6px 0;border-bottom:1px solid var(--rule);vertical-align:middle}
+td.k{white-space:nowrap;width:1%}
+td.s{white-space:nowrap;text-align:right;padding-right:0;font-size:13px;color:var(--ink3)}
+tr.hit td.s{color:var(--ok);font-weight:600}
+tr.hit{background:var(--okw)}
+kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;display:inline-block;min-width:22px;text-align:center;padding:2px 6px;border:1px solid var(--kbd);border-bottom-width:2px;border-radius:5px;background:var(--surface);margin-right:2px}
+.log{margin-top:28px}
+.log ol{list-style:none;margin:8px 0 0;padding:12px 14px;background:var(--surface);border:1px solid var(--rule);border-radius:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.55;max-height:300px;overflow:auto}
+.log li.k{color:var(--ink)} .log li.c{color:var(--warn)} .log li.x{color:var(--ok)}
+textarea{width:100%;min-height:160px;margin-top:10px;font:12.5px/1.5 ui-monospace,Menlo,monospace;padding:10px;border-radius:8px;border:1px solid var(--rule);background:var(--surface);color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>단축키 시험</h1>
+  <p class="sub">ayun pad 0단계 실측 · 이 기기에서 단축키가 잡히는지, 한글을 치다가 눌러도 글자가 안 깨지는지 확인합니다.</p>
+  <ol class="how">
+    <li>아래 굵은 테두리 칸을 누른 뒤, 표의 키를 하나씩 눌러 보세요. 잡힌 키는 초록이 되고 칸에 ⟨키⟩ 표시가 들어갑니다.</li>
+    <li>한글 상태에서 <b>마케팅</b>을 치고 띄어쓰기 없이 바로 <kbd>Tab</kbd>, <b>빨강</b>을 치고 바로 <span class="k-alt"></span><kbd>R</kbd>을 눌러 보세요. ‘마케팅⟨Tab⟩’처럼 글자가 그대로 남아야 정상입니다.</li>
+    <li>같은 칸에 <b>&lt;-</b> <b>-&gt;</b> <b>&lt;|</b> <b>|&gt;</b>를 쳐서 ← → ↑ ↓로 바뀌는지 봅니다. 한글 바로 뒤에서도 해 보세요.</li>
+    <li>다 했으면 <b>결과 복사</b>를 눌러 대화창에 붙여 넣어 주세요.</li>
+  </ol>
+  <p class="warn"><span class="k-mod"></span>N · <span class="k-mod"></span>T · <span class="k-mod"></span>W는 누르지 마세요. 브라우저가 새 창·탭을 열거나 이 탭을 닫습니다. <span class="k-mod"></span>P · <span class="k-mod"></span>S가 안 잡히면 인쇄·저장 창이 뜨는데, 취소하면 됩니다.</p>
+
+  <div id="ed" class="editor" contenteditable="true" spellcheck="false" aria-label="시험 칸">여기를 누르고 키를 눌러 보세요.
+</div>
+  <div class="bar">
+    <span>입력 상태 <span id="comp" class="pill">조합 아님</span></span>
+    <span>화살표 변환 <span id="arw" class="pill">0 / 4</span></span>
+    <span>잡힌 키 <span id="cnt" class="pill">0</span></span>
+    <span class="btns"><button type="button" id="clear">기록 지우기</button><button type="button" id="copy" class="primary">결과 복사</button></span>
+  </div>
+  <textarea id="out" hidden readonly aria-label="복사할 결과"></textarea>
+
+  <div id="groups" class="groups"></div>
+
+  <div class="log">
+    <h2>이벤트 기록</h2>
+    <ol id="log"></ol>
+  </div>
+</div>
+<script>
+(function(){
+  var isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '') || (navigator.userAgentData && navigator.userAgentData.platform === 'macOS');
+  var SYM = isMac ? {mod:'⌘', alt:'⌥', shift:'⇧'} : {mod:'Ctrl', alt:'Alt', shift:'Shift'};
+  document.querySelectorAll('.k-mod').forEach(function(el){ el.innerHTML = '<kbd>' + SYM.mod + '</kbd>'; });
+  document.querySelectorAll('.k-alt').forEach(function(el){ el.innerHTML = '<kbd>' + SYM.alt + '</kbd>'; });
+
+  var CODE = {Comma:',', Period:'.', Backslash:'\\', Slash:'/', ArrowUp:'↑', ArrowDown:'↓', Tab:'Tab', Escape:'Esc'};
+  function codeLabel(c){ return CODE[c] || c.replace(/^Key|^Digit/, ''); }
+  var GROUPS = [
+    ['펜', [['alt+KeyR','빨강 펜'],['alt+KeyB','파랑 펜'],['alt+KeyK','검정 펜'],['alt+KeyP','보라 펜'],['alt+KeyY','노랑 펜'],['alt+KeyG','초록 펜'],['alt+KeyC','컬러휠'],['alt+KeyA','자동으로']]],
+    ['형광펜', [['alt+shift+KeyR','빨강'],['alt+shift+KeyY','노랑'],['alt+shift+KeyB','파랑'],['alt+shift+KeyG','초록'],['alt+shift+KeyP','보라'],['alt+shift+KeyC','컬러휠'],['alt+shift+KeyX','지우기'],['alt+shift+KeyA','자동으로']]],
+    ['트리 · 편집', [['Tab','들여쓰기'],['shift+Tab','내어쓰기'],['mod+shift+ArrowUp','가지 위로'],['mod+shift+ArrowDown','가지 아래로'],['mod+KeyZ','되돌리기'],['mod+shift+KeyZ','다시 하기'],['mod+KeyB','굵게'],['mod+KeyU','밑줄'],['mod+shift+KeyX','취소선']]],
+    ['글자 모양', [['alt+Comma','자간 좁게'],['alt+Period','자간 넓게'],['alt+shift+Comma','행간 좁게'],['alt+shift+Period','행간 넓게'],['alt+KeyT','글자 모양 판']]],
+    ['보기 · 찾기 · 기타', [['alt+Digit1','편집 화면'],['alt+Digit2','반쪽 보기'],['alt+Digit3','A4 합침 보기'],['mod+KeyP','인쇄'],['mod+KeyK','전체 검색'],['mod+KeyF','찾아서 강조'],['mod+Backslash','과목 목록'],['mod+KeyS','지금 동기화'],['mod+Slash','도움말'],['Escape','닫기']]],
+    ['그리기 · 강조', [['alt+KeyD','그리기 모드'],['alt+KeyO','동그라미']]]
+  ];
+  var rows = new Map();
+  var groupsEl = document.getElementById('groups');
+  GROUPS.forEach(function(g){
+    var card = document.createElement('div'); card.className = 'card';
+    var h = document.createElement('h2'); h.textContent = g[0]; card.appendChild(h);
+    var t = document.createElement('table'); var tb = document.createElement('tbody');
+    g[1].forEach(function(s){
+      var parts = s[0].split('+'); var code = parts.pop();
+      var label = parts.map(function(p){ return SYM[p]; }).concat(codeLabel(code));
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td class="k">' + label.map(function(x){ return '<kbd>' + x + '</kbd>'; }).join('') + '</td><td></td><td class="s">아직</td>';
+      tr.children[1].textContent = s[1];
+      tb.appendChild(tr);
+      rows.set(s[0], {id:s[0], label:label.join(''), name:s[1], tr:tr, n:0, composing:0, last:null});
+    });
+    t.appendChild(tb); card.appendChild(t); groupsEl.appendChild(card);
+  });
+
+  var ed = document.getElementById('ed'), logEl = document.getElementById('log');
+  var compEl = document.getElementById('comp'), arwEl = document.getElementById('arw'), cntEl = document.getElementById('cnt');
+  var composing = false, pending = [], arrows = new Set(), events = [];
+  function log(cls, text){
+    var li = document.createElement('li'); li.className = cls;
+    var d = new Date(); li.textContent = d.toTimeString().slice(0, 8) + '  ' + text;
+    logEl.insertBefore(li, logEl.firstChild);
+    while (logEl.children.length > 60) logEl.removeChild(logEl.lastChild);
+    events.push(li.textContent); if (events.length > 200) events.shift();
+  }
+  function keyId(e){
+    var m = [];
+    if (isMac ? e.metaKey : e.ctrlKey) m.push('mod');
+    if (e.altKey) m.push('alt');
+    if (e.shiftKey) m.push('shift');
+    if (isMac ? e.ctrlKey : e.metaKey) m.push('x');
+    return m.concat(e.code).join('+');
+  }
+  function mark(label){ document.execCommand('insertText', false, '⟨' + label + '⟩'); }
+  function inEditor(){ var a = document.activeElement; return a === ed || ed.contains(a); }
+
+  window.addEventListener('keydown', function(e){
+    var c = e.isComposing || e.keyCode === 229;
+    var mods = (e.metaKey ? 'meta ' : '') + (e.ctrlKey ? 'ctrl ' : '') + (e.altKey ? 'alt ' : '') + (e.shiftKey ? 'shift ' : '');
+    if (mods || e.key.length > 1 || c) log(c ? 'c' : 'k', 'keydown ' + mods + 'key=' + JSON.stringify(e.key) + ' code=' + e.code + (c ? ' 조합중' : ''));
+    var row = rows.get(keyId(e));
+    if (!row) return;
+    e.preventDefault(); e.stopPropagation();
+    row.n++; if (c) row.composing++; row.last = {key:e.key, composing:c};
+    row.tr.classList.add('hit');
+    row.tr.querySelector('.s').textContent = '잡힘' + (row.composing ? ' · 조합 중에도' : '');
+    cntEl.textContent = String(Array.from(rows.values()).filter(function(r){ return r.n; }).length) + ' / ' + rows.size;
+    cntEl.className = 'pill ok';
+    log('x', '잡음 ' + row.label + ' (' + row.name + ')' + (c ? ' — 조합이 끝난 뒤 표시' : ''));
+    if (inEditor()) { if (c || composing) pending.push(row.label); else mark(row.label); }
+  }, true);
+
+  ed.addEventListener('compositionstart', function(){ composing = true; compEl.textContent = '한글 조합 중'; compEl.className = 'pill on'; log('c', 'compositionstart'); });
+  ed.addEventListener('compositionend', function(e){
+    composing = false; compEl.textContent = '조합 아님'; compEl.className = 'pill';
+    log('c', 'compositionend data=' + JSON.stringify(e.data));
+    setTimeout(function(){ while (pending.length) mark(pending.shift()); tryArrow(); }, 0);
+  });
+
+  var MAP = {'<-':'←', '->':'→', '<|':'↑', '|>':'↓'};
+  function tryArrow(){
+    var sel = window.getSelection(); if (!sel || !sel.rangeCount) return;
+    var r = sel.getRangeAt(0); if (!r.collapsed) return;
+    var n = r.startContainer, o = r.startOffset;
+    if (n.nodeType !== 3 || o < 2) return;
+    var pair = n.data.slice(o - 2, o), to = MAP[pair];
+    if (!to) return;
+    var rr = document.createRange(); rr.setStart(n, o - 2); rr.setEnd(n, o);
+    sel.removeAllRanges(); sel.addRange(rr);
+    document.execCommand('insertText', false, to);
+    arrows.add(pair);
+    arwEl.textContent = arrows.size + ' / 4'; if (arrows.size === 4) arwEl.className = 'pill ok';
+    log('x', '화살표 ' + pair + ' → ' + to);
+  }
+  ed.addEventListener('input', function(e){
+    if (e.isComposing || composing) return;
+    if (e.inputType === 'insertText' || e.inputType === 'insertCompositionText') tryArrow();
+  });
+
+  document.getElementById('clear').addEventListener('click', function(){
+    rows.forEach(function(r){ r.n = 0; r.composing = 0; r.tr.classList.remove('hit'); r.tr.querySelector('.s').textContent = '아직'; });
+    arrows.clear(); arwEl.textContent = '0 / 4'; arwEl.className = 'pill';
+    cntEl.textContent = '0'; cntEl.className = 'pill';
+    logEl.innerHTML = ''; events = []; ed.textContent = '';
+  });
+
+  document.getElementById('copy').addEventListener('click', function(){
+    var all = Array.from(rows.values());
+    var hit = all.filter(function(r){ return r.n; }), miss = all.filter(function(r){ return !r.n; });
+    var lines = [
+      'ayun pad 단축키 시험 결과',
+      '기기: ' + navigator.userAgent,
+      '표기: ' + (isMac ? 'Mac' : 'Windows/기타'),
+      '잡힌 키 ' + hit.length + ' / ' + all.length,
+      '안 잡힌 키: ' + (miss.map(function(r){ return r.label + '(' + r.name + ')'; }).join(', ') || '없음'),
+      '조합 중에 잡힌 키: ' + (hit.filter(function(r){ return r.composing; }).map(function(r){ return r.label; }).join(', ') || '없음'),
+      '화살표 변환 확인: ' + (Array.from(arrows).join(' ') || '없음'),
+      '시험 칸 글자: ' + JSON.stringify(ed.innerText.slice(0, 400)),
+      '최근 기록:'
+    ].concat(events.slice(-40));
+    var text = lines.join('\n');
+    var out = document.getElementById('out');
+    function fallback(){ out.hidden = false; out.value = text; out.focus(); out.select(); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function(){ var b = document.getElementById('copy'); b.textContent = '복사됨'; setTimeout(function(){ b.textContent = '결과 복사'; }, 1600); }, fallback);
+    } else fallback();
+  });
+})();
+</script>
+</body>
+</html>

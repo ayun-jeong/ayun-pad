@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ayun pad 인쇄 시험</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+@page{size:A4 portrait;margin:0}
+:root{--red:#EC3535;--blue:#0064E8;--purple:#4D00E8;--hl-r:rgba(236,53,53,.2);--hl-y:rgba(255,203,16,.2);--hl-b:rgba(0,100,232,.2);--hl-g:rgba(82,212,7,.2);--hl-p:rgba(77,0,232,.2);
+  font-family:"Pretendard Variable",Pretendard,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:#E7EAEE;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.guide{max-width:760px;margin:0 auto;padding:28px 16px 20px;font-size:15px;line-height:1.65;color:#15181D;word-break:keep-all}
+.guide h1{font-size:26px;margin:0 0 6px;letter-spacing:-.02em}
+.guide p{margin:0;color:#555C66}
+.guide ol{padding-left:20px;margin:14px 0 0;display:grid;gap:5px}
+.scroll{overflow-x:auto;padding:0 16px 40px}
+.sheet{width:210mm;height:297mm;margin:0 auto;background:#fff;display:flex;position:relative;overflow:hidden;box-shadow:0 2px 14px rgba(0,0,0,.14)}
+.half{position:relative;width:105mm;height:297mm;padding:6mm 5mm;flex:none;word-break:keep-all}
+.fold{position:absolute;left:105mm;top:0;bottom:0;border-left:.25mm dashed #8A9099}
+.cap{font-size:6.5pt;line-height:3mm;color:#555}
+.hbar{position:absolute;left:7.5mm;top:11mm;width:90mm;height:7mm}
+.vbar{position:absolute;left:86mm;top:23.5mm;width:14mm;height:250mm}
+svg text{font-family:inherit}
+.blk{position:absolute;left:5mm;right:5mm}
+.right .blk{right:20mm}
+.lbl{font-size:6.5pt;line-height:3mm;color:#555;margin-bottom:1mm}
+.tree{--lh:3.6mm;--ind:3.6mm;font-size:8pt;line-height:var(--lh)}
+.ln{display:flex}
+.g{display:flex;flex:none}
+.tc{display:block;width:var(--ind);flex:none;position:relative}
+.tc.v::before,.tc.t::before,.tc.l::before{content:"";position:absolute;left:calc(50% - .1mm);top:0;width:.2mm;background:var(--red)}
+.tc.v::before,.tc.t::before{bottom:0}
+.tc.l::before{height:calc(var(--lh) / 2)}
+.tc.t::after,.tc.l::after{content:"";position:absolute;left:50%;right:.5mm;top:calc(var(--lh) / 2 - .1mm);height:.2mm;background:var(--red)}
+.tx{flex:1 1 auto;min-width:0}
+.r{color:var(--red)} .b{color:var(--blue)} .p{color:var(--purple)}
+.hl{--hc:var(--hl-y);padding:0 .12em;margin:0 -.12em;border-radius:.25em .55em .3em .6em / .35em .6em .45em .7em;background:linear-gradient(97deg,transparent 0,var(--hc) .32em,var(--hc) calc(100% - .38em),transparent 100%) 0 84%/100% 48% no-repeat;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.hl-r{--hc:var(--hl-r)} .hl-y{--hc:var(--hl-y)} .hl-b{--hc:var(--hl-b)} .hl-g{--hc:var(--hl-g)} .hl-p{--hc:var(--hl-p)}
+.circ{padding:.22em .42em;margin:0 -.42em;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%23EC3535' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center/100% 100% no-repeat;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.ul{text-decoration:underline;text-decoration-color:var(--blue);text-decoration-thickness:.25mm;text-underline-offset:.6mm}
+.chk{display:grid;gap:1.2mm;font-size:7pt;line-height:3.4mm}
+.chk div{display:flex;align-items:center;gap:2mm}
+.sw{display:inline-block;width:14mm;height:3.4mm;flex:none}
+.sw.hl-band{background:linear-gradient(97deg,transparent 0,var(--hl-y) 1mm,var(--hl-y) calc(100% - 1.2mm),transparent 100%) 0 80%/100% 55% no-repeat}
+.sw.tree-band{background:linear-gradient(var(--red),var(--red)) center/100% .3mm no-repeat}
+.dens{overflow:hidden;background-image:repeating-linear-gradient(to bottom,transparent 0 calc(var(--lh) - .1mm),#E3E6EA calc(var(--lh) - .1mm) var(--lh))}
+.d9{--lh:4.5mm;font-size:9pt;line-height:var(--lh);height:calc(var(--lh) * 6)}
+.d8{--lh:3.6mm;font-size:8pt;line-height:var(--lh);height:calc(var(--lh) * 8)}
+.d65{--lh:2.9mm;font-size:6.5pt;line-height:var(--lh);height:calc(var(--lh) * 10);word-break:break-all}
+.measure{font-size:7pt;line-height:3.6mm;border:.25mm solid #000;padding:2mm 2.5mm}
+.measure b{font-weight:700}
+@media print{
+  html,body{background:#fff;height:297mm;overflow:hidden}
+  .guide{display:none}
+  .scroll{padding:0;overflow:visible}
+  .sheet{box-shadow:none;margin:0}
+}
+</style>
+</head>
+<body>
+<div class="guide">
+  <h1>인쇄 시험</h1>
+  <p>ayun pad 0단계 실측 · A4를 세로로 반 접는 규격이 실제 종이와 PDF에서 정확한지 봅니다.</p>
+  <ol>
+    <li><b>⌘P</b>(윈도는 Ctrl+P)를 눌러 대상은 프린터나 ‘PDF로 저장’, 용지는 A4, 배율은 100%(기본값)로 둡니다. 여백은 이 페이지가 0으로 정해 두었으니 손대지 않아도 됩니다.</li>
+    <li>‘배경 그래픽’ 칸은 <b>꺼진 채로</b> 한 번 찍어 보세요. 그래도 형광펜 · 빨간 가지선 · 동그라미가 보여야 정상입니다.</li>
+    <li>자로 세 곳을 잽니다. 위쪽 가로 막대 0~90이 <b>90mm</b>, 오른쪽 세로 막대 0~250이 <b>250mm</b>, 종이 왼쪽 끝에서 가운데 점선까지 <b>105mm</b>입니다.</li>
+    <li>잰 값 세 개와 빠진 게 있었는지 대화창에 알려 주세요. PDF로 받았다면 미리보기에서 ‘실제 크기’로 인쇄해서 재면 됩니다.</li>
+  </ol>
+</div>
+
+<div class="scroll">
+<div class="sheet">
+  <div class="fold"></div>
+
+  <!-- 왼쪽 반쪽 1-1 -->
+  <div class="half left">
+    <p class="cap">ayun pad 인쇄 시험 · 1-1 왼쪽 반쪽</p>
+    <svg class="hbar" viewBox="0 0 90 7" aria-label="90mm 가로 막대">
+      <path d="M0 .5H90M0 .5V3.5M10 .5V3.5M20 .5V3.5M30 .5V3.5M40 .5V3.5M50 .5V3.5M60 .5V3.5M70 .5V3.5M80 .5V3.5M90 .5V3.5M5 .5V2.2M15 .5V2.2M25 .5V2.2M35 .5V2.2M45 .5V2.2M55 .5V2.2M65 .5V2.2M75 .5V2.2M85 .5V2.2" fill="none" stroke="#000" stroke-width=".2"/>
+      <g font-size="2.4" fill="#000"><text x="0" y="6.2">0</text><text x="20" y="6.2" text-anchor="middle">20</text><text x="40" y="6.2" text-anchor="middle">40</text><text x="60" y="6.2" text-anchor="middle">60</text><text x="90" y="6.2" text-anchor="end">90mm</text></g>
+    </svg>
+
+    <div class="blk" style="top:24mm">
+      <p class="lbl">트리 견본 · 8pt / 줄 3.6mm · 가지선 빨강</p>
+      <div class="tree">
+        <div class="ln"><span class="tx"><span class="r hl hl-r">경영학</span></span></div>
+        <div class="ln"><span class="g"><i class="tc t"></i></span><span class="tx"><span class="r hl hl-y">마케팅</span></span></div>
+        <div class="ln"><span class="g"><i class="tc v"></i><i class="tc t"></i></span><span class="tx"><span class="r hl hl-b">STP 전략</span>: 세분화 → 표적 → 포지셔닝 <span class="b">(예: 나이키 러닝족)</span></span></div>
+        <div class="ln"><span class="g"><i class="tc v"></i><i class="tc l"></i></span><span class="tx"><span class="r hl hl-b">4P 전략</span>: 제품 · 가격 · 유통 · 촉진</span></div>
+        <div class="ln"><span class="g"><i class="tc v"></i><i class="tc"></i><i class="tc l"></i></span><span class="tx"><span class="b">예: 스타벅스 사이렌오더 = 유통 혁신</span></span></div>
+        <div class="ln"><span class="g"><i class="tc l"></i></span><span class="tx"><span class="r hl hl-y">인사관리</span></span></div>
+        <div class="ln"><span class="g"><i class="tc"></i><i class="tc t"></i></span><span class="tx"><span class="r hl hl-b">모집</span>: 내부모집 vs 외부모집</span></div>
+        <div class="ln"><span class="g"><i class="tc"></i><i class="tc v"></i><i class="tc l"></i></span><span class="tx"><span class="r hl hl-g">내부모집</span>: 승진 · 배치전환 → 사기↑ 비용↓</span></div>
+        <div class="ln"><span class="g"><i class="tc"></i><i class="tc v"></i><i class="tc"></i><i class="tc l"></i></span><span class="tx"><span class="r hl hl-p">단점</span>: 근친번식, 파벌</span></div>
+        <div class="ln"><span class="g"><i class="tc"></i><i class="tc l"></i></span><span class="tx"><span class="r hl hl-b">선발</span></span></div>
+        <div class="ln"><span class="g"><i class="tc"></i><i class="tc"></i><i class="tc l"></i></span><span class="tx">면접은 <span class="hl hl-y">구조화</span>할수록 <span class="circ">타당도</span>가 <span class="ul">높다</span></span></div>
+      </div>
+    </div>
+
+    <div class="blk" style="top:72mm">
+      <p class="lbl">배경 확인 · ‘배경 그래픽’을 꺼도 셋 다 보여야 정상</p>
+      <div class="chk">
+        <div><span class="sw hl-band"></span>형광펜 띠</div>
+        <div><span class="sw tree-band"></span>빨간 가지선</div>
+        <div><span class="sw"><span class="circ" style="display:inline-block;width:100%;height:100%;margin:0;padding:0"></span></span>동그라미</div>
+      </div>
+    </div>
+
+    <div class="blk" style="top:96mm">
+      <p class="lbl">촘촘(기본) · 8pt / 줄 3.6mm · 8줄</p>
+      <div class="dens d8">마케팅 믹스(4P)는 제품 · 가격 · 유통 · 촉진을 표적시장에 맞게 조합하는 것이다. 제품수명주기(PLC)는 도입 → 성장 → 성숙 → 쇠퇴로 나뉘고 단계마다 4P 전략이 달라진다. 예: 성숙기에는 가격 경쟁과 판촉이 커진다. 시장세분화 기준은 인구통계 · 지리 · 심리 · 행동 변수다. 포지셔닝 맵은 소비자 인식 속 경쟁 제품의 위치를 두 축으로 나타낸다. 손익분기점은 고정비를 단위당 공헌이익으로 나눈 판매량이다.</div>
+    </div>
+  </div>
+
+  <!-- 오른쪽 반쪽 1-2 -->
+  <div class="half right">
+    <p class="cap">1-2 오른쪽 반쪽 · 왼쪽 끝에서 가운데 점선까지 105mm</p>
+    <svg class="hbar" viewBox="0 0 90 7" aria-label="90mm 가로 막대">
+      <path d="M0 .5H90M0 .5V3.5M10 .5V3.5M20 .5V3.5M30 .5V3.5M40 .5V3.5M50 .5V3.5M60 .5V3.5M70 .5V3.5M80 .5V3.5M90 .5V3.5M5 .5V2.2M15 .5V2.2M25 .5V2.2M35 .5V2.2M45 .5V2.2M55 .5V2.2M65 .5V2.2M75 .5V2.2M85 .5V2.2" fill="none" stroke="#000" stroke-width=".2"/>
+      <g font-size="2.4" fill="#000"><text x="0" y="6.2">0</text><text x="20" y="6.2" text-anchor="middle">20</text><text x="40" y="6.2" text-anchor="middle">40</text><text x="60" y="6.2" text-anchor="middle">60</text><text x="90" y="6.2" text-anchor="end">90mm</text></g>
+    </svg>
+    <svg class="vbar" viewBox="0 0 14 250" aria-label="250mm 세로 막대">
+      <path d="M.5 0V250M.5 0H3.5M.5 10H2.5M.5 20H2.5M.5 30H2.5M.5 40H2.5M.5 50H3.5M.5 60H2.5M.5 70H2.5M.5 80H2.5M.5 90H2.5M.5 100H3.5M.5 110H2.5M.5 120H2.5M.5 130H2.5M.5 140H2.5M.5 150H3.5M.5 160H2.5M.5 170H2.5M.5 180H2.5M.5 190H2.5M.5 200H3.5M.5 210H2.5M.5 220H2.5M.5 230H2.5M.5 240H2.5M.5 250H3.5" fill="none" stroke="#000" stroke-width=".2"/>
+      <g font-size="2.4" fill="#000"><text x="4.5" y="2.2">0</text><text x="4.5" y="50.9">50</text><text x="4.5" y="100.9">100</text><text x="4.5" y="150.9">150</text><text x="4.5" y="200.9">200</text><text x="4.5" y="249.6">250mm</text></g>
+    </svg>
+
+    <div class="blk" style="top:24mm">
+      <p class="lbl">보통 · 9pt / 줄 4.5mm · 6줄</p>
+      <div class="dens d9">경제학에서 수요의 가격탄력성은 가격이 1% 오를 때 수요량이 몇 % 줄어드는지를 나타낸다. 탄력성이 1보다 크면 탄력적이라 가격을 내리면 총수입이 늘어난다. 대체재가 많을수록, 소득에서 차지하는 비중이 클수록 탄력성은 커진다.</div>
+    </div>
+
+    <div class="blk" style="top:58mm">
+      <p class="lbl">초고밀도 · 6.5pt / 줄 2.9mm · 10줄 · 글자 단위 줄바꿈</p>
+      <div class="dens d65">재무회계의 수익 인식은 고객과의 계약 식별 → 수행의무 식별 → 거래가격 산정 → 거래가격 배분 → 수행의무 이행 시 수익 인식의 5단계를 따른다. 재고자산은 취득원가와 순실현가능가치 중 낮은 금액으로 측정하고, 원가흐름은 선입선출법이나 가중평균법을 쓴다. 유형자산은 원가모형이나 재평가모형 중 하나를 골라 같은 분류 전체에 적용한다. 감가상각은 정액법 · 정률법 · 생산량비례법이 있고, 내용연수와 잔존가치는 매 회계연도 말에 다시 검토한다. 리스는 사용권자산과 리스부채를 인식하고, 단기리스와 소액리스는 예외로 둘 수 있다.</div>
+    </div>
+
+    <div class="blk measure" style="top:96mm">
+      <b>자로 잰 값</b><br>
+      가로 막대 0~90: ______ mm (90이 정상)<br>
+      세로 막대 0~250: ______ mm (250이 정상)<br>
+      종이 왼쪽 끝 ~ 가운데 점선: ______ mm (105가 정상)
+    </div>
+  </div>
+</div>
+</div>
+</body>
+</html>
