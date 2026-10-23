@@ -1,6 +1,8 @@
 // 실제 크롬으로 앱을 열어 1단계 완료 기준을 확인한다.
 // 사용: npm run build && node scripts/e2e.mjs [스크린샷 경로]
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import puppeteer from 'puppeteer-core';
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -183,6 +185,77 @@ try {
     const el = await page.$('.paper');
     await el.screenshot({ path: shot });
   }
+
+  // 7) 2단계: 반쪽 보기 · A4 합침 보기 · 인쇄가 편집 화면과 줄 단위까지 같은지.
+  // 200줄을 붙여넣는다(줄 하나 = 한 줄 높이). 촘촘 기본값은 반쪽 81줄 → 3반쪽, A4 2장.
+  await page.click('.addnote');
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+  await page.evaluate(() => {
+    const v = window.__ayunpad.view();
+    v.focus();
+    v.pasteText(Array.from({ length: 200 }, (_, i) => `줄 ${i + 1}`).join('\n'));
+  });
+  await sleep(400);
+  check((await page.$$eval('.editor > p', (els) => els.length)) === 200, '200줄 붙여넣기');
+  const edit = await page.evaluate(() => {
+    const ps = document.querySelectorAll('.editor > p');
+    const g = [...document.querySelectorAll('.guide')].map((x) => x.getBoundingClientRect().top);
+    return { guides: g.length, gap1: Math.abs(ps[81].getBoundingClientRect().top - g[0]), gap2: Math.abs(ps[162].getBoundingClientRect().top - g[1]) };
+  });
+  check(edit.guides === 2 && edit.gap1 < 2 && edit.gap2 < 2, `편집 화면 반쪽 경계 점선이 82번째·163번째 줄 바로 위 (${JSON.stringify(edit)})`);
+
+  const alt = async (code) => {
+    await k.down('Alt');
+    await k.press(code);
+    await k.up('Alt');
+  };
+  await alt('Digit2');
+  await page.waitForSelector('.pages.half .phalf');
+  await sleep(200);
+  const halves = await page.$$eval('.pages.half .phalf', (hs) =>
+    hs.map((h) => {
+      const win = h.querySelector('.pwin').getBoundingClientRect();
+      const vis = [...h.querySelectorAll('.editor > p')]
+        .map((p, i) => [i, p.getBoundingClientRect()])
+        .filter(([, r]) => r.bottom > win.top + 1 && r.top < win.bottom - 1)
+        .map(([i]) => i);
+      return [vis[0], vis[vis.length - 1]];
+    }),
+  );
+  check(JSON.stringify(halves) === '[[0,80],[81,161],[162,199]]', `반쪽 보기: 1-1 1~81줄 · 1-2 82~162줄 · 2-1 163~200줄 (${JSON.stringify(halves)})`);
+
+  await alt('Digit3');
+  await page.waitForSelector('.pages.a4 .psheet');
+  await sleep(200);
+  const sheets = await page.$$eval('.pages.a4 .psheet', (s) => s.map((x) => x.querySelectorAll('.phalf:not(.blank)').length));
+  check(JSON.stringify(sheets) === '[2,1]', `A4 합침 보기 2장 (${JSON.stringify(sheets)})`);
+
+  await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
+  check((await page.$$eval('.print-root .psheet', (s) => s.length)) === 2, '인쇄용 A4 2장');
+  const pdf = Buffer.from(await page.pdf({ preferCSSPageSize: true, printBackground: false })).toString('latin1');
+  const pdfPages = (pdf.match(/\/Type\s*\/Page[^s]/g) || []).length;
+  const mb = pdf.match(/\/MediaBox\s*\[\s*([\d.\s]+)\]/)[1].trim().split(/\s+/).map(Number);
+  const mm = [((mb[2] - mb[0]) / 72) * 25.4, ((mb[3] - mb[1]) / 72) * 25.4];
+  check(pdfPages === 2 && Math.abs(mm[0] - 210) < 0.5 && Math.abs(mm[1] - 297) < 0.5, `PDF A4 2쪽 (${pdfPages}쪽, ${mm.map((x) => x.toFixed(1)).join('×')}mm)`);
+  if (shot) fs.writeFileSync(path.join(path.dirname(shot), 'e2e-long.pdf'), Buffer.from(pdf, 'latin1'));
+  await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+
+  // 보기 화면에서 줄을 누르면 편집 화면의 그 줄로
+  const target = await page.evaluateHandle(() => document.querySelectorAll('.pages.a4 .psheet')[1].querySelectorAll('.editor > p')[169]);
+  await target.click();
+  await page.waitForFunction(() => !document.querySelector('.pages'));
+  await sleep(150);
+  const at = await page.evaluate(() => getSelection().anchorNode?.parentElement?.closest('p')?.textContent ?? getSelection().anchorNode?.textContent);
+  check(at === '줄 170', `A4 보기에서 누른 줄로 편집 열림 (${at})`);
+
+  // 견본 노트 인쇄(눈으로 보는 용)
+  await page.$$eval('.note-item .t', (els) => els.find((e) => e.textContent === '견본 · 경영학')?.click());
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 11);
+  await sleep(300);
+  await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
+  const pdf2 = await page.pdf({ preferCSSPageSize: true, printBackground: false });
+  if (shot) fs.writeFileSync(path.join(path.dirname(shot), 'e2e-sample.pdf'), pdf2);
+  await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();
 } catch (e) {

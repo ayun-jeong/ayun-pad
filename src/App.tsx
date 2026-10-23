@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import type { EditorState } from 'prosemirror-state';
+import { TextSelection, type EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { undo } from 'y-prosemirror';
 import { fontCmd, hlCmd, indentCmd, penCmd, toggleBranchCmd, trackCmd } from './editor/commands';
@@ -13,6 +13,7 @@ import { readTypo, writeTypo, type NoteDoc } from './store/noteDoc';
 import { seedIfEmpty } from './store/seed';
 import { EditorPane, PX_PER_MM } from './ui/EditorPane';
 import { Help } from './ui/Help';
+import { buildPrintSheets, PagesView, type ViewMode } from './ui/PagesView';
 import { Sidebar } from './ui/Sidebar';
 import { TypePanel } from './ui/TypePanel';
 
@@ -56,11 +57,18 @@ export function App() {
   const [zoom, setZoom] = useState(initialZoom);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [typo, setTypo] = useState<Typo | null>(null);
+  const [mode, setMode] = useState<ViewMode>('edit');
+  const [source, setSource] = useState<HTMLElement | null>(null);
+  const printRef = useRef<HTMLDivElement>(null);
+  const typoRef = useRef<Typo | null>(null);
+  typoRef.current = typo;
   const viewRef = useRef<EditorView | null>(null);
   const docRef = useRef<NoteDoc | null>(null);
   const unobserve = useRef<(() => void) | null>(null);
   const noteRef = useRef<string | null>(null);
   const touched = useRef(0);
+  const modeRef = useRef<ViewMode>('edit');
+  modeRef.current = mode;
   const picker = useRef<HTMLInputElement>(null);
   const pickerMode = useRef<'pen' | 'hl'>('pen');
   noteRef.current = noteId;
@@ -113,7 +121,7 @@ export function App() {
           setPanel((p) => !p);
           break;
         case 'print':
-          toast('A4 2단 인쇄는 2단계에서 만듭니다');
+          window.print();
           break;
         case 'search':
           toast('전체 검색은 5단계에서 만듭니다');
@@ -122,11 +130,14 @@ export function App() {
           toast('입력할 때마다 이 기기에 저장되고 있어요');
           break;
         case 'view-edit':
-          toast('편집 화면');
+          setMode('edit');
+          requestAnimationFrame(() => viewRef.current?.focus());
           break;
         case 'view-half':
         case 'view-a4':
-          toast('반쪽 보기 · A4 합침 보기는 2단계에서 만듭니다');
+          if (!viewRef.current) break;
+          setSource(viewRef.current.dom);
+          setMode(a === 'view-half' ? 'half' : 'a4');
           break;
         case 'draw':
           toast('그리기는 4단계에서 만듭니다');
@@ -158,6 +169,7 @@ export function App() {
       if (id === 'Escape') {
         setPanel(false);
         setHelp(false);
+        if (modeRef.current !== 'edit') act('view-edit');
         return;
       }
       const map: Record<string, AppAction> = {
@@ -167,6 +179,9 @@ export function App() {
         'mod+KeyK': 'search',
         'mod+KeyP': 'print',
         'mod+KeyS': 'save',
+        'alt+Digit1': 'view-edit',
+        'alt+Digit2': 'view-half',
+        'alt+Digit3': 'view-a4',
       };
       const a = map[id];
       if (!a) return;
@@ -176,6 +191,41 @@ export function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [act]);
+
+  // 인쇄: 브라우저가 인쇄를 시작하는 순간(⌘P든 메뉴든) A4 장을 만들어 넣고, 끝나면 비운다.
+  useEffect(() => {
+    const before = () => {
+      const v = viewRef.current;
+      const t = typoRef.current;
+      if (v && t && printRef.current) buildPrintSheets(printRef.current, v.dom, t);
+    };
+    const after = () => printRef.current?.replaceChildren();
+    window.addEventListener('beforeprint', before);
+    window.addEventListener('afterprint', after);
+    return () => {
+      window.removeEventListener('beforeprint', before);
+      window.removeEventListener('afterprint', after);
+    };
+  }, []);
+
+  // 시험용 손잡이(scripts/e2e.mjs가 긴 노트를 붙여넣을 때 쓴다)
+  useEffect(() => {
+    (window as unknown as { __ayunpad: object }).__ayunpad = { view: () => viewRef.current };
+  }, []);
+
+  // 보기 화면에서 줄을 누르면 편집 화면의 그 줄 맨 앞으로
+  const pickLine = useCallback((i: number) => {
+    setMode('edit');
+    requestAnimationFrame(() => {
+      const v = viewRef.current;
+      if (!v) return;
+      const doc = v.state.doc;
+      let pos = 0;
+      for (let k = 0; k < Math.min(i, doc.childCount - 1); k++) pos += doc.child(k).nodeSize;
+      v.dispatch(v.state.tr.setSelection(TextSelection.create(doc, pos + 1)).scrollIntoView());
+      v.focus();
+    });
+  }, []);
 
   const onState = useCallback((state: EditorState) => {
     setPen(penKey.getState(state)?.pen ?? null);
@@ -241,6 +291,20 @@ export function App() {
           <span className="wide-only">{penText}</span>
         </span>
         <span className="status">{savedAt ? `이 기기에 저장됨 · ${hhmm(savedAt)}` : '이 기기에 저장됨'}</span>
+        <div className="seg modes" role="group" aria-label="보기">
+          <button type="button" className={mode === 'edit' ? 'on' : ''} onClick={() => act('view-edit')} title="편집 (⌥1)">
+            편집
+          </button>
+          <button type="button" className={mode === 'half' ? 'on' : ''} onClick={() => act('view-half')} title="반쪽 보기 (⌥2)">
+            반쪽
+          </button>
+          <button type="button" className={mode === 'a4' ? 'on' : ''} onClick={() => act('view-a4')} title="A4 합침 보기 (⌥3)">
+            A4
+          </button>
+        </div>
+        <button type="button" className="tbtn" onClick={() => act('print')} title="A4 2단 인쇄 · PDF 저장 (⌘P)">
+          인쇄
+        </button>
         <div className="seg" role="group" aria-label="화면 배율">
           <button type="button" onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))} aria-label="작게">
             −
@@ -258,11 +322,25 @@ export function App() {
         </button>
       </header>
 
-      <Sidebar lib={lib} noteId={noteId} open={sidebar} onOpen={setNoteId} onClose={() => setSidebar(false)} />
+      <Sidebar
+        lib={lib}
+        noteId={noteId}
+        open={sidebar}
+        onOpen={(id) => {
+          setMode('edit');
+          setNoteId(id);
+        }}
+        onClose={() => setSidebar(false)}
+      />
 
       <main className="desk">
         {ready && noteId ? (
-          <EditorPane key={noteId} noteId={noteId} zoom={zoom} toast={toast} app={act} onState={onState} onEdit={onEdit} onDoc={onDoc} />
+          <>
+            <div hidden={mode !== 'edit'}>
+              <EditorPane key={noteId} noteId={noteId} zoom={zoom} toast={toast} app={act} onState={onState} onEdit={onEdit} onDoc={onDoc} />
+            </div>
+            {mode !== 'edit' && source && typo && <PagesView mode={mode} source={source} typo={typo} zoom={zoom} onPick={pickLine} />}
+          </>
         ) : (
           <p style={{ textAlign: 'center', color: 'var(--ink-3)' }}>노트를 여는 중…</p>
         )}
@@ -303,6 +381,9 @@ export function App() {
         }}
       />
 
+      <div className="print-root" ref={printRef} aria-hidden="true" />
+
+      {mode === 'edit' && (
       <nav className="touchbar" aria-label="편집 도구">
         <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => indentCmd(-1)(v.state, v.dispatch, v))}>
           ⇤ 내어쓰기
@@ -326,6 +407,7 @@ export function App() {
           ↶ 되돌리기
         </button>
       </nav>
+      )}
     </div>
   );
 }

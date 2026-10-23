@@ -146,6 +146,33 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
 .editor .circ { padding: 0.22em 0.42em; margin: 0 -0.42em; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%23EC3535' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .editor u { text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
 
+/* 반쪽 보기 · A4 합침 보기 · 인쇄 */
+.seg button.on { background: var(--ink); color: var(--bg); }
+.pages { position: absolute; top: 0; left: 0; transform-origin: top left; display: grid; gap: 9mm; }
+.pages.half { width: 105mm; }
+.pages.a4 { width: 210mm; }
+.pfig { margin: 0; display: grid; gap: 2.2mm; }
+.pfig figcaption { font: 600 3mm/1.2 var(--ui); color: var(--ink-2); }
+.phalf { background: #fff; color: #000; position: relative; overflow: hidden; flex: none; }
+.pages .phalf, .pages .psheet { box-shadow: var(--shadow); }
+.pages .psheet .phalf { box-shadow: none; }
+.pwin { position: relative; overflow: hidden; }
+.pcol { position: absolute; left: 0; }
+.pages .pcol .editor { cursor: pointer; }
+.psheet { display: flex; position: relative; width: 210mm; height: 297mm; background: #fff; color: #000; overflow: hidden; }
+.pfold { position: absolute; left: 105mm; top: 0; bottom: 0; border-left: 0.2mm dotted #c3c8cf; pointer-events: none; }
+.print-root { display: none; }
+@page { size: A4 portrait; margin: 0; }
+@media print {
+  html, body, #root { height: auto !important; background: #fff !important; }
+  .app { display: block !important; }
+  .app > :not(.print-root) { display: none !important; }
+  .print-root { display: block !important; }
+  .print-root .psheet { break-after: page; break-inside: avoid; }
+  .print-root .psheet:last-child { break-after: auto; }
+  .print-root, .print-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
 /* 판(글자 모양) · 도움말 · 알림 */
 .panel { position: fixed; top: 56px; right: max(12px, env(safe-area-inset-right)); width: min(340px, calc(100vw - 24px)); max-height: calc(100vh - 80px); overflow: auto; background: var(--surface); border: 1px solid var(--rule-2); border-radius: 12px; box-shadow: var(--shadow); padding: 14px 16px 16px; z-index: 30; display: grid; gap: 12px; }
 .panel h3 { margin: 0; font-size: 15px; }
@@ -177,5 +204,6 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
   .touchbar button { flex: 1 0 auto; border: 1px solid var(--rule); background: var(--surface); border-radius: 8px; padding: 6px 10px; min-height: 40px; }
   .side { position: fixed; top: 0; bottom: 0; left: 0; z-index: 35; box-shadow: var(--shadow); width: min(280px, 85vw); padding-top: max(12px, env(safe-area-inset-top)); }
   .status, .brand, .seg, .wide-only { display: none; }
+  .seg.modes { display: inline-flex; }
   .top { gap: 6px; }
 }
