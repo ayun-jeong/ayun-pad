@@ -1,38 +1,18 @@
 <!doctype html>
 <html lang="ko">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>ayun pad</title>
-<meta name="description" content="A4를 세로로 반 접어 쓰는 초고밀도 필기 노트 — 0단계 실측 중">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-<style>
-:root{--bg:#F2F4F7;--surface:#FFFFFF;--ink:#14171C;--ink2:#555C66;--rule:#DCE0E6;--red:#EC3535;
-  font-family:"Pretendard Variable",Pretendard,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
-@media (prefers-color-scheme:dark){:root{--bg:#0F1115;--surface:#181B20;--ink:#E7E9EC;--ink2:#A6ADB6;--rule:#2B3037;color-scheme:dark}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);line-height:1.65;word-break:keep-all}
-.wrap{max-width:640px;margin:0 auto;padding:56px max(16px,env(safe-area-inset-right)) 64px max(16px,env(safe-area-inset-left))}
-h1{font-size:52px;letter-spacing:-.04em;line-height:1;margin:0 0 14px}
-p{margin:0;color:var(--ink2)}
-.tag{display:inline-block;margin-top:18px;padding:3px 10px;border-radius:6px;background:rgba(236,53,53,.10);color:var(--red);font-size:13.5px;font-weight:600}
-.links{display:grid;gap:12px;margin-top:28px}
-a.card{display:block;padding:16px 18px;border:1px solid var(--rule);border-radius:12px;background:var(--surface);color:var(--ink);text-decoration:none}
-a.card:hover{border-color:var(--ink)}
-a.card:focus-visible{outline:2px solid #0064E8;outline-offset:2px}
-a.card b{display:block;font-size:17px;margin-bottom:2px}
-a.card span{font-size:14.5px;color:var(--ink2)}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <h1>ayun pad</h1>
-  <p>A4를 세로로 반 접어 빽빽하게 쓰던 필기를 웹으로 옮기는 노트입니다.</p>
-  <span class="tag">0단계 실측 중</span>
-  <div class="links">
-    <a class="card" href="lab/keys.html"><b>단축키 시험</b><span>맥 · 아이패드 · 윈도에서 단축키가 잡히는지, 한글을 치다가 눌러도 글자가 안 깨지는지 확인합니다.</span></a>
-    <a class="card" href="lab/print.html"><b>인쇄 시험</b><span>A4 반접이 규격이 종이와 PDF에서 정확한지 자로 재고, 형광펜과 빨간 가지선이 찍히는지 봅니다.</span></a>
-  </div>
-</div>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <title>ayun pad</title>
+    <meta name="description" content="A4를 세로로 반 접어 쓰는 초고밀도 필기 노트" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23fff'/%3E%3Cpath d='M9 6v20M9 12h8M9 20h8M17 6v14' stroke='%23EC3535' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Nanum+Myeongjo&family=Nanum+Pen+Script&display=swap" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>
