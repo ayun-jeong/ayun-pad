@@ -5,10 +5,11 @@ import puppeteer from 'puppeteer-core';
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = 4317;
-const URL = `http://localhost:${PORT}/ayun-pad/`;
+// E2E_URL을 주면 그 주소(예: 실제 사이트)로 시험하고, 없으면 빌드 결과를 로컬에서 띄운다.
+const URL = process.env.E2E_URL ?? `http://localhost:${PORT}/ayun-pad/`;
 const shot = process.argv[2];
 
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
+const server = process.env.E2E_URL ? { kill() {} } : spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
 const fails = [];
 const check = (ok, msg) => {
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`);
