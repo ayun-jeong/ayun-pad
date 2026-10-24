@@ -1,6 +1,7 @@
 import { InputRule, inputRules } from 'prosemirror-inputrules';
 import type { Plugin } from 'prosemirror-state';
 import { ctxOf, prevInfo } from './commands';
+import { ARROW_RULES } from './arrows';
 import { branchDepth } from './rules';
 
 // 줄 맨 앞에서 '-' + 스페이스 → 꺾쇠 줄. '-'는 지우고 줄 종류만 바꾼다. 바로 ⌫를 누르면 '- '로 돌아간다.
@@ -15,7 +16,8 @@ const branchRule = new InputRule(/^-\s$/, (state, _match, start, end) => {
   return tr;
 });
 
-// 화살표 자동 변환: <- → ←, -> → →, <| → ↑, |> → ↓. 노트 설정에서 끌 수 있다(settings.arrows).
+// 화살표 자동 변환(표는 arrows.ts): <- ← · -> → · <| ↑ · |> ↓ · <-> ↔ · <|> ↕ · <= ⇐ · => ⇒ · <=> ⇔.
+// 노트 설정에서 끌 수 있다(settings.arrows). 바로 ⌫를 누르면 친 그대로 돌아간다.
 export interface RuleSettings {
   arrows: boolean;
 }
@@ -23,7 +25,7 @@ export interface RuleSettings {
 const arrow = (settings: RuleSettings, re: RegExp, ch: string) =>
   new InputRule(re, (state, _m, start, end) => (settings.arrows ? state.tr.insertText(ch, start, end) : null));
 
-const arrows = (settings: RuleSettings) => [arrow(settings, /<-$/, '←'), arrow(settings, /->$/, '→'), arrow(settings, /<\|$/, '↑'), arrow(settings, /\|>$/, '↓')];
+const arrows = (settings: RuleSettings) => ARROW_RULES.map(([re, ch]) => arrow(settings, re, ch));
 
 export function rulesPlugin(settings: RuleSettings = { arrows: true }): Plugin {
   return inputRules({ rules: [branchRule, ...arrows(settings)] });

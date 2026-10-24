@@ -3,6 +3,7 @@ import { NodeSelection, Plugin, Selection, type EditorState, type Transaction } 
 import { TableView } from 'prosemirror-tables';
 import type { EditorView, NodeView } from 'prosemirror-view';
 import { undo } from 'y-prosemirror';
+import { arrowize } from './arrows';
 import { MAX_DEPTH } from './model';
 import { schema } from './schema';
 
@@ -155,12 +156,6 @@ function editable(text: string, cls: string, placeholder: string): HTMLSpanEleme
   return s;
 }
 
-const ARROWS: [RegExp, string][] = [
-  [/<-$/, '←'],
-  [/->$/, '→'],
-  [/<\|$/, '↑'],
-  [/\|>$/, '↓'],
-];
 
 // 위젯 안의 글칸: 화살표 자동 변환, Tab으로 다음 칸, Enter · Esc로 빠져나가기, ⌘Z는 노트 되돌리기
 abstract class WidgetView implements NodeView {
@@ -201,17 +196,15 @@ abstract class WidgetView implements NodeView {
   private onInput(target: HTMLElement) {
     if (!target.classList?.contains('wg-ed')) return;
     const t = target.textContent ?? '';
-    for (const [re, ch] of ARROWS) {
-      if (re.test(t)) {
-        target.textContent = t.replace(re, ch);
-        const r = document.createRange();
-        r.selectNodeContents(target);
-        r.collapse(false);
-        const s = getSelection();
-        s?.removeAllRanges();
-        s?.addRange(r);
-        break;
-      }
+    const next = arrowize(t);
+    if (next !== null) {
+      target.textContent = next;
+      const r = document.createRange();
+      r.selectNodeContents(target);
+      r.collapse(false);
+      const s = getSelection();
+      s?.removeAllRanges();
+      s?.addRange(r);
     }
     const patch = this.collect(target);
     if (patch) this.commit(patch);

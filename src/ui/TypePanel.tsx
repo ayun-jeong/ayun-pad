@@ -1,3 +1,4 @@
+import { ARROW_PAIRS } from '../editor/arrows';
 import { fitPitch, LIMITS, PRESETS, textWidth, type Typo } from '../editor/layout';
 import type { FontMeta } from '../store/library';
 
@@ -162,7 +163,7 @@ export function TypePanel({ typo, fonts, hasSelection, onChange, onUpload, onSel
         </label>
         <label className="check">
           <input type="checkbox" checked={typo.arrows} onChange={() => onChange({ arrows: !typo.arrows })} />
-          화살표 자동 변환: {'<- -> <| |>'} → ← → ↑ ↓
+          화살표 자동 변환: {ARROW_PAIRS.map(([a, b]) => `${a} ${b}`).join(' · ')}
         </label>
         <p className="note">가지선은 규칙을 꺼도 그대로 그립니다. 직접 칠한 색은 언제나 남습니다.</p>
       </div>

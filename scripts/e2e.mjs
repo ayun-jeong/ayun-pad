@@ -256,6 +256,21 @@ try {
   const pdf2 = await page.pdf({ preferCSSPageSize: true, printBackground: false });
   if (shot) fs.writeFileSync(path.join(path.dirname(shot), 'e2e-sample.pdf'), pdf2);
   await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+  // 화살표 자동 변환(사용자 추가 요청): <-> <|> <= => <=> 도 바뀐다
+  await page.click('.addnote');
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+  await page.click('.editor');
+  await k.type('a<->b c<|>d e<=f g=>h 수요<=>공급 x<-y z->w');
+  await sleep(150);
+  const arrowsLine = await page.$eval('.editor > p', (e) => e.textContent);
+  check(arrowsLine === 'a↔b c↕d e⇐f g⇒h 수요⇔공급 x←y z→w', `<-> <|> <= => <=> → ↔ ↕ ⇐ ⇒ ⇔ (${arrowsLine})`);
+  await k.press('Backspace'); // 바로 ⌫는 마지막 글자 지우기(변환 직후가 아니므로)
+  await k.type('<=');
+  await k.press('Backspace');
+  await sleep(100);
+  const undone = await page.$eval('.editor > p', (e) => e.textContent);
+  check(undone.endsWith('z→<='), `변환 직후 ⌫ → 친 그대로 (${undone.slice(-6)})`);
+
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();
 } catch (e) {

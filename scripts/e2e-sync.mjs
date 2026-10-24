@@ -62,6 +62,20 @@ try {
   userId = created.id;
   check(!!userId, `시험용 임시 계정 만들기 (${email})`);
 
+  // Supabase 로그인 주소 설정(Authentication → URL Configuration): 로그인 뒤 ayun pad로 돌아오고,
+  // 허용 목록에 없는 주소를 주면 Site URL로 바뀌는데 그것도 ayun pad여야 한다(카카오 로그인이 엉뚱한 곳으로 가지 않게).
+  const SITE = 'https://ayun-jeong.github.io/ayun-pad/';
+  const back = async (to) => {
+    const j = await (await admin('/generate_link', { method: 'POST', body: JSON.stringify({ type: 'magiclink', email, redirect_to: to }) })).json();
+    const action = j.action_link ?? j.properties?.action_link ?? '';
+    return action ? new globalThis.URL(action).searchParams.get('redirect_to') : `(링크 없음: ${JSON.stringify(j).slice(0, 80)})`;
+  };
+  const slash = (u) => (u ?? '').replace(/\/?$/, '/');
+  const okBack = await back(SITE);
+  check(slash(okBack) === SITE, `로그인 뒤 돌아갈 곳으로 ayun pad 허용 (${okBack})`);
+  const fallback = await back('https://example.com/');
+  check(slash(fallback) === SITE, `Site URL이 ayun pad (허용 안 된 주소 → ${fallback})`);
+
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   const ctxA = await browser.createBrowserContext();
   const ctxB = await browser.createBrowserContext();
@@ -149,7 +163,7 @@ try {
   check(errs.length === 0, `페이지 오류 없음 ${errs.slice(0, 2).join(' | ')}`);
   await browser.close();
 } catch (e) {
-  console.error(e);
+  console.log(`FAIL 예외: ${e?.message ?? e}`);
   fails.push(String(e));
 } finally {
   if (userId) {

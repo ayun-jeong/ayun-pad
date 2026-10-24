@@ -5,6 +5,7 @@ import { fitPitch, halfLabel, textWidth, DEFAULT_TYPO } from '../src/editor/layo
 import { branchDepth, emptyEnter, planIndent, planMove } from '../src/editor/rules';
 import { parseTreeText, serializeTree, type TextLine } from '../src/editor/treeText';
 import type { LineInfo } from '../src/editor/model';
+import { arrowize } from '../src/editor/arrows';
 
 const b = (depth: number): LineInfo => ({ depth, kind: 'branch' });
 const p = (depth: number): LineInfo => ({ depth, kind: 'plain' });
@@ -141,5 +142,29 @@ describe('복사·붙여넣기', () => {
       [3, 'branch'],
       [2, 'branch'],
     ]);
+  });
+});
+
+describe('화살표 자동 변환', () => {
+  // 한 글자씩 칠 때마다 규칙을 거는 것과 같게
+  const typeOut = (s: string) => {
+    let out = '';
+    for (const ch of s) {
+      out += ch;
+      out = arrowize(out) ?? out;
+    }
+    return out;
+  };
+  it('두 글자 화살표', () => {
+    expect(typeOut('a<-b c->d e<|f g|>h')).toBe('a←b c→d e↑f g↓h');
+    expect(typeOut('x<=y p=>q')).toBe('x⇐y p⇒q');
+  });
+  it('세 글자 화살표: 앞 두 글자가 먼저 바뀐 뒤 합쳐진다', () => {
+    expect(typeOut('a<->b')).toBe('a↔b');
+    expect(typeOut('c<|>d')).toBe('c↕d');
+    expect(typeOut('e<=>f')).toBe('e⇔f');
+  });
+  it('한글 바로 뒤에서도', () => {
+    expect(typeOut('수요<=>공급, 가격=>수요 감소')).toBe('수요⇔공급, 가격⇒수요 감소');
   });
 });
