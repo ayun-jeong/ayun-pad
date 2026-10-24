@@ -93,9 +93,11 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
 .zoom-inner { transform-origin: top left; position: absolute; top: 0; left: 0; }
 .paper { width: 105mm; background: #fff; color: #000; box-shadow: var(--shadow); position: relative; }
 .paper-pad { position: relative; }
-.guide { position: absolute; left: 0; right: 0; height: 0; border-top: 0.3mm dashed rgba(236, 53, 53, 0.55); pointer-events: none; }
-.guide-label { position: absolute; left: 1mm; font: 600 2.2mm/1 var(--mono); color: rgba(236, 53, 53, 0.85); background: #fff; padding: 0.4mm 0.8mm; transform: translateY(0.6mm); pointer-events: none; }
-.guide-label.first { transform: translateY(-3.4mm); }
+/* 반쪽 경계: 종이 위에는 옅은 회색 점선만, 쪽 번호는 종이 밖 회색 칸에(화면에만) */
+.guide { position: absolute; left: 0; right: 0; height: 0; border-top: 0.25mm dashed #c4cad2; pointer-events: none; }
+.half-nos { position: absolute; left: 0; top: 0; bottom: 0; pointer-events: none; }
+.half-no { position: absolute; right: 1.6mm; transform: translateY(-50%); font: 600 2.2mm/1 var(--mono); color: var(--ink-3); white-space: nowrap; }
+.half-no::after { content: ''; position: absolute; left: calc(100% + 0.4mm); top: 50%; width: 1.2mm; border-top: 0.25mm solid var(--rule-2); }
 
 /* 편집 칸 */
 .editor {

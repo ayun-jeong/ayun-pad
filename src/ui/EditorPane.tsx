@@ -19,6 +19,8 @@ import { openNote, readTypo, type NoteDoc } from '../store/noteDoc';
 import { hub } from '../store/sync';
 
 export const PX_PER_MM = 96 / 25.4;
+// 종이 왼쪽 회색 칸(쪽 번호 자리). 종이 밖이라 필기와 붙지 않고 인쇄되지 않는다.
+export const GUTTER_MM = 7;
 
 interface Props {
   noteId: string;
@@ -186,21 +188,23 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
     '--wb': typo.wordBreak === 'all' ? 'break-all' : 'keep-all',
     padding: `${typo.mTop}mm ${typo.mInner}mm ${typo.mTop}mm ${typo.mOuter}mm`,
   } as CSSProperties;
-  const widthPx = HALF_W * PX_PER_MM;
+  const widthPx = (HALF_W + GUTTER_MM) * PX_PER_MM;
   const onExtent = useCallback((b: number) => setExtent(b), []);
 
   return (
     <div className="zoom-outer" style={{ width: widthPx * zoom, height: Math.max(paperH, halfPx) * zoom }}>
-      <div className="zoom-inner" style={{ transform: `scale(${zoom})` }}>
+      <div className="zoom-inner" style={{ transform: `scale(${zoom})`, paddingLeft: `${GUTTER_MM}mm` }}>
+        <div className="half-nos" style={{ width: `${GUTTER_MM}mm` }} aria-hidden="true">
+          {Array.from({ length: halves }, (_, k) => (
+            <span key={k} className="half-no" style={{ top: `calc(${typo.mTop}mm + ${k * halfPx}px)` }}>
+              {halfLabel(k)}
+            </span>
+          ))}
+        </div>
         <div className="paper" ref={paperRef} style={vars}>
           <div className="paper-pad">
-            <span className="guide-label first" style={{ top: 0 }}>
-              {halfLabel(0)}
-            </span>
             {Array.from({ length: halves - 1 }, (_, k) => (
-              <div key={k} className="guide" style={{ top: (k + 1) * halfPx }}>
-                <span className="guide-label">{halfLabel(k + 1)}</span>
-              </div>
+              <div key={k} className="guide" style={{ top: (k + 1) * halfPx, left: `-${typo.mOuter}mm`, right: `-${typo.mInner}mm` }} />
             ))}
             <div className="sheet-src" ref={srcRef} style={{ minHeight: `${Math.max(fit.usable, extent + 1)}mm` }}>
               <div ref={mountRef} />

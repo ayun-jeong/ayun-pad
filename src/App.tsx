@@ -22,7 +22,7 @@ import { consumeLoginLink, supabase } from './store/supabase';
 import { hub, type SyncStatus } from './store/sync';
 import { purgeOld } from './store/trash';
 import { Account, statusText } from './ui/Account';
-import { EditorPane, PX_PER_MM } from './ui/EditorPane';
+import { EditorPane, GUTTER_MM, PX_PER_MM } from './ui/EditorPane';
 import { FindPanel } from './ui/FindPanel';
 import { Help } from './ui/Help';
 import { buildPrintSheets, PagesView, type ViewMode } from './ui/PagesView';
@@ -53,7 +53,7 @@ const lsSet = (k: string, v: string) => {
 function initialZoom(): number {
   const w = window.innerWidth;
   if (w >= 1000) return 1.5;
-  return Math.max(0.5, Math.min(1.5, (w - 24) / (105 * PX_PER_MM)));
+  return Math.max(0.5, Math.min(1.5, (w - 24) / ((105 + GUTTER_MM) * PX_PER_MM)));
 }
 
 const keepFocus = (e: { preventDefault(): void }) => e.preventDefault();
