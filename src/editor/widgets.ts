@@ -2,7 +2,7 @@ import type { Node } from 'prosemirror-model';
 import { NodeSelection, Plugin, Selection, type EditorState, type Transaction } from 'prosemirror-state';
 import { TableView } from 'prosemirror-tables';
 import type { EditorView, NodeView } from 'prosemirror-view';
-import { undo } from 'y-prosemirror';
+import { undo, yUndoPluginKey } from 'y-prosemirror';
 import { arrowize } from './arrows';
 import { MAX_DEPTH } from './model';
 import { schema } from './schema';
@@ -490,7 +490,10 @@ export function insertBlock(state: EditorState, dispatch: ((tr: Transaction) => 
   if (after >= tr.doc.content.size || tr.doc.resolve(after).nodeAfter?.type !== schema.nodes.line) tr.insert(after, schema.nodes.line.create({ depth: baseDepth }));
   const inside = node.type === schema.nodes.table ? at + 1 : after + 1;
   tr.setSelection(Selection.near(tr.doc.resolve(Math.min(inside, tr.doc.content.size))));
+  const um = (yUndoPluginKey.getState(state) as { undoManager?: { stopCapturing(): void } } | undefined)?.undoManager;
+  um?.stopCapturing(); // 위젯 넣기는 한 걸음으로 되돌린다
   dispatch(tr.scrollIntoView());
+  um?.stopCapturing();
   return node;
 }
 

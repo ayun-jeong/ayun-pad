@@ -20,6 +20,7 @@ const branchRule = new InputRule(/^-\s$/, (state, _match, start, end) => {
 // 노트 설정에서 끌 수 있다(settings.arrows). 바로 ⌫를 누르면 친 그대로 돌아간다.
 export interface RuleSettings {
   arrows: boolean;
+  math?: boolean; // = + - 기호 퀵 메뉴(mathMenu.ts)
 }
 
 const arrow = (settings: RuleSettings, re: RegExp, ch: string) =>

@@ -1,5 +1,5 @@
 import { Fragment, Slice, type ResolvedPos } from 'prosemirror-model';
-import { lineText } from './decorations';
+import { mathText } from './mathNodes';
 import { clampDepth, type Kind } from './model';
 import { schema } from './schema';
 import { parseTreeText, serializeTree, type TextLine } from './treeText';
@@ -8,7 +8,7 @@ import { parseTreeText, serializeTree, type TextLine } from './treeText';
 export function clipboardTextSerializer(slice: Slice): string {
   const lines: TextLine[] = [];
   slice.content.forEach((n) => {
-    if (n.type === schema.nodes.line) lines.push({ depth: n.attrs.depth, kind: n.attrs.kind as Kind, text: lineText(n).replace(/​/g, ' ') });
+    if (n.type === schema.nodes.line) lines.push({ depth: n.attrs.depth, kind: n.attrs.kind as Kind, text: n.textBetween(0, n.content.size, undefined, (leaf) => mathText(leaf) ?? ' ') });
   });
   if (!lines.length) return slice.content.textBetween(0, slice.content.size, '\n', ' ');
   return serializeTree(lines);

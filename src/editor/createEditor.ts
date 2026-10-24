@@ -15,6 +15,8 @@ import { rulesPlugin, type RuleSettings } from './inputRules';
 import { penPlugin } from './pen';
 import { schema } from './schema';
 import { shortcutPlugin, type ShortcutHost } from './shortcuts';
+import { mathMenuPlugin } from './mathMenu';
+import { mathNodeViews } from './mathNodes';
 import { slashPlugin } from './slash';
 import { nodeViews, TableViewClass, trailingLinePlugin } from './widgets';
 
@@ -31,6 +33,7 @@ export function createEditor(mount: HTMLElement, fragment: Y.XmlFragment, hooks:
       ySyncPlugin(fragment),
       yUndoPlugin(undoManager ? { undoManager } : undefined),
       slashPlugin(hooks),
+      mathMenuPlugin(settings ?? { arrows: true, math: true }),
       shortcutPlugin(hooks),
       rulesPlugin(settings),
       columnResizing({ View: TableViewClass, cellMinWidth: 24 }),
@@ -58,7 +61,7 @@ export function createEditor(mount: HTMLElement, fragment: Y.XmlFragment, hooks:
     state,
     clipboardTextSerializer,
     clipboardTextParser,
-    nodeViews,
+    nodeViews: { ...nodeViews, ...mathNodeViews },
     attributes: { class: 'editor', spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off', 'aria-label': '노트' },
     // ySyncPlugin이 생성자 안에서 첫 내용을 바로 보내므로 바깥 변수(view)가 아니라 this를 쓴다.
     dispatchTransaction(this: EditorView, tr) {

@@ -147,7 +147,7 @@ export function shortcutPlugin(host: ShortcutHost, only?: (id: string) => boolea
   return new Plugin({
     view(view) {
       const onKey = (e: KeyboardEvent) => {
-        if ((e.target as HTMLElement | null)?.closest?.('.wg')) return;
+        if ((e.target as HTMLElement | null)?.closest?.('.wg, .mi')) return;
         const run = map.get(keyId(e));
         if (!run) return;
         e.preventDefault();

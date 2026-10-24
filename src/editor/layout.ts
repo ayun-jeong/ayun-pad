@@ -17,6 +17,7 @@ export interface Typo {
   wordBreak: 'keep' | 'all'; // 단어 단위 / 글자 단위 줄바꿈
   auto: boolean; // 자동 색 규칙(꺾쇠 줄 빨강 · 깊이별 형광펜 · 예시 파랑)
   arrows: boolean; // <- -> <| |> 화살표 자동 변환
+  math: boolean; // = + - 기호 퀵 메뉴
 }
 
 export const DEFAULT_TYPO: Typo = {
@@ -30,6 +31,7 @@ export const DEFAULT_TYPO: Typo = {
   wordBreak: 'all',
   auto: true,
   arrows: true,
+  math: true,
 };
 
 export const PRESETS: Record<'normal' | 'dense' | 'ultra', { name: string; fontPt: number; pitchMm: number; wordBreak: Typo['wordBreak'] }> = {
@@ -80,6 +82,7 @@ export function normalizeTypo(raw: Partial<Typo> | undefined): Typo {
     wordBreak: t.wordBreak === 'keep' ? 'keep' : 'all',
     auto: t.auto !== false,
     arrows: t.arrows !== false,
+    math: t.math !== false,
   };
 }
 

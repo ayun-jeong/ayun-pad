@@ -12,6 +12,7 @@ import type { RuleSettings } from '../editor/inputRules';
 import { fitPitch, halfLabel, HALF_W, DEFAULT_TYPO, type Typo } from '../editor/layout';
 import { fontStack, schema } from '../editor/schema';
 import type { AppAction } from '../editor/shortcuts';
+import { chooseMath, MATH_MENUS, mathKey, type MathMenuState } from '../editor/mathMenu';
 import { runSlash, slashKey, type SlashState } from '../editor/slash';
 import { ensureFont } from '../store/fontSync';
 import { openNote, readTypo, type NoteDoc } from '../store/noteDoc';
@@ -64,13 +65,14 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
   const [tick, bumpTick] = useReducer((x: number) => x + 1, 0);
   const [extent, setExtent] = useState(0);
   const [slash, setSlash] = useState<SlashState | null>(null);
+  const [math, setMath] = useState<MathMenuState | null>(null);
   const cb = useRef({ toast, app, onState, onEdit, onDoc });
   cb.current = { toast, app, onState, onEdit, onDoc };
   const typoRef = useRef(typo);
   typoRef.current = typo;
   const hostRef = useRef<EditorHooks | null>(null);
   // 노트 설정(화살표 자동 변환 등). 편집기 규칙이 이 객체를 그때그때 읽는다.
-  const settings = useRef<RuleSettings>({ arrows: true }).current;
+  const settings = useRef<RuleSettings>({ arrows: true, math: true }).current;
   const frame = useRef(0);
   const liveRef = useRef<Live | null>(null);
   liveRef.current = live;
@@ -120,6 +122,8 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
           cb.current.onState(state);
           const st = slashKey.getState(state);
           setSlash(st?.active ? st : null);
+          const ms = mathKey.getState(state);
+          setMath(ms?.active ? ms : null);
           relayout();
         },
       };
@@ -165,9 +169,10 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
   // 노트 설정: 화살표 자동 변환은 규칙이 바로 읽고, 자동 색은 장식을 다시 만든다
   useEffect(() => {
     settings.arrows = typo.arrows;
+    settings.math = typo.math;
     const v = live?.view;
     if (v && !v.isDestroyed && autoKey.getState(v.state)?.auto !== typo.auto) v.dispatch(v.state.tr.setMeta(autoKey, { auto: typo.auto }));
-  }, [typo.arrows, typo.auto, live, settings]);
+  }, [typo.arrows, typo.auto, typo.math, live, settings]);
   useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
   const fit = fitPitch(typo);
@@ -220,7 +225,46 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
         </div>
       </div>
       {slash && live && hostRef.current && <SlashMenu st={slash} view={live.view} host={hostRef.current} />}
+      {math && live && <MathMenu st={math} view={live.view} />}
     </div>
+  );
+}
+
+// 기호 퀵 메뉴(= + -): 커서 바로 위에. 그냥 계속 치면 닫히고 친 기호가 남는다.
+function MathMenu({ st, view }: { st: MathMenuState; view: EditorView }) {
+  let at: { left: number; top: number; bottom: number };
+  try {
+    at = view.coordsAtPos(st.pos + 1);
+  } catch {
+    return null;
+  }
+  const items = MATH_MENUS[st.ch] ?? [];
+  const h = 36;
+  const w = items.length * 44 + 90;
+  const above = at.top - h - 6 > 4;
+  const style: CSSProperties = { left: Math.max(8, Math.min(at.left - 16, window.innerWidth - w - 8)), top: above ? at.top - h - 6 : at.bottom + 6 };
+  return createPortal(
+    <div className={`mathmenu${st.engaged ? ' on' : ''}`} style={style} role="listbox" aria-label="기호 고르기" onPointerDown={(e) => e.preventDefault()}>
+      {items.map((it, i) => (
+        <button key={it.label} type="button" role="option" aria-selected={i === st.index} className={i === st.index ? 'cur' : ''} title={it.title} onClick={() => chooseMath(view, i)}>
+          {it.node === 'frac' ? (
+            <span className="mm-frac" aria-label="분수">
+              <i>a</i>
+              <i>b</i>
+            </span>
+          ) : it.node === 'sqrt' ? (
+            <span aria-label="루트">
+              √<span className="mm-sq">x</span>
+            </span>
+          ) : (
+            it.label
+          )}
+          {st.engaged && <kbd>{i + 1}</kbd>}
+        </button>
+      ))}
+      <span className="mm-hint">{st.engaged ? '← → · 숫자 · Enter' : 'Tab 고르기 · ↑'}</span>
+    </div>,
+    document.body,
   );
 }
 

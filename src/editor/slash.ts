@@ -1,6 +1,7 @@
 import { Plugin, PluginKey, type EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { matchRank } from './hangul';
+import { insertMath } from './mathNodes';
 import { schema } from './schema';
 import { afterComposition, type AppAction, type ShortcutHost } from './shortcuts';
 import { focusFirstLabel, insertBlock, makeTable, makeTimeline, type GraphTpl } from './widgets';
@@ -75,6 +76,8 @@ export const SLASH_ITEMS: SlashItem[] = [
   { name: '수요공급', alias: ['supply demand'], hint: '수요 · 공급 곡선', run: (v, a) => graph(v, 'sd', num(a[0], 12)) },
   { name: '손익분기점', alias: ['bep'], hint: '매출액 · 총비용 · 고정비', run: (v, a) => graph(v, 'bep', num(a[0], 12)) },
   { name: '제품수명주기', alias: ['plc'], hint: '도입 · 성장 · 성숙 · 쇠퇴', run: (v, a) => graph(v, 'plc', num(a[0], 12)) },
+  { name: '분수', alias: ['fraction'], hint: '분자 / 분모 · Tab ↑↓로 오가기', run: (v) => insertMath(v, 'frac') },
+  { name: '루트', alias: ['sqrt', '제곱근'], hint: '√[  ] · Tab · →로 밖으로', run: (v) => insertMath(v, 'sqrt') },
   { name: '글상자', alias: ['text'], hint: '종이를 눌러 그 자리에 글상자', run: draw('draw-text') },
   { name: '화살표', alias: ['arrow'], hint: '누를 때마다 꺾이고, 두 번 눌러 끝', run: draw('draw-arrow') },
   { name: '선', alias: ['line'], hint: '화살촉 없는 꺾은선', run: draw('draw-line') },
@@ -125,7 +128,7 @@ export function runSlash(view: EditorView, host: ShortcutHost, item?: SlashItem)
   if (!it) return false;
   view.dispatch(view.state.tr.delete(st.from, st.to));
   it.run(view, st.args, host);
-  if (!view.isDestroyed && it.name !== '연표') view.focus(); // 연표는 첫 연도 칸으로 커서가 간다
+  if (!view.isDestroyed && it.name !== '연표' && it.name !== '분수' && it.name !== '루트') view.focus(); // 연표 · 분수 · 루트는 첫 칸으로 커서가 간다
   return true;
 }
 
@@ -152,6 +155,7 @@ export function slashPlugin(host: ShortcutHost): Plugin<SlashState> {
     // 메뉴가 떠 있을 때 ↑ ↓ Enter Tab Esc는 메뉴가 먼저 받는다(단축키 · 줄 나누기보다 먼저).
     view(view) {
       const onKey = (e: KeyboardEvent) => {
+        if ((e.target as HTMLElement | null)?.closest?.('.wg, .mi')) return;
         const st = slashKey.getState(view.state);
         if (!st?.active) return;
         const code = e.code;

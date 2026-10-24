@@ -408,3 +408,27 @@ textarea.tbox.tedit { pointer-events: auto; resize: none; overflow: hidden; back
 /* 그리는 동안 알림은 아래 도구 막대 위로 */
 body.drawing .toasts { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 104px); }
 .desk.drawing { padding-bottom: 200px; }
+
+/* 기호 퀵 메뉴(= + -) · 분수 · 루트 */
+.mathmenu { position: fixed; z-index: 45; display: flex; align-items: center; gap: 2px; padding: 3px; background: var(--surface); border: 1px solid var(--rule-2); border-radius: 9px; box-shadow: var(--shadow); font-size: 15px; }
+.mathmenu button { border: 1px solid transparent; background: transparent; border-radius: 6px; min-width: 32px; height: 28px; padding: 0 7px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+.mathmenu button:hover { background: var(--bg); }
+.mathmenu button.cur { border-color: var(--rule-2); background: var(--bg); }
+.mathmenu.on button.cur { border-color: var(--ink); }
+.mathmenu kbd { font-size: 10px; min-width: 13px; padding: 0 2px; color: var(--ink-3); border-bottom-width: 1px; }
+.mm-hint { color: var(--ink-3); font-size: 11px; padding: 0 6px 0 4px; white-space: nowrap; }
+.mm-frac { display: inline-flex; flex-direction: column; font-size: 10px; line-height: 1.05; }
+.mm-frac i { font-style: normal; text-align: center; padding: 0 2px; }
+.mm-frac i + i { border-top: 1px solid currentColor; }
+.mm-sq { border-top: 1px solid currentColor; padding: 0 2px; }
+.mi { user-select: none; -webkit-user-select: none; }
+.mi .wg-ed { user-select: text; -webkit-user-select: text; }
+.frac { display: inline-flex; flex-direction: column; justify-content: center; vertical-align: top; height: var(--lh); margin: 0 0.1em; font-size: 0.58em; line-height: 1; }
+.frac .fr-n, .frac .fr-d { display: block; text-align: center; padding: 0 0.22em; min-width: 1em; white-space: nowrap; }
+.frac .fr-d { border-top: 0.2mm solid currentColor; padding-top: 0.04em; }
+.sqrt { display: inline-flex; align-items: baseline; vertical-align: baseline; line-height: 1; margin: 0 0.05em; }
+.sqrt .sq-sign { margin-right: -0.03em; }
+.sqrt .sq-in { display: inline-block; border-top: 0.2mm solid currentColor; padding: 0.06em 0.15em 0 0.08em; min-width: 0.8em; line-height: 1; }
+.mi .wg-ed:empty { outline: 0.15mm dotted #9aa1ab; outline-offset: -0.15mm; min-height: 0.9em; }
+.mi.sel { outline: 0.25mm solid rgba(0, 100, 232, 0.45); border-radius: 0.3mm; }
+.pcol .mi .wg-ed:empty { outline: none; }

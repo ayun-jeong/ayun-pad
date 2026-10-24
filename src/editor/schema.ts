@@ -94,6 +94,35 @@ export const schema = new Schema({
     tl: widget('tl'),
     graph: widget('graph'),
     text: { group: 'inline' },
+    // 분수: 줄 안에 들어가는 작은 위젯(분자 · 분모는 맨 글). 한 줄 높이 안에 그려서 줄 간격이 벌어지지 않는다(mathNodes.ts).
+    frac: {
+      inline: true,
+      group: 'inline',
+      atom: true,
+      selectable: true,
+      draggable: false,
+      attrs: { n: { default: '' }, d: { default: '' } },
+      parseDOM: [
+        {
+          tag: 'span.frac',
+          getAttrs: (el) => ({ n: (el as HTMLElement).dataset.n ?? '', d: (el as HTMLElement).dataset.d ?? '' }),
+        },
+      ],
+      toDOM: (n): DOMOutputSpec => ['span', { class: 'frac', 'data-n': n.attrs.n, 'data-d': n.attrs.d }, ['span', { class: 'fr-n' }, n.attrs.n], ['span', { class: 'fr-d' }, n.attrs.d]],
+      leafText: (n) => `${n.attrs.n}/${n.attrs.d}`,
+    },
+    // 루트: √ 와 근호 안 글칸 하나(mathNodes.ts)
+    sqrt: {
+      inline: true,
+      group: 'inline',
+      atom: true,
+      selectable: true,
+      draggable: false,
+      attrs: { v: { default: '' } },
+      parseDOM: [{ tag: 'span.sqrt', getAttrs: (el) => ({ v: (el as HTMLElement).dataset.v ?? '' }) }],
+      toDOM: (n): DOMOutputSpec => ['span', { class: 'sqrt', 'data-v': n.attrs.v }, ['span', { class: 'sq-sign' }, '√'], ['span', { class: 'sq-in' }, n.attrs.v]],
+      leafText: (n) => `√${n.attrs.v}`,
+    },
     br: {
       inline: true,
       group: 'inline',
