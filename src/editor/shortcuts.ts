@@ -1,7 +1,7 @@
 import { Plugin, type Command } from 'prosemirror-state';
 import { addRowAfter, goToNextCell, isInTable } from 'prosemirror-tables';
 import type { EditorView } from 'prosemirror-view';
-import { circleCmd, hlCmd, indentCmd, moveCmd, penCmd, toggleBranchCmd, trackCmd } from './commands';
+import { circleCmd, hlCmd, indentCmd, moveCmd, penCmd, sideCmd, toggleBranchCmd, trackCmd } from './commands';
 import { PEN_NAME, isPenKey } from './model';
 
 export type AppAction =
@@ -121,6 +121,8 @@ export function buildShortcuts(): Map<string, Run> {
     const was = v.state.selection.$from.parent.attrs.kind;
     if (toggleBranchCmd(v.state, v.dispatch, v)) h.toast(was === 'branch' ? '보통 줄' : '꺾쇠 줄');
   });
+  // ⌥] : 글 바로 옆으로 가지(┬─). 자식이 있으면 아래 ↔ 옆 바꾸기
+  map.set('alt+BracketRight', (v, h) => sideCmd((side, created) => h.toast(created ? '옆 가지: 이어서 Enter로 다음 항목' : side ? '자식을 옆으로' : '자식을 아래로'))(v.state, v.dispatch, v));
   map.set('mod+BracketRight', exec(indentCmd(1)));
   map.set('mod+BracketLeft', exec(indentCmd(-1)));
   map.set('mod+shift+ArrowUp', exec(moveCmd(-1)));

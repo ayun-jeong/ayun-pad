@@ -2,7 +2,7 @@ import type { Mark, MarkType, Node, ResolvedPos } from 'prosemirror-model';
 import { TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
 import { headRange, infoOf, lineInfos } from './decorations';
 import { clamp } from './layout';
-import type { LineInfo } from './model';
+import { MAX_DEPTH, type LineInfo } from './model';
 import { penKey } from './pen';
 import { branchDepth, emptyEnter, planIndent, planMove } from './rules';
 import { schema } from './schema';
@@ -249,6 +249,35 @@ export const toggleBranchCmd: Command = (state, dispatch) => {
   dispatch?.(state.tr.setNodeMarkup($f.before(), undefined, { ...line.attrs, depth: branchDepth(line.attrs.depth as number, prevInfo(c)), kind: 'branch' }));
   return true;
 };
+
+// ⌥] 옆 가지: 자식이 없는 줄이면 글 바로 옆에 첫 자식(꺾쇠 줄)을 만들고 그리로 커서,
+// 자식이 있는 줄이면 자식을 아래 ↔ 옆으로 바꾼다. 맨 바깥 줄(문서)에서만(표 칸 안은 아래로만).
+export function sideCmd(report?: (side: boolean, created: boolean) => void): Command {
+  return (state, dispatch) => {
+    const $f = state.selection.$from;
+    const c = ctxOf($f);
+    if (!c || c.depth !== 0) return false;
+    const line = $f.parent;
+    const d = line.attrs.depth as number;
+    const next = c.index + 1 < c.container.childCount ? c.container.child(c.index + 1) : null;
+    const hasKids = !!next && (next.attrs.depth as number) > d;
+    if (!hasKids && d >= MAX_DEPTH) return false;
+    if (!dispatch) return true;
+    const pos = $f.before();
+    if (hasKids) {
+      dispatch(state.tr.setNodeMarkup(pos, undefined, { ...line.attrs, side: !line.attrs.side }));
+      report?.(!line.attrs.side, false);
+      return true;
+    }
+    const tr = state.tr.setNodeMarkup(pos, undefined, { ...line.attrs, side: true });
+    const after = pos + line.nodeSize;
+    tr.insert(after, schema.nodes.line.create({ depth: d + 1, kind: 'branch' }));
+    tr.setSelection(TextSelection.create(tr.doc, after + 1));
+    dispatch(tr.scrollIntoView());
+    report?.(true, true);
+    return true;
+  };
+}
 
 // 같은 그릇에서 바로 위 블록의 깊이 · 종류('-' + 스페이스 규칙에 쓴다)
 export function prevInfo(c: Ctx): LineInfo | null {

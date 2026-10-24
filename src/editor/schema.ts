@@ -69,13 +69,14 @@ export const schema = new Schema({
     line: {
       group: 'block',
       content: 'inline*',
-      attrs: { ...blockAttrs, kind: { default: 'plain' } },
+      // side: 이 줄의 자식(꺾쇠 줄)을 아래가 아니라 글 바로 옆으로(┬─). decorations.ts가 그린다.
+      attrs: { ...blockAttrs, kind: { default: 'plain' }, side: { default: false } },
       parseDOM: [
         {
           tag: 'p',
           getAttrs: (el) => {
             const e = el as HTMLElement;
-            return { depth: depthOf(e), kind: e.dataset.kind === 'branch' ? 'branch' : 'plain', id: e.dataset.id || null };
+            return { depth: depthOf(e), kind: e.dataset.kind === 'branch' ? 'branch' : 'plain', id: e.dataset.id || null, side: e.dataset.side === '1' };
           },
         },
         { tag: 'li', getAttrs: () => ({ depth: 2, kind: 'branch' }) },
@@ -86,7 +87,7 @@ export const schema = new Schema({
       ],
       toDOM: (n): DOMOutputSpec => [
         'p',
-        { class: 'ln', 'data-depth': String(n.attrs.depth), 'data-kind': n.attrs.kind, ...(n.attrs.id ? { 'data-id': n.attrs.id } : {}) },
+        { class: 'ln', 'data-depth': String(n.attrs.depth), 'data-kind': n.attrs.kind, ...(n.attrs.id ? { 'data-id': n.attrs.id } : {}), ...(n.attrs.side ? { 'data-side': '1' } : {}) },
         0,
       ],
     },

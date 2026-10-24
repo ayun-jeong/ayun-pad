@@ -5,7 +5,7 @@ import { redo, undo } from 'y-prosemirror';
 import type * as Y from 'yjs';
 import { DEFAULT_DRAW, type DrawState } from './draw/ShapesLayer';
 import type { Tool } from './draw/model';
-import { circleCmd, fontCmd, hlCmd, indentCmd, penCmd, toggleBranchCmd, trackCmd } from './editor/commands';
+import { circleCmd, fontCmd, hlCmd, indentCmd, penCmd, sideCmd, toggleBranchCmd, trackCmd } from './editor/commands';
 import { lineText } from './editor/decorations';
 import { findKey } from './editor/find';
 import { fitPitch, type Typo } from './editor/layout';
@@ -882,6 +882,9 @@ export function App() {
           </button>
           <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => toggleBranchCmd(v.state, v.dispatch, v))}>
             ├ 꺾쇠
+          </button>
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => sideCmd()(v.state, v.dispatch, v))}>
+            ┬ 옆 가지
           </button>
           <button type="button" className={subbar === 'pen' ? 'on' : ''} onPointerDown={keepFocus} onClick={() => setSubbar((x) => (x === 'pen' ? null : 'pen'))}>
             <i className={`pen-dot${pen ? '' : ' pen-auto'}`} style={pen ? { background: colorOf(pen) } : undefined} /> 펜

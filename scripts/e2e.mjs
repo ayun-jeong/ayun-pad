@@ -284,6 +284,64 @@ try {
   const colonRed = await page.$$eval('.editor > p', (ps) => [...ps[ps.length - 1].querySelectorAll('.a-red')].map((x) => x.textContent).join(''));
   check(colonRed === '테스트 하는 중', `띄어쓰기 있는 줄도 ':' 앞은 바로 빨강 (${colonRed})`);
 
+  // 옆 가지(⌥]): 경영학 ┬─ 마케팅 / ├─ 인사관리 / └─ 재무관리
+  await page.click('.addnote');
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+  await page.click('.editor');
+  await k.type('경영학');
+  await alt('BracketRight');
+  await k.type('마케팅');
+  await k.press('Enter');
+  await k.type('인사관리');
+  await k.press('Enter');
+  await k.type('재무관리');
+  await sleep(300);
+  const geo = () =>
+    page.$$eval('.editor > p', (ps) =>
+      ps.map((p) => {
+        const r = document.createRange();
+        r.selectNodeContents(p);
+        const rs = [...r.getClientRects()];
+        return { t: p.textContent, top: Math.round(p.getBoundingClientRect().top), left: Math.round(rs[0]?.left ?? 0), right: Math.round(rs[rs.length - 1]?.right ?? 0), k: p.dataset.kind };
+      }),
+    );
+  let G = await geo();
+  check(G.length === 4 && G[1].top === G[0].top && G[1].left > G[0].right, `첫 옆 가지는 부모 글 바로 옆 같은 줄 (${JSON.stringify(G.slice(0, 2))})`);
+  check(Math.abs(G[2].left - G[1].left) <= 1 && Math.abs(G[3].left - G[1].left) <= 1 && G[2].top > G[1].top, `다음 항목은 아래에 같은 x로 정렬 (${G.map((g) => g.left).join(',')})`);
+  check(G.slice(1).every((g) => g.k === 'branch'), '옆 가지 항목은 꺾쇠 줄(자동 빨강 · 형광펜)');
+  const firstBg = await page.$eval('.editor > p:nth-child(2)', (p) => p.getAttribute('style') ?? '');
+  check(firstBg.includes('margin-top') && firstBg.includes('gradient'), '┬─ 가지선이 그려짐');
+  // 부모 글이 길어지면 옆 가지도 따라 옮겨진다
+  await page.evaluate(() => {
+    const v = window.__ayunpad.view();
+    v.dispatch(v.state.tr.insertText(' 원론', v.state.doc.child(0).nodeSize - 1));
+  });
+  await sleep(300);
+  const G2 = await geo();
+  check(G2[1].left > G[1].left + 5 && G2[1].left > G2[0].right && Math.abs(G2[3].left - G2[1].left) <= 1, `부모 글이 길어지면 옆 가지가 따라감 (${G[1].left} → ${G2[1].left})`);
+  // ⌥] 를 부모 줄에서 → 아래로, 한 번 더 → 옆으로
+  await page.evaluate(() => {
+    const v = window.__ayunpad.view();
+    v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, 2)));
+    v.focus();
+  });
+  await alt('BracketRight');
+  await sleep(300);
+  G = await geo();
+  check(G[1].top > G[0].top && G[1].left < G2[1].left, `부모 줄에서 ⌥] → 자식을 아래로 (${G[1].top} > ${G[0].top})`);
+  await alt('BracketRight');
+  await sleep(300);
+  G = await geo();
+  check(G[1].top === G[0].top, '⌥] 한 번 더 → 다시 옆으로');
+  // A4 보기에도 같은 모양
+  await alt('Digit3');
+  await page.waitForSelector('.pages.a4 .psheet');
+  await sleep(200);
+  const a4 = await page.$$eval('.pages.a4 .psheet .editor > p', (ps) => ps.slice(0, 2).map((p) => Math.round(p.getBoundingClientRect().top)));
+  check(a4[0] === a4[1], `A4 보기에서도 첫 옆 가지가 부모와 같은 줄 (${a4.join(',')})`);
+  await alt('Digit1');
+  await sleep(200);
+
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();
 } catch (e) {
