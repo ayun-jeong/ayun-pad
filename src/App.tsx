@@ -8,14 +8,20 @@ import { colorOf, isPenKey, PEN_NAME } from './editor/model';
 import { penKey } from './editor/pen';
 import { keyId, type AppAction } from './editor/shortcuts';
 import { putFontFile, registerFont } from './store/fontFiles';
-import { addFont, notesOf, openLibrary, sortedSubjects, updateNote } from './store/library';
-import { readTypo, writeTypo, type NoteDoc } from './store/noteDoc';
+import { ensureFont, uploadFont } from './store/fontSync';
+import { addFont, dropSample, isUntouchedSample, notesOf, openLibrary, sortedSubjects, updateNote } from './store/library';
+import { openNote, readTypo, writeTypo, type NoteDoc } from './store/noteDoc';
 import { seedIfEmpty } from './store/seed';
+import { consumeLoginLink, supabase } from './store/supabase';
+import { hub, type SyncStatus } from './store/sync';
+import { purgeOld } from './store/trash';
+import { Account, statusText } from './ui/Account';
 import { EditorPane, PX_PER_MM } from './ui/EditorPane';
 import { Help } from './ui/Help';
 import { buildPrintSheets, PagesView, type ViewMode } from './ui/PagesView';
 import { Sidebar } from './ui/Sidebar';
 import { TypePanel } from './ui/TypePanel';
+import { Versions } from './ui/Versions';
 
 const LAST = 'ayunpad-last';
 const lsGet = (k: string) => {
@@ -29,7 +35,7 @@ const lsSet = (k: string, v: string) => {
   try {
     localStorage.setItem(k, v);
   } catch {
-    /* 저장소를 못 쓰는 창(사생활 보호 모드 등)에서는 마지막 노트만 기억하지 못한다 */
+    /* 저장소를 못 쓰는 창(사생활 보호 모드 등)에서는 기억만 못 한다 */
   }
 };
 
@@ -40,8 +46,8 @@ function initialZoom(): number {
   return Math.max(0.5, Math.min(1.5, (w - 24) / (105 * PX_PER_MM)));
 }
 
-const hhmm = (t: number) => new Date(t).toTimeString().slice(0, 5);
 const keepFocus = (e: { preventDefault(): void }) => e.preventDefault();
+const SNAP_EVERY = 10 * 60 * 1000;
 
 export function App() {
   const lib = useMemo(() => openLibrary(), []);
@@ -51,14 +57,16 @@ export function App() {
   const [sidebar, setSidebar] = useState(() => window.innerWidth > 900);
   const [panel, setPanel] = useState(false);
   const [help, setHelp] = useState(false);
+  const [account, setAccount] = useState(false);
+  const [versions, setVersions] = useState(false);
   const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([]);
   const [pen, setPen] = useState<string | null>(null);
   const [hasSel, setHasSel] = useState(false);
   const [zoom, setZoom] = useState(initialZoom);
-  const [savedAt, setSavedAt] = useState<number | null>(null);
   const [typo, setTypo] = useState<Typo | null>(null);
   const [mode, setMode] = useState<ViewMode>('edit');
   const [source, setSource] = useState<HTMLElement | null>(null);
+  const [sync, setSync] = useState<SyncStatus>(() => hub.status());
   const printRef = useRef<HTMLDivElement>(null);
   const typoRef = useRef<Typo | null>(null);
   typoRef.current = typo;
@@ -69,32 +77,106 @@ export function App() {
   const touched = useRef(0);
   const modeRef = useRef<ViewMode>('edit');
   modeRef.current = mode;
+  const snap = useRef({ dirty: false, last: Date.now() });
+  const persisted = useRef(false);
   const picker = useRef<HTMLInputElement>(null);
   const pickerMode = useRef<'pen' | 'hl'>('pen');
   noteRef.current = noteId;
 
+  const toast = useCallback((msg: string) => {
+    const id = Date.now() + Math.random();
+    setToasts((t) => [...t.slice(-2), { id, msg }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 2200);
+  }, []);
+
+  // 시작: 목록 열기 → (처음이면) 견본 → 로그인 확인 → 동기화
   useEffect(() => {
     const onLib = () => bump();
     lib.ydoc.on('update', onLib);
+    // 이 기기의 첫 로그인: 서버에 이미 목록이 있으면 손대지 않은 견본은 지우고 받는다(견본이 두 벌 생기지 않게).
+    hub.onLogin = async (uid) => {
+      const key = `ayunpad-synced-${uid}`;
+      if (!lsGet(key)) {
+        await lib.ready;
+        if (isUntouchedSample(lib)) {
+          const [a, b] = await Promise.all([
+            supabase.from('pad_docs').select('doc_id').eq('doc_id', 'library').limit(1),
+            supabase.from('pad_updates').select('id').eq('doc_id', 'library').limit(1),
+          ]);
+          if ((a.data?.length ?? 0) + (b.data?.length ?? 0) > 0) dropSample(lib);
+        }
+        lsSet(key, '1');
+      }
+      lib.fonts.forEach((f) => void uploadFont(f.id));
+    };
+    hub.attach('library', lib.ydoc);
+    const off = hub.subscribeStatus(setSync);
     void seedIfEmpty(lib).then((seeded) => {
       const ok = (id: string | null): id is string => !!id && !!lib.notes.get(id) && !lib.notes.get(id)?.deleted;
       const last = lsGet(LAST);
       const first = sortedSubjects(lib).flatMap((s) => notesOf(lib, s.id))[0]?.id ?? null;
       setNoteId(ok(last) ? last : (seeded ?? first));
       setReady(true);
-      lib.fonts.forEach((f) => void registerFont(f.id).catch(() => undefined));
+      lib.fonts.forEach((f) => void ensureFont(f.id));
+      purgeOld(lib);
+      void hub
+        .init()
+        .then(() => consumeLoginLink())
+        .then((err) => {
+          if (err) toast('로그인 링크가 만료됐거나 이미 쓰였어요. 새 링크가 필요합니다');
+        });
     });
-    return () => lib.ydoc.off('update', onLib);
-  }, [lib]);
+    return () => {
+      lib.ydoc.off('update', onLib);
+      off();
+    };
+  }, [lib, toast]);
+
+  // 지금 노트가 지워지거나(휴지통 · 다른 기기) 사라지면 첫 노트로
+  useEffect(() => {
+    if (!ready) return;
+    const n = noteId ? lib.notes.get(noteId) : undefined;
+    if (n && !n.deleted) return;
+    const first = sortedSubjects(lib).flatMap((s) => notesOf(lib, s.id))[0]?.id ?? null;
+    if (first !== noteId) {
+      setMode('edit');
+      setNoteId(first);
+    }
+  });
 
   useEffect(() => {
     if (noteId) lsSet(LAST, noteId);
   }, [noteId]);
 
-  const toast = useCallback((msg: string) => {
-    const id = Date.now() + Math.random();
-    setToasts((t) => [...t.slice(-2), { id, msg }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 1800);
+  // 로그인하면 열려 있지 않은 노트도 한 번씩 받아 둔다(다른 기기에서 고친 노트를 이 기기에도).
+  useEffect(() => {
+    if (!sync.userId) return;
+    let stop = false;
+    const t = setTimeout(async () => {
+      for (const n of [...lib.notes.values()]) {
+        if (stop) return;
+        if (n.id === noteRef.current) continue;
+        const d = openNote(n.id);
+        await d.ready;
+        await hub.pullOnce(`note:${n.id}`, d.ydoc);
+        d.destroy();
+      }
+    }, 2500);
+    return () => {
+      stop = true;
+      clearTimeout(t);
+    };
+  }, [sync.userId, lib]);
+
+  // 버전 기록: 고친 게 있으면 10분마다
+  useEffect(() => {
+    const t = setInterval(() => {
+      const d = docRef.current;
+      if (!d || !snap.current.dirty || Date.now() - snap.current.last < SNAP_EVERY) return;
+      snap.current = { dirty: false, last: Date.now() };
+      void hub.snapshot(`note:${d.id}`, d.ydoc, 'auto');
+    }, 60 * 1000);
+    return () => clearInterval(t);
   }, []);
 
   const withView = useCallback((fn: (v: EditorView) => void) => {
@@ -118,6 +200,7 @@ export function App() {
           setHelp((h) => !h);
           break;
         case 'type':
+          setAccount(false);
           setPanel((p) => !p);
           break;
         case 'print':
@@ -127,7 +210,8 @@ export function App() {
           toast('전체 검색은 5단계에서 만듭니다');
           break;
         case 'save':
-          toast('입력할 때마다 이 기기에 저장되고 있어요');
+          hub.resyncAll();
+          toast(hub.session ? '서버와 다시 맞췄어요' : '입력할 때마다 이 기기에 저장되고 있어요');
           break;
         case 'view-edit':
           setMode('edit');
@@ -169,6 +253,8 @@ export function App() {
       if (id === 'Escape') {
         setPanel(false);
         setHelp(false);
+        setAccount(false);
+        setVersions(false);
         if (modeRef.current !== 'edit') act('view-edit');
         return;
       }
@@ -208,9 +294,9 @@ export function App() {
     };
   }, []);
 
-  // 시험용 손잡이(scripts/e2e.mjs가 긴 노트를 붙여넣을 때 쓴다)
+  // 시험용 손잡이(scripts/e2e*.mjs가 쓴다)
   useEffect(() => {
-    (window as unknown as { __ayunpad: object }).__ayunpad = { view: () => viewRef.current };
+    (window as unknown as { __ayunpad: object }).__ayunpad = { view: () => viewRef.current, hub };
   }, []);
 
   // 보기 화면에서 줄을 누르면 편집 화면의 그 줄 맨 앞으로
@@ -233,14 +319,24 @@ export function App() {
   }, []);
 
   const onEdit = useCallback(() => {
+    snap.current.dirty = true;
+    if (!persisted.current) {
+      persisted.current = true;
+      void navigator.storage?.persist?.();
+    }
     const now = Date.now();
     if (now - touched.current < 1000) return;
     touched.current = now;
-    setSavedAt(now);
     if (noteRef.current) updateNote(lib, noteRef.current, { updatedAt: now });
   }, [lib]);
 
   const onDoc = useCallback((doc: NoteDoc | null, view: EditorView | null) => {
+    const prev = docRef.current;
+    if (!doc && prev && snap.current.dirty) {
+      snap.current.dirty = false;
+      void hub.snapshot(`note:${prev.id}`, prev.ydoc, 'close');
+    }
+    if (doc) snap.current = { dirty: false, last: Date.now() };
     unobserve.current?.();
     unobserve.current = null;
     docRef.current = doc;
@@ -249,10 +345,10 @@ export function App() {
       setTypo(null);
       return;
     }
-    const sync = () => setTypo(readTypo(doc));
-    sync();
-    doc.meta.observe(sync);
-    unobserve.current = () => doc.meta.unobserve(sync);
+    const syncTypo = () => setTypo(readTypo(doc));
+    syncTypo();
+    doc.meta.observe(syncTypo);
+    unobserve.current = () => doc.meta.unobserve(syncTypo);
   }, []);
 
   const onUpload = async (file: File) => {
@@ -262,6 +358,7 @@ export function App() {
     try {
       await registerFont(meta.id, buf);
       await putFontFile(meta.id, buf);
+      void uploadFont(meta.id, buf);
       changeTypo({ font: meta.id });
       toast(`‘${name}’ 글꼴을 이 노트에 썼어요`);
     } catch {
@@ -290,7 +387,18 @@ export function App() {
           <i className={`pen-dot${pen ? '' : ' pen-auto'}`} style={pen ? { background: colorOf(pen) } : undefined} />
           <span className="wide-only">{penText}</span>
         </span>
-        <span className="status">{savedAt ? `이 기기에 저장됨 · ${hhmm(savedAt)}` : '이 기기에 저장됨'}</span>
+        <button
+          type="button"
+          className={`tbtn sync ${sync.state}`}
+          title={statusText(sync)}
+          onClick={() => {
+            setPanel(false);
+            setAccount((x) => !x);
+          }}
+        >
+          <i className="sync-dot" />
+          <span className="wide-only">{sync.state === 'local' ? '로그인 · 이 기기에만 저장' : statusText(sync)}</span>
+        </button>
         <div className="seg modes" role="group" aria-label="보기">
           <button type="button" className={mode === 'edit' ? 'on' : ''} onClick={() => act('view-edit')} title="편집 (⌥1)">
             편집
@@ -314,7 +422,7 @@ export function App() {
             +
           </button>
         </div>
-        <button type="button" className={`tbtn${panel ? ' on' : ''}`} onClick={() => setPanel((p) => !p)}>
+        <button type="button" className={`tbtn${panel ? ' on' : ''}`} onClick={() => act('type')}>
           Aa<span className="wide-only"> 글자 모양</span>
         </button>
         <button type="button" className="tbtn" onClick={() => setHelp(true)} aria-label="단축키 도움말">
@@ -342,7 +450,7 @@ export function App() {
             {mode !== 'edit' && source && typo && <PagesView mode={mode} source={source} typo={typo} zoom={zoom} onPick={pickLine} />}
           </>
         ) : (
-          <p style={{ textAlign: 'center', color: 'var(--ink-3)' }}>노트를 여는 중…</p>
+          <p style={{ textAlign: 'center', color: 'var(--ink-3)' }}>{ready ? '왼쪽 목록에서 + 과목이나 + 노트로 시작하세요.' : '노트를 여는 중…'}</p>
         )}
       </main>
 
@@ -357,6 +465,20 @@ export function App() {
           onSelectionTrack={(d) => withView((v) => trackCmd(d, (x) => toast(`자간 ${x.toFixed(2)}em`))(v.state, v.dispatch, v))}
           onClose={() => setPanel(false)}
         />
+      )}
+      {account && (
+        <Account
+          status={sync}
+          toast={toast}
+          onClose={() => setAccount(false)}
+          onVersions={() => {
+            setAccount(false);
+            setVersions(true);
+          }}
+        />
+      )}
+      {versions && docRef.current && viewRef.current && (
+        <Versions docId={`note:${docRef.current.id}`} ydoc={docRef.current.ydoc} view={viewRef.current} toast={toast} onClose={() => setVersions(false)} />
       )}
       {help && <Help onClose={() => setHelp(false)} />}
 
@@ -375,38 +497,38 @@ export function App() {
         aria-label="색 고르기"
         onChange={(e) => {
           const hex = e.currentTarget.value.toUpperCase();
-          const mode = pickerMode.current;
-          withView((v) => (mode === 'pen' ? penCmd(hex)(v.state, v.dispatch, v) : hlCmd(hex)(v.state, v.dispatch, v)));
-          toast(mode === 'pen' ? `고른 색 펜 ${hex}` : `고른 색 형광펜 ${hex}`);
+          const m = pickerMode.current;
+          withView((v) => (m === 'pen' ? penCmd(hex)(v.state, v.dispatch, v) : hlCmd(hex)(v.state, v.dispatch, v)));
+          toast(m === 'pen' ? `고른 색 펜 ${hex}` : `고른 색 형광펜 ${hex}`);
         }}
       />
 
       <div className="print-root" ref={printRef} aria-hidden="true" />
 
       {mode === 'edit' && (
-      <nav className="touchbar" aria-label="편집 도구">
-        <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => indentCmd(-1)(v.state, v.dispatch, v))}>
-          ⇤ 내어쓰기
-        </button>
-        <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => indentCmd(1)(v.state, v.dispatch, v))}>
-          ⇥ 들여쓰기
-        </button>
-        <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => toggleBranchCmd(v.state, v.dispatch, v))}>
-          ├ 꺾쇠
-        </button>
-        <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => penCmd('r')(v.state, v.dispatch, v))}>
-          <span style={{ color: 'var(--pen-r)' }}>●</span> 빨강
-        </button>
-        <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => penCmd('b')(v.state, v.dispatch, v))}>
-          <span style={{ color: 'var(--pen-b)' }}>●</span> 파랑
-        </button>
-        <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => penCmd(null)(v.state, v.dispatch, v))}>
-          자동 펜
-        </button>
-        <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => void undo(v.state))}>
-          ↶ 되돌리기
-        </button>
-      </nav>
+        <nav className="touchbar" aria-label="편집 도구">
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => indentCmd(-1)(v.state, v.dispatch, v))}>
+            ⇤ 내어쓰기
+          </button>
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => indentCmd(1)(v.state, v.dispatch, v))}>
+            ⇥ 들여쓰기
+          </button>
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => toggleBranchCmd(v.state, v.dispatch, v))}>
+            ├ 꺾쇠
+          </button>
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => penCmd('r')(v.state, v.dispatch, v))}>
+            <span style={{ color: 'var(--pen-r)' }}>●</span> 빨강
+          </button>
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => penCmd('b')(v.state, v.dispatch, v))}>
+            <span style={{ color: 'var(--pen-b)' }}>●</span> 파랑
+          </button>
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => penCmd(null)(v.state, v.dispatch, v))}>
+            자동 펜
+          </button>
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => void undo(v.state))}>
+            ↶ 되돌리기
+          </button>
+        </nav>
       )}
     </div>
   );

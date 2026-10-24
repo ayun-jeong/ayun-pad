@@ -33,6 +33,7 @@ export async function seedIfEmpty(lib: Library): Promise<string | null> {
   if (lib.subjects.size > 0) return null;
   const subject = addSubject(lib, '경영학');
   const note = addNote(lib, subject.id, '견본 · 경영학');
+  lib.ydoc.getMap('meta').set('seed', { noteId: note.id, subjectId: subject.id });
   const doc = openNote(note.id);
   await doc.ready;
   if (doc.fragment.length === 0) prosemirrorToYXmlFragment(sampleDoc(), doc.fragment);

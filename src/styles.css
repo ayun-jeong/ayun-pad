@@ -173,6 +173,27 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
   .print-root, .print-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 
+/* 동기화 · 계정 · 버전 · 휴지통 */
+.sync-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: var(--ink-3); }
+.tbtn.sync.synced .sync-dot { background: #2f9e44; }
+.tbtn.sync.syncing .sync-dot { background: #0064e8; }
+.tbtn.sync.offline .sync-dot { background: #e8890c; }
+.tbtn.sync { color: var(--ink-2); font-size: 12.5px; }
+.panel input[type='email'], .panel input[type='password'] { width: 100%; border: 1px solid var(--rule-2); border-radius: 6px; padding: 7px 9px; background: var(--surface); }
+.panel button.primary, .help button.primary { border: 1px solid var(--ink); background: var(--ink); color: var(--bg); border-radius: 7px; padding: 7px 12px; font-weight: 600; }
+.panel form button { border: 1px solid var(--rule-2); background: var(--surface); border-radius: 7px; padding: 6px 12px; }
+.panel .kakao { border: 0; background: #fee500; color: #191919; border-radius: 8px; padding: 9px 12px; font-weight: 600; }
+.versions { width: min(900px, 100%); }
+.vgrid { display: grid; gap: 14px; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); min-height: 300px; }
+.vlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; align-content: start; max-height: 60vh; overflow: auto; }
+.vlist button { width: 100%; text-align: left; border: 1px solid var(--rule); background: var(--surface); border-radius: 7px; padding: 6px 9px; display: grid; gap: 1px; }
+.vlist button.on { border-color: var(--ink); }
+.vlist span { font-size: 12px; color: var(--ink-3); }
+.vpreview { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.vpreview pre { margin: 0; max-height: 52vh; overflow: auto; background: var(--bg); border-radius: 8px; padding: 10px 12px; font: 13px/1.55 var(--ui); white-space: pre-wrap; }
+@media (max-width: 640px) { .vgrid { grid-template-columns: minmax(0, 1fr); } }
+.trash summary { cursor: pointer; color: var(--ink-3); font-size: 12.5px; padding: 4px 6px; }
+
 /* 판(글자 모양) · 도움말 · 알림 */
 .panel { position: fixed; top: 56px; right: max(12px, env(safe-area-inset-right)); width: min(340px, calc(100vw - 24px)); max-height: calc(100vh - 80px); overflow: auto; background: var(--surface); border: 1px solid var(--rule-2); border-radius: 12px; box-shadow: var(--shadow); padding: 14px 16px 16px; z-index: 30; display: grid; gap: 12px; }
 .panel h3 { margin: 0; font-size: 15px; }

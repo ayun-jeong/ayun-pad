@@ -6,8 +6,9 @@ import { fitPitch, halfLabel, HALF_W, DEFAULT_TYPO, type Typo } from '../editor/
 import { prosemirrorToYXmlFragment } from 'y-prosemirror';
 import { fontStack, schema } from '../editor/schema';
 import type { AppAction } from '../editor/shortcuts';
-import { registerFont } from '../store/fontFiles';
+import { ensureFont } from '../store/fontSync';
 import { openNote, readTypo, type NoteDoc } from '../store/noteDoc';
+import { hub } from '../store/sync';
 
 export const PX_PER_MM = 96 / 25.4;
 
@@ -40,7 +41,10 @@ export function EditorPane({ noteId, zoom, toast, app, onState, onEdit, onDoc }:
       if (origin !== null && typeof origin === 'object' && 'whenSynced' in (origin as object)) return; // IndexedDB에서 읽어 온 것
       cb.current.onEdit();
     };
-    void doc.ready.then(() => {
+    void doc.ready.then(async () => {
+      if (cancelled) return;
+      // 로그인돼 있으면 서버 내용을 먼저 받는다(최대 3초). 받기 전에 빈 줄을 깔면 기기마다 빈 줄이 하나씩 늘어난다.
+      if (hub.session) await Promise.race([hub.pullOnce(`note:${noteId}`, doc.ydoc), new Promise((r) => setTimeout(r, 3000))]);
       if (cancelled || !mountRef.current) return;
       // 새 노트는 편집기를 열기 전에 빈 줄 하나를 깔아 둔다. 그래야 첫 입력을 ⌘Z로 되돌려도 줄 없는 노트가 되지 않는다.
       if (doc.fragment.length === 0) prosemirrorToYXmlFragment(schema.node('doc', null, [schema.node('line')]), doc.fragment);
@@ -53,20 +57,22 @@ export function EditorPane({ noteId, zoom, toast, app, onState, onEdit, onDoc }:
         onChange: (state) => cb.current.onState(state),
       });
       cb.current.onDoc(doc, view);
+      hub.attach(`note:${noteId}`, doc.ydoc);
       view.focus();
     });
     return () => {
       cancelled = true;
+      hub.detach(`note:${noteId}`);
+      cb.current.onDoc(null, null);
       doc.meta.unobserve(onMeta);
       doc.ydoc.off('update', onUpdate);
       view?.destroy();
       doc.destroy();
-      cb.current.onDoc(null, null);
     };
   }, [noteId]);
 
   useEffect(() => {
-    if (typo.font.startsWith('u-')) void registerFont(typo.font);
+    if (typo.font.startsWith('u-')) void ensureFont(typo.font);
   }, [typo.font]);
 
   useLayoutEffect(() => {

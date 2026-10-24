@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { addNote, addSubject, deleteNote, notesOf, renameSubject, sortedSubjects, updateNote, type Library } from '../store/library';
+import { addNote, addSubject, deleteNote, notesOf, renameSubject, restoreNote, sortedSubjects, trashed, updateNote, type Library } from '../store/library';
+import { purgeNote } from '../store/trash';
 
 interface Props {
   lib: Library;
@@ -132,8 +133,50 @@ export function Sidebar({ lib, noteId, open, onOpen, onClose }: Props) {
           </button>
         </div>
       ))}
+      {trashed(lib).length > 0 && (
+        <details className="trash">
+          <summary>휴지통 ({trashed(lib).length}) · 30일 뒤 저절로 지워짐</summary>
+          {trashed(lib).map((n) =>
+            confirm === `purge:${n.id}` ? (
+              <div className="confirm" key={n.id}>
+                완전히 지울까요?
+                <button
+                  type="button"
+                  className="mini"
+                  onClick={() => {
+                    void purgeNote(lib, n.id);
+                    setConfirm(null);
+                  }}
+                >
+                  지우기
+                </button>
+                <button type="button" className="mini" onClick={() => setConfirm(null)}>
+                  그대로
+                </button>
+              </div>
+            ) : (
+              <div key={n.id} className="note-item">
+                <span className="t">{n.title}</span>
+                <button
+                  type="button"
+                  className="mini"
+                  onClick={() => {
+                    restoreNote(lib, n.id);
+                    onOpen(n.id);
+                  }}
+                >
+                  되살리기
+                </button>
+                <button type="button" className="mini" aria-label={`${n.title} 완전히 지우기`} onClick={() => setConfirm(`purge:${n.id}`)}>
+                  ×
+                </button>
+              </div>
+            ),
+          )}
+        </details>
+      )}
       <div className="side-foot">
-        <span>이 기기에 저장됩니다. 다른 기기 동기화는 3단계에서 붙습니다.</span>
+        <span>노트는 이 기기에 먼저 저장되고, 로그인하면 다른 기기와 동기화됩니다.</span>
         <a href="lab/keys.html">단축키 시험</a>
         <a href="lab/print.html">인쇄 시험</a>
       </div>
