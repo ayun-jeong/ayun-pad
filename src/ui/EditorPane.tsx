@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from 'react';
-import type { EditorState } from 'prosemirror-state';
+import { TextSelection, type EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { defaultDeleteFilter, defaultProtectedNodes, prosemirrorToYXmlFragment, ySyncPluginKey } from 'y-prosemirror';
 import * as Y from 'yjs';
@@ -234,6 +234,12 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
                   draw={draw}
                   setDraw={setDraw}
                   onExtent={onExtent}
+                  onCaret={(x, y) => {
+                    const v = live.view;
+                    const hit = v.posAtCoords({ left: x, top: y });
+                    v.focus();
+                    if (hit) v.dispatch(v.state.tr.setSelection(TextSelection.near(v.state.doc.resolve(hit.pos))));
+                  }}
                   host={hostRef.current!}
                   settings={settings}
                 />

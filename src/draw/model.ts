@@ -75,7 +75,7 @@ export function stepW(w: number, dir: 1 | -1): number {
 }
 
 export const HEAD_NAME = ['없음', '끝', '양쪽', '시작'] as const;
-export const nextHead = (h: number) => ([2, 3, 0, 1] as const)[h] ?? 1; // 끝 → 양쪽 → 시작 → 없음 → 끝
+export const nextHead = (h: number) => ((h | 0) + 1) % 4; // 끝(1) → 양쪽(2) → 시작(3) → 없음(0) → 끝
 
 export const strokeOf = (c: string) => colorOf(c);
 

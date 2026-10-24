@@ -43,6 +43,7 @@ export interface DrawState {
   ortho: boolean;
   lock: boolean;
   quick?: boolean; // 글상자 한 번 넣기: 도구 막대 없이, 넣고 나면 바로 글쓰기로
+  picked?: boolean; // 글쓰기 화면에서 그림을 눌러 고치는 중: 지우거나 · 빈 곳을 누르거나 · Esc 한 번이면 바로 글쓰기로
 }
 
 export const DEFAULT_DRAW: DrawState = { tool: 'arrow', c: 'r', w: DEFAULT_W, ortho: false, lock: false };
@@ -58,6 +59,7 @@ interface Props {
   draw: DrawState | null;
   setDraw(patch: Partial<DrawState> | null): void;
   onExtent(bottomMm: number): void;
+  onCaret?(clientX: number, clientY: number): void; // 그 화면 자리에 글 커서 놓기
   host: ShortcutHost;
   settings: RuleSettings;
 }
@@ -152,7 +154,7 @@ interface Ix {
   last: { t: number; p: XY } | null;
 }
 
-export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, setDraw, onExtent, host, settings }: Props) {
+export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, setDraw, onExtent, onCaret, host, settings }: Props) {
   const [, repaint] = useReducer((x: number) => x + 1, 0);
   const layer = useRef<HTMLDivElement>(null);
   const ix = useRef<Ix>({ sel: null, drawing: null, cursor: null, press: null, box: null, drag: null, draft: null, last: null }).current;
@@ -173,8 +175,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     e.preventDefault();
     e.stopPropagation();
     ix.sel = id;
-    setDraw({ tool: 'select' });
-    host.toast('그림을 골랐어요 · 아래 막대에서 색 · 굵기 · 직각 · 지우기(⌫) · Esc로 끝');
+    setDraw({ tool: 'select', picked: true });
+    host.toast('그림을 골랐어요 · 아래 막대에서 색 · 굵기 · 직각 · 복제 · 지우기 · 빈 곳을 누르면 글쓰기로');
     repaint();
   };
 
@@ -358,9 +360,13 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     return undefined;
   };
 
+  // 그리기 막대 · 기호 메뉴는 화면(body)에 붙지만(React 포털) React 안에서는 이 층의 자식이라 누름이 여기까지 올라온다.
+  // 그걸 종이 누름으로 받으면 고른 그림이 풀리고 포인터를 이 층이 붙잡아서 막대 단추가 클릭을 못 받는다 → 층 안에서 난 것만.
+  const fromLayer = (e: React.PointerEvent) => !!layer.current && layer.current.contains(e.target as Node);
+
   const onDown = (e: React.PointerEvent) => {
     const d = drawRef.current;
-    if (!d || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    if (!d || !fromLayer(e) || (e.pointerType === 'mouse' && e.button !== 0)) return;
     e.preventDefault();
     const p = toMM(e);
     // 글상자를 고치던 중이면 먼저 끝낸다(누르기는 그대로 이어서 처리)
@@ -421,6 +427,14 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     const target = topHit(p, tol);
     if (!target) {
       ix.sel = null;
+      // 글쓰기 화면에서 그림을 눌러 고치던 중이면: 빈 곳 누르기 = 글쓰기로 돌아가 그 자리에 커서
+      if (d.picked) {
+        layer.current?.releasePointerCapture(e.pointerId);
+        const { clientX, clientY } = e;
+        setDraw(null);
+        requestAnimationFrame(() => onCaret?.(clientX, clientY));
+        return;
+      }
       return repaint();
     }
     if (dbl && target.t === 'path') {
@@ -445,7 +459,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
 
   const onMove = (e: React.PointerEvent) => {
     const d = drawRef.current;
-    if (!d) return;
+    if (!d || !fromLayer(e)) return;
     const p = toMM(e);
     if (ix.press && !ix.press.moved && dist(p, ix.press.p) > 2) ix.press.moved = true;
     if (ix.drawing) {
@@ -475,6 +489,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   };
 
   const onUp = (e: React.PointerEvent) => {
+    if (!fromLayer(e)) return;
     const p = toMM(e);
     // 처음 점에서 끌어서 놓으면 곧은 화살표 하나로 끝
     if (ix.press) {
@@ -547,7 +562,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       let handled = true;
       if (TOOL_KEYS[id]) {
         finishOrCancel();
-        setDraw({ tool: TOOL_KEYS[id] });
+        setDraw({ tool: TOOL_KEYS[id], picked: false });
       } else if (id === 'KeyH') setDraw({ ortho: !d.ortho }); // 앞으로 그릴 방식(이미 그린 화살표는 막대의 '직각 경로')
       else if (id === 'KeyQ') setDraw({ lock: !d.lock });
       else if (id === 'BracketLeft' || id === 'BracketRight') {
@@ -602,6 +617,10 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   };
 
   const selR = byId(ix.sel);
+  // 그림을 눌러 고치던 중 고른 게 없어지면(지우기 · Esc · 되돌리기) 글쓰기 화면으로
+  useEffect(() => {
+    if (draw?.picked && !selR) setDraw(null);
+  });
   const preview: XY[] | null = ix.drawing ? (ix.cursor ? [...ix.drawing.pts, ix.cursor] : ix.drawing.pts) : null;
   const hs = draw && selR ? handles(selR, th) : [];
   const hsz = 1.5;
@@ -672,12 +691,17 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
             drawing={!!ix.drawing}
             setDraw={(p) => {
               finishOrCancel();
-              setDraw(p);
+              setDraw(p && { ...p, picked: false }); // 막대에서 도구 · 설정을 고르면 그리기로 넘어간 것(null = 그리기 끝)
             }}
             update={update}
             remove={remove}
             duplicate={duplicate}
             finish={finishPath}
+            toTools={() => {
+              ix.sel = null;
+              setDraw({ picked: false }); // 글쓰기 화면에서 눌러 고치던 중이어도 그리기로 넘어간다
+              repaint();
+            }}
           />,
           document.body,
         )}
@@ -711,6 +735,7 @@ interface BarProps {
   remove(): void;
   duplicate(): void;
   finish(): void;
+  toTools(): void;
 }
 
 const alt = isMac ? '⌥' : 'Alt+';
@@ -719,8 +744,12 @@ const KIND_NAME: Record<string, string> = { path: '선', rect: '네모', ellipse
 
 // 그리기 막대. 그림을 고르면 그 그림의 색 · 굵기 · 직각 · 화살촉 · 점선 · 복제 · 지우기만 보여 준다(이미 그린 것 고치기),
 // 고른 게 없으면 새로 그릴 도구와 설정.
-function DrawBar({ draw, sel, drawing, setDraw, update, remove, duplicate, finish }: BarProps) {
-  const keep = (e: React.PointerEvent) => e.preventDefault();
+function DrawBar({ draw, sel, drawing, setDraw, update, remove, duplicate, finish, toTools }: BarProps) {
+  // 커서를 뺏지 않고, 누름이 그림 층(종이)으로 올라가지 않게
+  const keep = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
   const c = sel?.c ?? draw.c;
   const w = sel?.w ?? draw.w;
   const setW = (dir: 1 | -1) => {
@@ -758,10 +787,13 @@ function DrawBar({ draw, sel, drawing, setDraw, update, remove, duplicate, finis
     );
   const kind = sel ? (sel.t === 'path' ? (sel.head ? '화살표' : '선') : KIND_NAME[sel.t]) : '';
   return (
-    <div className={`drawbar${sel ? ' has-sel' : ''}`} role="toolbar" aria-label="그리기 도구" onPointerDown={keep}>
+    <div className={`drawbar${sel ? ' has-sel' : ''}`} role="toolbar" aria-label="그리기 도구" onPointerDown={keep} onPointerUp={(e) => e.stopPropagation()}>
       {sel ? (
         <>
           <div className="dgroup dsel">
+            <button type="button" className="dtools" onClick={toTools} title="고르기를 풀고 그리기 도구로(새로 그리기)">
+              ‹ 도구
+            </button>
             <b>고른 {kind}</b>
           </div>
           {swatches}
@@ -801,7 +833,7 @@ function DrawBar({ draw, sel, drawing, setDraw, update, remove, duplicate, finis
               지우기
             </button>
           </div>
-          <span className="dhint">끌어서 옮기기 · 점 끌어 모양 바꾸기 · 선을 두 번 눌러 점 추가</span>
+          <span className="dhint">끌어서 옮기기 · 점 끌어 모양 바꾸기 · 선을 두 번 눌러 점 추가{draw.picked ? ' · 빈 곳을 누르면 글쓰기로' : ''}</span>
         </>
       ) : (
         <>

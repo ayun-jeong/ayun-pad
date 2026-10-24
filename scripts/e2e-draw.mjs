@@ -44,6 +44,11 @@ try {
     for (const m of [...mods].reverse()) await k.up(m);
   };
   const shapes = () => page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()));
+  // 진짜 마우스로 누르기. DOM .click()에는 pointerdown이 없어서 '누름을 그림 층이 가로채 단추가 안 먹는' 문제를 못 잡는다.
+  const press = async (sel, pred) => {
+    for (const h of await page.$$(sel)) if (await h.evaluate(pred)) return h.click().then(() => true);
+    return false;
+  };
 
   await page.click('.addnote');
   await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
@@ -242,9 +247,9 @@ try {
   const z2 = (await shapes()).find((s) => s.id === z.id);
   const movedPts = z2.pts.map((p, i) => Math.hypot(p.x - z.pts[i].x, p.y - z.pts[i].y) > 0.5);
   check(movedPts.filter(Boolean).length === 1 && movedPts[5], `점 하나(6번째)만 끌어서 고침 (${movedPts.map((m) => (m ? 1 : 0)).join('')})`);
-  await page.$$eval('.drawbar.has-sel button', (bs) => bs.find((b) => b.textContent === '직각')?.click());
+  await press('.drawbar.has-sel button', (b) => b.textContent === '직각');
   await sleep(80);
-  check((await shapes()).find((s) => s.id === z.id)?.o === true, '막대의 직각 경로 → 그린 화살표를 직선에서 직각으로');
+  check((await shapes()).find((s) => s.id === z.id)?.o === true, '막대의 직각(마우스로 누름) → 그린 화살표를 직선에서 직각으로');
   await k.press('Backspace');
   await sleep(80);
 
@@ -608,7 +613,15 @@ try {
   await page.keyboard.press('KeyD');
   await page.keyboard.up('Alt');
   await page.waitForSelector('.drawbar');
-  await k.press('KeyA'); // 마지막에 쓴 도구(네모)가 아니라 화살표로
+  // 막대를 마우스로: 도구 · 색 · 직각 단추(전에는 키보드만 먹었다)
+  await press('.drawbar button', (b) => b.textContent.startsWith('화살표'));
+  await press('.drawbar .swatches button', (b) => b.getAttribute('aria-label') === '초록');
+  await press('.drawbar button', (b) => b.textContent.startsWith('직각'));
+  await sleep(80);
+  const barOn = await page.$$eval('.drawbar button.on', (bs) => bs.map((b) => b.getAttribute('aria-label') || b.textContent).join(','));
+  check(barOn === '화살표A,직각H,초록', `막대를 마우스로 눌러 도구 · 직각 · 색 고르기 (${barOn})`);
+  await press('.drawbar button', (b) => b.textContent.startsWith('직각'));
+  await sleep(60);
   const L4 = await page.$eval('.shapes-layer', (e) => {
     const r = e.getBoundingClientRect();
     return { x: r.left, y: r.top, w: r.width, mmW: e.offsetWidth / (96 / 25.4) };
@@ -623,18 +636,90 @@ try {
   await sleep(150);
   check(!(await page.$('.drawbar')), '화살표 그리고 글쓰기 화면으로');
   const arrowId = await page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).find((x) => x.t === 'path')?.id);
+  check((await shapes()).find((s) => s.id === arrowId)?.c === 'g', '막대에서 고른 초록으로 그려짐');
   await page.mouse.click(...at4(45, 46)); // 화살표 선 위
   await page.waitForSelector('.drawbar.has-sel', { timeout: 3000 }).catch(() => {});
   check(!!(await page.$('.drawbar.has-sel')), '글쓰기 화면에서 화살표를 누르면 그 화살표가 골라짐');
-  await page.$$eval('.drawbar .swatches button', (bs) => bs.find((b) => b.getAttribute('aria-label') === '파랑')?.click());
-  await page.$$eval('.drawbar button', (bs) => bs.find((b) => b.textContent === '직각')?.click());
-  await page.$$eval('.drawbar button', (bs) => bs.find((b) => b.getAttribute('aria-label') === '가늘게')?.click());
+  await press('.drawbar .swatches button', (b) => b.getAttribute('aria-label') === '파랑');
+  await press('.drawbar button', (b) => b.textContent === '직각');
+  await press('.drawbar button', (b) => b.getAttribute('aria-label') === '가늘게');
   await sleep(120);
   const ed = await page.evaluate((id) => window.__ayunpad.doc().shapes.get(id), arrowId);
-  check(ed.c === 'b' && ed.o === true && ed.w < 0.35, `이미 그린 화살표 색 · 직각 · 굵기 바꾸기 (${ed.c}, 직각 ${ed.o}, ${ed.w}mm)`);
-  await page.$$eval('.drawbar button', (bs) => bs.find((b) => b.textContent === '지우기')?.click());
+  check(ed.c === 'b' && ed.o === true && ed.w < 0.35, `이미 그린 화살표 색 · 직각 · 굵기를 마우스로 바꾸기 (${ed.c}, 직각 ${ed.o}, ${ed.w}mm)`);
+  check(!!(await page.$('.drawbar.has-sel')), '막대를 눌러도 고른 그림이 풀리지 않음');
+  const paths = async () => (await shapes()).filter((s) => s.t === 'path');
+  await press('.drawbar button', (b) => b.textContent === '복제');
   await sleep(120);
-  check(!(await page.evaluate((id) => window.__ayunpad.doc().shapes.has(id), arrowId)), '막대의 지우기 → 화살표 지움');
+  let P = await paths();
+  const copy = P.find((s) => s.id !== arrowId);
+  check(P.length === 2 && copy?.c === 'b' && copy?.o === true && !!(await page.$('.drawbar.has-sel')), `복제 단추 → 같은 모양 화살표가 하나 더, 복사본이 골라짐 (${P.length}개)`);
+  await combo([meta], 'KeyD');
+  await sleep(120);
+  P = await paths();
+  check(P.length === 3, `⌘D → 또 복제 (${P.length}개)`);
+  await press('.drawbar button', (b) => b.textContent === '지우기');
+  await sleep(120);
+  P = await paths();
+  check(P.length === 2 && P.some((s) => s.id === arrowId), `막대의 지우기(마우스) → 고른 복사본만 지움 (${P.length}개)`);
+  await sleep(100);
+  check(!(await page.$('.drawbar')), '글쓰기 중에 눌러 고친 그림은 지우면 바로 글쓰기 화면으로(그리기에 갇히지 않음)');
+  // 원래 화살표를 다시 누르기(직각으로 바꿔서 선이 꺾였으니 그려진 선 위의 점을 잰다)
+  const onLine = await page.$eval('.shapes-layer .sh-hit', (el) => {
+    const q = el.getPointAtLength(el.getTotalLength() * 0.3);
+    const m = el.getScreenCTM();
+    return [q.x * m.a + m.e, q.y * m.d + m.f];
+  });
+  const pick = async () => {
+    await page.mouse.click(...onLine);
+    return page.waitForSelector('.drawbar.has-sel', { timeout: 3000 }).then(() => true, () => false);
+  };
+  // 고른 채로 글 줄을 누르면 → 글쓰기로 돌아가고 그 자리에 커서
+  const l0 = await (await page.$('.editor > p')).boundingBox();
+  const picked1 = await pick();
+  await page.mouse.click(l0.x + 12, l0.y + l0.height / 2);
+  await sleep(150);
+  const caret = await page.evaluate(() => {
+    const v = window.__ayunpad.view();
+    return { bar: !!document.querySelector('.drawbar'), focus: v.hasFocus(), line: v.state.selection.$from.parent.textContent };
+  });
+  check(picked1 && !caret.bar && caret.focus && caret.line === '경영학', `그림을 고른 채 글 줄을 누르면 글쓰기로 · 그 줄에 커서 (${JSON.stringify(caret)})`);
+  const picked2 = await pick();
+  await k.press('Escape');
+  await sleep(100);
+  check(picked2 && !(await page.$('.drawbar')), 'Esc 한 번이면 글쓰기로');
+  await pick();
+  await press('.drawbar button', (b) => b.textContent === '지우기');
+  await sleep(120);
+  check(!(await page.evaluate((id) => window.__ayunpad.doc().shapes.has(id), arrowId)), '원래 화살표도 눌러서 지우기');
+  // 그리는 중 '완성' 단추(마우스)
+  await combo(['Alt'], 'KeyD');
+  await page.waitForSelector('.drawbar');
+  await press('.drawbar button', (b) => b.textContent.startsWith('화살표'));
+  await page.mouse.click(...at4(15, 90));
+  await sleep(420);
+  await page.mouse.click(...at4(60, 90));
+  await sleep(100);
+  const nPaths = (await paths()).length;
+  const fin = await press('.drawbar .dfinish', () => true);
+  await sleep(120);
+  P = await paths();
+  check(fin && P.length === nPaths + 1 && P.some((s) => s.pts.length === 2), `그리다가 막대의 완성(마우스) → 찍은 두 점으로 화살표 (${nPaths} → ${P.length})`);
+  const newId = [...P].sort((a, b) => b.z - a.z)[0].id; // 방금 완성한 것(맨 위)
+  const heads = [];
+  for (let i = 0; i < 4; i++) {
+    await press('.drawbar button', (b) => b.textContent.startsWith('화살촉'));
+    await sleep(60);
+    heads.push((await shapes()).find((s) => s.id === newId).head);
+  }
+  check(heads.join(',') === '2,3,0,1', `화살촉 단추: 끝 → 양쪽 → 시작 → 없음 → 끝 (${heads.join(',')})`);
+  await press('.drawbar button', (b) => b.textContent.includes('도구'));
+  await sleep(80);
+  const tools = await page.$$eval('.drawbar:not(.has-sel) button', (bs) => bs.map((b) => b.textContent).filter((t) => /^(화살표|네모)/.test(t)).length);
+  check(tools === 2 && (await shapes()).some((s) => s.id === newId), `고른 막대의 ‹ 도구 → 고르기만 풀고 그리기 도구로 (${tools})`);
+  await press('.drawbar .ddone', () => true);
+  await sleep(120);
+  check(!(await page.$('.drawbar')), '막대의 완료(마우스) → 그리기 끝');
+  check((await page.$$eval('.toasts > *', (t) => t.map((x) => x.textContent))).length === new Set(await page.$$eval('.toasts > *', (t) => t.map((x) => x.textContent))).size, '같은 안내는 겹쳐 쌓이지 않음');
   await k.press('Escape');
   await sleep(100);
   // 종이 빈 곳 두 번 누르기 → 글상자, 위쪽 T 글상자 단추

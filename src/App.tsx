@@ -116,7 +116,8 @@ export function App() {
 
   const toast = useCallback((msg: string) => {
     const id = Date.now() + Math.random();
-    setToasts((t) => [...t.slice(-2), { id, msg }]);
+    // 같은 안내가 떠 있으면 쌓지 않고 그것만 새로(그림을 여러 번 누를 때 같은 줄이 겹치지 않게)
+    setToasts((t) => [...t.filter((x) => x.msg !== msg).slice(-2), { id, msg }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 2200);
   }, []);
 
@@ -125,7 +126,7 @@ export function App() {
     setDrawState((cur) => {
       if (!patch) return null;
       const next = { ...(cur ?? drawPrefs.current), ...patch };
-      drawPrefs.current = { ...next, quick: false }; // 한 번 넣기는 기억하지 않는다
+      drawPrefs.current = { ...next, quick: false, picked: false }; // 한 번 넣기 · 그림 눌러 고치기는 기억하지 않는다
       return next;
     });
   }, []);

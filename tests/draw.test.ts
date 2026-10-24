@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { anchorAt, arrowHead, constrain, dist, hit, resolveAnchor, segmentAt, type Lines, type Resolved } from '../src/draw/model';
+import { anchorAt, arrowHead, constrain, dist, hit, HEAD_NAME, nextHead, resolveAnchor, segmentAt, type Lines, type Resolved } from '../src/draw/model';
 import { matchAt, matchRank } from '../src/editor/hangul';
 
 const lines = (pitch: number, n: number): Lines => {
@@ -69,6 +69,11 @@ describe('기하', () => {
     const ell: Resolved = { id: 'e', t: 'ellipse', a: { x: 0, y: 0 }, b: { x: 20, y: 10 }, c: 'r', w: 0.35, z: 1 };
     expect(hit(ell, { x: 10, y: 0.3 }, 1.2, th)).toBe(true);
     expect(hit(ell, { x: 10, y: 5 }, 1.2, th)).toBe(false);
+  });
+  it('화살촉 단추는 끝 → 양쪽 → 시작 → 없음 → 끝으로 돈다', () => {
+    const seq = [1];
+    for (let i = 0; i < 4; i++) seq.push(nextHead(seq[seq.length - 1]));
+    expect(seq.map((h) => HEAD_NAME[h]).join(' → ')).toBe('끝 → 양쪽 → 시작 → 없음 → 끝');
   });
   it('선분을 두 번 누른 자리에 점 끼우기', () => {
     const pts = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }];

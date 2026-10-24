@@ -481,6 +481,7 @@ body.drawing .toasts { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 104
 .sh-hit.filled { pointer-events: visiblePainted; }
 .sh-hit:hover { stroke: rgba(0, 100, 232, 0.16); }
 .drawbar .dsel b { font-size: 13px; padding: 0 4px; }
+.drawbar .dtools { border-color: var(--rule-2); color: var(--ink-2); }
 .drawbar .ddel { color: #d42a2a; }
 
 /* 강조 모아 보기 */
