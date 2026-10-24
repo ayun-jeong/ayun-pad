@@ -19,28 +19,49 @@ const num = (s: string | undefined, d: number) => {
   return s !== undefined && s !== '' && Number.isFinite(n) ? n : d;
 };
 
-// /수직선 10 → 0~10 (10등분), /수직선 -5 5 → -5~5
-function numberLine(view: EditorView, args: string[]) {
-  const a = num(args[0], 6);
-  const [from, to] = args.length >= 2 ? [a, num(args[1], a + 6)] : [0, a];
+// ── 넣기(/ 메뉴와 '＋ 넣기' 판이 같이 쓴다). 지금 커서 자리(줄 다음)에 넣는다. ──
+
+export function insertTable(view: EditorView, rows: number, cols: number) {
+  insertBlock(view.state, view.dispatch, (depth) => {
+    const t = makeTable(rows, cols);
+    return t.type.create({ ...t.attrs, depth }, t.content);
+  });
+}
+
+// 수직선: from ~ to (기본 0 ~ 칸 수). 칸이 너무 많으면 간격을 늘려 24눈금 안으로
+export function insertNumberLine(view: EditorView, from: number, to: number) {
   const span = Math.abs(to - from) || 1;
   const step = Math.sign(to - from || 1) * Math.max(1, Math.ceil(span / 23));
   const data = makeTimeline(from, step, Math.floor(span / Math.abs(step)) + 1);
   insertBlock(view.state, view.dispatch, (depth) => schema.nodes.tl.create({ depth, data: JSON.stringify(data) }));
 }
 
-// /연표 2016 10 → 2016~2026년 1년 간격 10칸, /연표 1950 7 10 → 1950~2020년 10년 간격. 값 없이 /연표 → 빈 5칸
-function chronology(view: EditorView, args: string[]) {
-  const data = args.length
-    ? makeTimeline(num(args[0], 2000), num(args[2], 1), Math.min(23, Math.max(1, Math.round(num(args[1], 5)))) + 1)
-    : { labels: ['', '', '', '', ''], vals: ['', '', '', '', ''] };
+// 연표: start년부터 cells칸(간격 step). start가 없으면 연도 칸을 비워 둔다. 첫 칸에 커서.
+export function insertChronology(view: EditorView, start: number | null, cells: number, step = 1) {
+  const n = Math.min(23, Math.max(1, Math.round(cells))) + 1;
+  const data = start === null ? { labels: Array(n).fill(''), vals: Array(n).fill('') } : makeTimeline(start, step || 1, n);
   const node = insertBlock(view.state, view.dispatch, (depth) => schema.nodes.tl.create({ depth, data: JSON.stringify(data) }));
   if (node) focusFirstLabel(view);
 }
 
-function graph(view: EditorView, tpl: GraphTpl, rows: number) {
+export function insertGraph(view: EditorView, tpl: GraphTpl, rows = 12) {
   insertBlock(view.state, view.dispatch, (depth) => schema.nodes.graph.create({ depth, data: JSON.stringify({ tpl, rows: Math.max(4, Math.min(60, Math.round(rows))), labels: {} }) }));
 }
+
+// /수직선 10 → 0~10 (10등분), /수직선 -5 5 → -5~5
+function numberLine(view: EditorView, args: string[]) {
+  const a = num(args[0], 6);
+  const [from, to] = args.length >= 2 ? [a, num(args[1], a + 6)] : [0, a];
+  insertNumberLine(view, from, to);
+}
+
+// /연표 2016 10 → 2016~2026년 1년 간격 10칸, /연표 1950 7 10 → 1950~2020년 10년 간격. 값 없이 /연표 → 빈 4칸
+function chronology(view: EditorView, args: string[]) {
+  if (!args.length) return insertChronology(view, null, 4);
+  insertChronology(view, num(args[0], 2000), num(args[1], 5), num(args[2], 1));
+}
+
+const graph = insertGraph;
 
 const draw = (a: AppAction) => (_v: EditorView, _args: string[], host: ShortcutHost) => host.app(a);
 
@@ -55,10 +76,7 @@ export const SLASH_ITEMS: SlashItem[] = [
       const m = /(\d+)\D+(\d+)/.exec(args.join(' '));
       const one = /^\d+$/.exec(args.join(''));
       const [r, c] = m ? [Number(m[1]), Number(m[2])] : one ? [Number(one[0]), 2] : [3, 3];
-      insertBlock(view.state, view.dispatch, (depth) => {
-        const t = makeTable(r, c);
-        return t.type.create({ ...t.attrs, depth }, t.content);
-      });
+      insertTable(view, r, c);
     },
   },
   { name: '수직선', alias: ['number line'], hint: '/수직선 10 → 0~10, 10등분', run: numberLine },

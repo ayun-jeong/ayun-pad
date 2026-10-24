@@ -434,3 +434,24 @@ body.drawing .toasts { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 104
 .mi .wg-ed:empty { outline: 0.15mm dotted #9aa1ab; outline-offset: -0.15mm; min-height: 0.9em; }
 .mi.sel { outline: 0.25mm solid rgba(0, 100, 232, 0.45); border-radius: 0.3mm; }
 .pcol .mi .wg-ed:empty { outline: none; }
+
+/* 글쓰기 화면의 글상자: 누르면 고치기, 고치는 동안 손잡이(옮기기) · 오른쪽 끝(폭) · × */
+.shapes-layer:not(.on) .tbox.live { pointer-events: auto; cursor: text; }
+.shapes-layer:not(.on) .tbox.live:hover { outline: 0.2mm dashed rgba(0, 100, 232, 0.45); outline-offset: 0.3mm; }
+.tbox.tedit { overflow: visible; }
+.tb-grip { position: absolute; left: -3.2mm; top: -0.2mm; width: 2.6mm; height: 2.6mm; border-radius: 0.6mm; background: #0064e8 radial-gradient(circle, #fff 0.25mm, transparent 0.3mm) 0 0 / 0.85mm 0.85mm; cursor: move; touch-action: none; }
+.tb-width { position: absolute; right: -1.1mm; top: 0; bottom: 0; width: 1.6mm; cursor: ew-resize; touch-action: none; }
+.tb-width::after { content: ''; position: absolute; left: 0.6mm; top: 15%; bottom: 15%; width: 0.4mm; border-radius: 0.2mm; background: #0064e8; }
+.tb-del { position: absolute; right: -1.6mm; top: -3.2mm; width: 2.8mm; height: 2.8mm; padding: 0; border: 0; border-radius: 50%; background: #565d67; color: #fff; font: 600 2.2mm/2.8mm var(--ui); text-align: center; cursor: pointer; }
+.pcol .tb-grip, .pcol .tb-width, .pcol .tb-del { display: none; }
+
+/* ＋ 넣기 판 */
+.panel.insert { width: min(440px, calc(100vw - 24px)); gap: 11px; }
+.panel.insert .ins-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.panel.insert .ins-row > b { width: 54px; flex: none; font-size: 13.5px; }
+.panel.insert .ins-row input[type='number'] { width: 60px; flex: none; padding: 4px 6px; }
+.panel.insert .ins-row input.wide { width: 92px; }
+.panel.insert .ins-row > span { color: var(--ink-2); font-size: 13px; }
+.panel.insert .ins-row > button { border: 1px solid var(--rule-2); background: var(--surface); border-radius: 7px; padding: 4px 10px; }
+.panel.insert .ins-row > button.primary { margin-left: auto; border-color: var(--ink); background: var(--ink); color: var(--bg); }
+.panel.insert .ins-note { margin: -6px 0 0 60px; }

@@ -20,6 +20,7 @@ export type AppAction =
   | 'pen-picker'
   | 'hl-picker'
   | 'find'
+  | 'insert'
   | 'draw-text'
   | 'draw-arrow'
   | 'draw-line'

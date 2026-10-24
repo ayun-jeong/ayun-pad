@@ -42,6 +42,7 @@ export interface DrawState {
   w: number;
   ortho: boolean;
   lock: boolean;
+  quick?: boolean; // 글상자 한 번 넣기: 도구 막대 없이, 넣고 나면 바로 글쓰기로
 }
 
 export const DEFAULT_DRAW: DrawState = { tool: 'arrow', c: 'r', w: DEFAULT_W, ortho: false, lock: false };
@@ -154,6 +155,23 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     return () => shapes.unobserve(on);
   }, [shapes]);
 
+  // 글쓰기 화면에서 ⌥(Alt)+클릭 → 그 자리에 글상자
+  const altRef = useRef<(e: PointerEvent) => void>(() => undefined);
+  altRef.current = (e: PointerEvent) => {
+    if (drawRef.current || !e.altKey || e.button !== 0 || !layer.current) return;
+    // 아무 데나(표 · 그래프 · 연표 위, 글칸 위도). 이미 있는 글상자를 누른 것만 그 글상자 고치기로
+    if ((e.target as HTMLElement | null)?.closest?.('.tbox')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    newText(toMM(e));
+    repaint();
+  };
+  useEffect(() => {
+    const on = (e: PointerEvent) => altRef.current(e);
+    src.addEventListener('pointerdown', on, true);
+    return () => src.removeEventListener('pointerdown', on, true);
+  }, [src]);
+
   // 그리기를 시작하면 편집 칸에서 커서를 뺀다(도구 글자가 노트에 쳐지지 않게)
   const active = !!draw;
   useEffect(() => {
@@ -226,6 +244,38 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     repaint();
   };
 
+  // 누른 자리에 빈 글상자를 만들고 바로 쓰게 한다
+  const newText = (p: XY) => {
+    const s: Shape = { id: newId(), t: 'text', a: anchorAt({ x: p.x, y: p.y - pitch / 2 }, lines), bw: Math.min(30, Math.max(8, W - p.x)), text: '', doc: emptyTextDoc(), c: 'k', w: drawRef.current?.w ?? DEFAULT_W, z: nextZ() };
+    put(s);
+    ix.sel = s.id;
+    setEditing(s.id);
+  };
+
+  // 글상자 옮기기(손잡이) · 폭 바꾸기(오른쪽 끝). 글쓰기 화면에서도 된다.
+  const dragBox = (mode: 'move' | 'width', id: string, e: React.PointerEvent) => {
+    const base = byId(id);
+    if (!base || base.t !== 'text' || !layer.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const start = toMM(e);
+    const onMove = (ev: PointerEvent) => {
+      const p = toMM(ev);
+      ix.draft = mode === 'move' ? translate(base, p.x - start.x, p.y - start.y) : { ...base, bw: Math.max(6, Math.min(W - base.a.x + 2, p.x - base.a.x)) };
+      repaint();
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      const d = ix.draft;
+      ix.draft = null;
+      if (d) put(unresolve(d, lines));
+      repaint();
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
   const finishBox = (p: XY, shift: boolean) => {
     const d = drawRef.current;
     const box = ix.box;
@@ -296,11 +346,10 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       return repaint();
     }
     if (d.tool === 'text') {
-      const s: Shape = { id: newId(), t: 'text', a: anchorAt({ x: p.x, y: p.y - pitch / 2 }, lines), bw: Math.min(30, Math.max(8, W - p.x)), text: '', doc: emptyTextDoc(), c: 'k', w: d.w, z: nextZ() };
-      put(s);
-      ix.sel = s.id;
-      setEditing(s.id);
-      if (!d.lock) setDraw({ tool: 'select' });
+      newText(p);
+      // 한 번 넣기(＋ 넣기 · /글상자)는 넣자마자 글쓰기 화면으로, 그리기 T는 고르기 도구로
+      if (d.quick) setDraw(null);
+      else if (!d.lock) setDraw({ tool: 'select' });
       return repaint();
     }
 
@@ -533,7 +582,24 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
         ))}
       </svg>
       <div className="tboxes">
-        {resolved.map((r) => (r.t === 'text' && editing !== r.id ? <TextBoxView key={r.id} r={r} /> : null))}
+        {resolved.map((r) =>
+          r.t === 'text' && editing !== r.id ? (
+            <TextBoxView
+              key={r.id}
+              r={r}
+              onEdit={
+                draw
+                  ? undefined
+                  : (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      ix.sel = r.id;
+                      setEditing(r.id);
+                    }
+              }
+            />
+          ) : null,
+        )}
         {editing &&
           (() => {
             const r = byId(editing);
@@ -550,11 +616,17 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
                   if (s?.t === 'text') putTyping({ ...s, doc: doc.toJSON(), text: plainText(doc) });
                 }}
                 onDone={doneText}
+                onDrag={(mode, e) => dragBox(mode, r.id, e)}
+                onDelete={() => {
+                  write(() => shapes.delete(r.id));
+                  setEditing(null);
+                }}
               />
             );
           })()}
       </div>
       {draw &&
+        !draw.quick &&
         createPortal(
           <DrawBar
             draw={draw}

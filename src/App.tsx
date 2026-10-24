@@ -27,6 +27,7 @@ import { FindPanel } from './ui/FindPanel';
 import { Help } from './ui/Help';
 import { buildPrintSheets, PagesView, type ViewMode } from './ui/PagesView';
 import { ColorPop, rememberColor } from './ui/ColorPop';
+import { InsertPanel } from './ui/InsertPanel';
 import { SearchPalette, type JumpTarget, type PaletteCommand } from './ui/SearchPalette';
 import { indexNotes } from './store/searchIndex';
 import { Sidebar } from './ui/Sidebar';
@@ -85,6 +86,7 @@ export function App() {
   findRef.current = !!find;
   const pendingJump = useRef<{ noteId: string; target: JumpTarget } | null>(null);
   const [colorPop, setColorPop] = useState<'pen' | 'hl' | null>(null);
+  const [insert, setInsert] = useState(false);
   const [subbar, setSubbar] = useState<'pen' | 'hl' | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
   const drawPrefs = useRef<DrawState>(DEFAULT_DRAW);
@@ -119,7 +121,7 @@ export function App() {
     setDrawState((cur) => {
       if (!patch) return null;
       const next = { ...(cur ?? drawPrefs.current), ...patch };
-      drawPrefs.current = next;
+      drawPrefs.current = { ...next, quick: false }; // 한 번 넣기는 기억하지 않는다
       return next;
     });
   }, []);
@@ -282,8 +284,15 @@ export function App() {
           });
           break;
         case 'draw-text':
-          startDraw('text');
-          toast('글상자를 넣을 곳을 누르세요');
+          // 그리기 막대 없이 한 번만: 누른 자리에 글상자 → 쓰고 나면 바로 글쓰기
+          setMode('edit');
+          setDraw({ tool: 'text', quick: true });
+          toast('글상자를 넣을 곳을 누르세요 (⌥+클릭으로 바로 넣을 수도 있어요)');
+          break;
+        case 'insert':
+          setPanel(false);
+          setAccount(false);
+          setInsert((x) => !x);
           break;
         case 'draw-arrow':
           startDraw('arrow');
@@ -345,6 +354,7 @@ export function App() {
         setAccount(false);
         setVersions(false);
         setSearch(null);
+        setInsert(false);
         if (findRef.current) {
           setFind(null);
           viewRef.current?.focus();
@@ -574,6 +584,7 @@ export function App() {
       { name: '반쪽 보기', keys: '⌥2', run: () => act('view-half') },
       { name: 'A4 합침 보기', keys: '⌥3', run: () => act('view-a4') },
       { name: '인쇄 · PDF 저장', keys: '⌘P', alias: ['print', '프린트'], run: () => setTimeout(() => window.print(), 80) },
+      { name: '넣기: 표 · 수직선 · 연표 · 그래프 · 분수 · 글상자 · 도형', alias: ['insert', '표', '그래프', '수직선', '연표', '글상자', '네모'], run: () => act('insert') },
       { name: '그리기', keys: '⌥D', alias: ['draw', '화살표', '도형'], run: () => act('draw') },
       { name: '찾기 · 일괄 강조', keys: '⌘F', alias: ['find', '바꾸기', '동그라미'], run: () => act('find') },
       { name: '글자 모양', keys: '⌥T', alias: ['글꼴', '행간', '자간', '여백', '폰트'], run: () => act('type') },
@@ -653,6 +664,9 @@ export function App() {
         </div>
         <button type="button" className="tbtn" onClick={() => act('search')} title="전체 검색 · 찾기 · 인쇄 등 모든 명령 (⌘K)" aria-label="검색">
           ⌕<span className="wide-only"> 검색</span>
+        </button>
+        <button type="button" className={`tbtn${insert ? ' on' : ''}`} onClick={() => act('insert')} title="표 · 수직선 · 연표 · 그래프 · 분수 · 글상자 · 도형 넣기 (본문에서 / 도 됨)">
+          ＋<span className="wide-only"> 넣기</span>
         </button>
         <button type="button" className={`tbtn hide-narrow${draw ? ' on' : ''}`} onClick={() => act('draw')} title="그리기: 화살표 · 선 · 네모 · 원 · 글상자 (⌥D)">
           ✎<span className="wide-only"> 그리기</span>
@@ -741,6 +755,7 @@ export function App() {
         <Versions docId={`note:${docRef.current.id}`} ydoc={docRef.current.ydoc} view={viewRef.current} toast={toast} onClose={() => setVersions(false)} />
       )}
       {help && <Help onClose={() => setHelp(false)} />}
+      {insert && viewRef.current && <InsertPanel view={viewRef.current} app={act} onClose={() => setInsert(false)} />}
       {find && viewRef.current && edState && docRef.current && (
         <FindPanel
           view={viewRef.current}
@@ -880,18 +895,8 @@ export function App() {
           <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => void redo(v.state))}>
             ↷
           </button>
-          <button
-            type="button"
-            onPointerDown={keepFocus}
-            onClick={() =>
-              withView((v) => {
-                const $f = v.state.selection.$from;
-                const before = $f.parent.textBetween(0, $f.parentOffset, undefined, '​');
-                v.dispatch(v.state.tr.insertText(before === '' || /\s$/.test(before) ? '/' : ' /'));
-              })
-            }
-          >
-            / 넣기
+          <button type="button" onPointerDown={keepFocus} onClick={() => act('insert')}>
+            ＋ 넣기
           </button>
           <button type="button" onPointerDown={keepFocus} onClick={() => act('draw')}>
             ✎ 그리기

@@ -67,14 +67,14 @@ export function tboxStyle(r: Resolved & { t: 'text' }): CSSProperties {
 
 const serializer = () => DOMSerializer.fromSchema(schema);
 
-// 평소 모습(반쪽 보기 · 인쇄에도 그대로 복제된다)
-export function TextBoxView({ r }: { r: Resolved & { t: 'text' } }) {
+// 평소 모습(반쪽 보기 · 인쇄에도 그대로 복제된다). onEdit가 있으면(글쓰기 화면) 누르면 바로 고친다.
+export function TextBoxView({ r, onEdit }: { r: Resolved & { t: 'text' }; onEdit?: (e: React.PointerEvent) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const key = JSON.stringify(r.doc ?? null) + r.text;
   useLayoutEffect(() => {
     ref.current?.replaceChildren(serializer().serializeFragment(textDoc(r).content));
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
-  return <div ref={ref} className={`tbox tb-doc${r.box ? ' boxed' : ''}`} data-sid={r.id} style={tboxStyle(r)} />;
+  return <div ref={ref} className={`tbox tb-doc${r.box ? ' boxed' : ''}${onEdit ? ' live' : ''}`} data-sid={r.id} style={tboxStyle(r)} onPointerDown={onEdit} title={onEdit ? '눌러서 고치기' : undefined} />;
 }
 
 interface EditorProps {
@@ -84,12 +84,14 @@ interface EditorProps {
   host: ShortcutHost;
   onSave(doc: Node): void;
   onDone(): void;
+  onDrag(mode: 'move' | 'width', e: React.PointerEvent): void;
+  onDelete(): void;
 }
 
 const PEN_KEYS = /^alt\+(shift\+)?Key[RBKPYGAX]$|^alt\+KeyO$|^alt\+(Comma|Period)$/;
 
 // 고치는 중: 작은 편집기. 펜(⌥R …) · 형광펜(⌥⇧Y …) · 동그라미(⌥O) · 굵게 · 밑줄이 노트 본문과 같은 키로 된다.
-export function TextBoxEditor({ r, um, settings, host, onSave, onDone }: EditorProps) {
+export function TextBoxEditor({ r, um, settings, host, onSave, onDone, onDrag, onDelete }: EditorProps) {
   const ref = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const cb = useRef({ onSave, onDone });
@@ -149,15 +151,32 @@ export function TextBoxEditor({ r, um, settings, host, onSave, onDone }: EditorP
     v.updateState(EditorState.create({ schema, doc: ext, plugins: v.state.plugins, selection: Selection.near(ext.resolve(pos)) }));
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 손잡이 · 폭 · 지우기 단추는 누를 때 글상자 편집기에서 커서가 빠지지 않게(preventDefault)
   return (
     <div
-      ref={ref}
       className={`tbox tedit${r.box ? ' boxed' : ''}`}
       style={tboxStyle(r)}
       onPointerDown={(e) => e.stopPropagation()}
       onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) cb.current.onDone();
       }}
-    />
+    >
+      <div ref={ref} className="tb-mount" />
+      <span className="tb-grip" title="끌어서 옮기기" aria-label="글상자 옮기기" onPointerDown={(e) => onDrag('move', e)} />
+      <span className="tb-width" title="끌어서 폭 바꾸기" aria-label="글상자 폭" onPointerDown={(e) => onDrag('width', e)} />
+      <button
+        type="button"
+        className="tb-del"
+        title="글상자 지우기"
+        aria-label="글상자 지우기"
+        onPointerDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onClick={onDelete}
+      >
+        ×
+      </button>
+    </div>
   );
 }

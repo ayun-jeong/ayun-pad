@@ -335,6 +335,115 @@ try {
   });
   check(Math.abs(push.top - 1) < 0.002 && push.margin > 0, `경계에 걸린 그래프가 다음 반쪽(1-2) 맨 위로 (${push.top.toFixed(4)} 반쪽, 민 높이 ${push.margin.toFixed(1)}px)`);
 
+  // 14) '＋ 넣기' 판: 표 · 수직선(칸 수) · 연표(시작 연도 + 칸) · 그래프 · 도형
+  await page.click('.addnote');
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+  await page.click('.editor');
+  await k.type('넣기 시험');
+  const openInsert = async () => {
+    await page.$$eval('.top .tbtn', (bs) => bs.find((b) => b.textContent.includes('넣기'))?.click());
+    await page.waitForSelector('.panel.insert');
+  };
+  const setNum = async (label, v) => {
+    const el = await page.$(`.panel.insert input[aria-label="${label}"]`);
+    await el.click({ count: 3 });
+    await el.type(String(v));
+  };
+  const rowBtn = (title, text) =>
+    page.$$eval('.panel.insert .ins-row', (rows, [title, text]) => rows.find((r) => r.querySelector('b')?.textContent === title)?.querySelectorAll('button').forEach((b) => b.textContent.includes(text) && b.click()), [title, text]);
+  await openInsert();
+  await setNum('행', 2);
+  await setNum('열', 2);
+  await rowBtn('표', '넣기');
+  await page.waitForSelector('.editor table');
+  const t2 = await page.$$eval('.editor table tr', (rs) => rs.map((r) => r.children.length).join(','));
+  check(t2 === '2,2' && !(await page.$('.panel.insert')), `넣기 판 → 2행 2열 표 (${t2})`);
+  const toLastLine = async () => (await page.evaluateHandle(() => [...document.querySelectorAll('.editor > p')].pop())).click();
+  await toLastLine();
+  await openInsert();
+  await setNum('칸 수', 5);
+  await rowBtn('수직선', '넣기');
+  await sleep(150);
+  const nl5 = await page.$$eval('.wg.tl', (ws) => [...ws[ws.length - 1].querySelectorAll('.tl-val .wg-ed')].map((x) => x.textContent).join(','));
+  check(nl5 === '0,1,2,3,4,5', `넣기 판 수직선 5칸 → 0~5 (${nl5})`);
+  await toLastLine();
+  await openInsert();
+  await setNum('시작 연도', 2020);
+  await setNum('칸 수(몇 년)', 3);
+  await rowBtn('연표', '넣기');
+  await sleep(150);
+  const ch3 = await page.$$eval('.wg.tl', (ws) => [...ws[ws.length - 1].querySelectorAll('.tl-val .wg-ed')].map((x) => x.textContent).join(','));
+  check(ch3 === '2020,2021,2022,2023', `넣기 판 연표 2020부터 3칸 (${ch3})`);
+  await k.press('Escape');
+  await toLastLine();
+  await openInsert();
+  await rowBtn('그래프', 'xy축');
+  await sleep(150);
+  check((await page.$$eval('.wg.graph', (g) => g.length)) === 1, '넣기 판 → xy축 그래프');
+  await toLastLine();
+  await openInsert();
+  await rowBtn('그림', '네모');
+  await sleep(100);
+  check(await page.$eval('.shapes-layer', (e) => e.classList.contains('on') && e.classList.contains('tool-rect')), '넣기 판 네모 → 그리기(네모 도구)');
+  await k.press('Escape');
+  await k.press('Escape');
+  await sleep(100);
+
+  // 15) 글상자: 넣기 판에서 한 번 넣기 → 쓰고 나면 바로 글쓰기 / ⌥+클릭 / 누르면 고치기 · 손잡이로 옮기기 · 폭 · 지우기
+  const L2 = await page.$eval('.shapes-layer', (e) => {
+    const r = e.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, mmW: e.offsetWidth / (96 / 25.4) };
+  });
+  const mmX = (mm) => L2.x + (mm / L2.mmW) * L2.w;
+  const pxPerMm = L2.w / L2.mmW;
+  await toLastLine();
+  await openInsert();
+  await rowBtn('그림', '글상자');
+  await sleep(80);
+  check(!(await page.$('.drawbar')), '글상자 한 번 넣기에는 도구 막대 없음');
+  await page.mouse.click(mmX(60), L2.y + 20 * pxPerMm);
+  await page.waitForSelector('.tbox.tedit .tb-edit');
+  check(!(await page.$('.shapes-layer.on')), '글상자를 넣자마자 글쓰기 화면(그리기 꺼짐)');
+  await k.type('메모 하나');
+  await k.press('Escape');
+  await sleep(120);
+  const boxes = async () => page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).filter((s) => s.t === 'text'));
+  let B = await boxes();
+  check(B.length === 1 && B[0].text === '메모 하나', `한 번 넣기 글상자 저장 (${B.map((b) => b.text).join('|')})`);
+  await page.keyboard.down('Alt');
+  await page.mouse.click(mmX(20), L2.y + 30 * pxPerMm);
+  await page.keyboard.up('Alt');
+  await page.waitForSelector('.tbox.tedit .tb-edit');
+  await k.type('둘째');
+  await k.press('Escape');
+  await sleep(120);
+  B = await boxes();
+  check(B.length === 2 && B.some((b) => b.text === '둘째'), `⌥+클릭 → 그 자리에 글상자 (${B.map((b) => b.text).join('|')})`);
+  const memo = B.find((b) => b.text === '메모 하나');
+  await page.click(`.tbox[data-sid="${memo.id}"]`);
+  await page.waitForSelector('.tbox.tedit .tb-grip');
+  check(true, '글쓰기 화면에서 글상자를 누르면 바로 고치기');
+  const grip = await (await page.$('.tbox.tedit .tb-grip')).boundingBox();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2 + 10 * pxPerMm, grip.y + grip.height / 2 + 4 * pxPerMm, { steps: 6 });
+  await page.mouse.up();
+  await sleep(120);
+  const afterMove = (await boxes()).find((b) => b.id === memo.id);
+  check(Math.abs(afterMove.a.x - memo.a.x - 10) < 0.6, `손잡이로 끌어 옮기기 (x ${memo.a.x.toFixed(1)} → ${afterMove.a.x.toFixed(1)})`);
+  const wh = await (await page.$('.tbox.tedit .tb-width')).boundingBox();
+  await page.mouse.move(wh.x + wh.width / 2, wh.y + wh.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(wh.x + wh.width / 2 - 8 * pxPerMm, wh.y + wh.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await sleep(120);
+  const widened = (await boxes()).find((b) => b.id === memo.id);
+  check(widened.bw < afterMove.bw - 6, `오른쪽 끝을 끌어 폭 바꾸기 (${afterMove.bw.toFixed(1)} → ${widened.bw.toFixed(1)}mm)`);
+  await page.click('.tbox.tedit .tb-del');
+  await sleep(120);
+  B = await boxes();
+  check(B.length === 1 && !B.some((b) => b.id === memo.id) && !(await page.$('.tbox.tedit')), '× → 글상자 지움');
+
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();
 } catch (e) {
