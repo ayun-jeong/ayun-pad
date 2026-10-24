@@ -58,6 +58,15 @@ describe('자동 볼펜·형광펜', () => {
     expect(autoStyle('예산: 1년 계획', 'branch', false).red).toEqual({ from: 0, to: 2 });
     expect(autoStyle('예외: 단기리스', 'branch', false).blue).toEqual([]);
   });
+  it('띄어쓰기가 있어도 콜론 앞은 빨강 + 형광펜(꺾쇠 줄 · 보통 줄 모두)', () => {
+    for (const kind of ['branch', 'plain'] as const) {
+      const t = '테스트 하는 중: 설명';
+      const s = autoStyle(t, kind, false);
+      expect(t.slice(s.red!.from, s.red!.to)).toBe('테스트 하는 중');
+      expect(s.hl).toEqual(s.red);
+    }
+    expect(findColon('비율 ∶ 2')).toBe(3);
+  });
   it('숫자 사이 콜론과 https:// 는 나누지 않는다', () => {
     expect(findColon('10:30 회의')).toBe(-1);
     expect(findColon('https://a.com')).toBe(-1);

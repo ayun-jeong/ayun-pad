@@ -55,6 +55,8 @@ function typedTrigger(tr: Transaction, state: EditorState): { pos: number; ch: s
   if ($c.parent.type.name !== 'line' || $c.parentOffset === 0) return null;
   const ch = $c.parent.textBetween($c.parentOffset - 1, $c.parentOffset, undefined, '​');
   if (!MATH_MENUS[ch]) return null;
+  // 줄 맨 앞의 - 는 꺾쇠 줄을 만드는 자리라 메뉴를 띄우지 않는다('-' + 스페이스)
+  if (ch === '-' && $c.parentOffset === 1) return null;
   const at = $c.pos - 1;
   let inserted = false;
   tr.steps.forEach((step, i) => {

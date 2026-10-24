@@ -137,6 +137,53 @@ try {
   });
   check(br.kind === 'branch' && br.text === '수요', `'- ' → 꺾쇠 줄 그대로 (${JSON.stringify(br)})`);
 
+  // 7-1) 줄 맨 앞 - 에는 메뉴가 안 뜬다 · 꺾쇠 줄에서 Enter 뒤 '- '는 글자로 남지 않는다 · ⌥- 로 꺾쇠 ↔ 보통 줄
+  const lastP = () =>
+    page.$$eval('.editor > p', (ps) => {
+      const p = ps[ps.length - 1];
+      return { kind: p.dataset.kind, depth: p.dataset.depth, text: p.textContent };
+    });
+  await k.press('Enter');
+  await k.press('Minus');
+  await sleep(80);
+  check(!(await open()), '줄 맨 앞 - 에는 기호 메뉴가 안 뜸');
+  await k.press('Space');
+  await k.type('공급');
+  await sleep(80);
+  let lp = await lastP();
+  check(lp.kind === 'branch' && lp.text === '공급', `꺾쇠 줄에서 Enter 뒤 '- ' → 글자로 안 남음 (${JSON.stringify(lp)})`);
+  await k.down('Alt');
+  await k.press('Minus');
+  await k.up('Alt');
+  await sleep(80);
+  lp = await lastP();
+  check(lp.kind === 'plain' && lp.text === '공급', `⌥- → 보통 줄 (${JSON.stringify(lp)})`);
+  await k.down('Alt');
+  await k.press('Minus');
+  await k.up('Alt');
+  await sleep(80);
+  lp = await lastP();
+  check(lp.kind === 'branch' && lp.text === '공급', `⌥- 한 번 더 → 꺾쇠 줄 (${JSON.stringify(lp)})`);
+  await k.press('End');
+  // 빈 보통 줄에서 Tab → 꺾쇠 자식 줄
+  await k.press('Enter');
+  await k.press('Enter');
+  await k.press('Enter');
+  lp = await lastP();
+  const before = lp.kind + lp.depth;
+  await k.press('Tab');
+  await sleep(80);
+  lp = await lastP();
+  check(before === 'plain1' && lp.kind === 'branch' && lp.depth === '2', `빈 보통 줄에서 Tab → 꺾쇠 자식 줄 (${before} → ${lp.kind}${lp.depth})`);
+  // Enter 3번 = 빈 줄 2개(빈 꺾쇠 줄에서 Enter는 줄을 늘리지 않고 한 단계 위로) → ⌫ 3번이면 '공급' 끝
+  await k.press('Backspace'); // 꺾쇠 풀기
+  await k.press('Backspace'); // 빈 줄 합치기
+  await k.press('Backspace'); // '공급' 줄 끝으로
+  await sleep(50);
+  lp = await lastP();
+  check(lp.text === '공급', `빈 줄을 지우고 '공급' 줄로 돌아옴 (${JSON.stringify(lp)})`);
+  await k.press('End');
+
   // 8) 분수: = 뒤에 넣고 분자로, Tab → 분모, Tab → 밖으로. 줄 높이 그대로
   await k.type(' 탄력성 E=');
   await page.waitForSelector('.mathmenu');
@@ -168,7 +215,7 @@ try {
     return { f, text: window.__ayunpad.view().state.doc.lastChild.textContent, h: withFrac?.offsetHeight, h0: ps[0].offsetHeight };
   });
   check(frac.f?.n === 'ΔQ' && frac.f?.d === 'ΔP', `분수 저장 (${JSON.stringify(frac.f)})`);
-  check(frac.text === '수요 탄력성 E=ΔQ/ΔP 크다', `분수 뒤로 이어 쓰기 (${frac.text})`);
+  check(frac.text === '공급 탄력성 E=ΔQ/ΔP 크다', `분수 뒤로 이어 쓰기 (${frac.text})`);
   check(Math.abs(frac.h - frac.h0) < 0.5, `분수가 든 줄도 높이 그대로 (${frac.h}px / 보통 줄 ${frac.h0}px)`);
 
   // 9) 루트: √[ ] 안에 쓰고 → 로 밖으로

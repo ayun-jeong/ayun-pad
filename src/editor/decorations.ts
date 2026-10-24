@@ -134,7 +134,9 @@ export function autoPlugin(): Plugin<AutoState> {
         const composing = meta?.composing ?? prev.composing;
         const auto = meta?.auto ?? prev.auto;
         if (composing) return { deco: prev.deco.map(tr.mapping, tr.doc), composing, auto };
-        if (!tr.docChanged && !meta?.rebuild && auto === prev.auto) return { deco: prev.deco, composing, auto };
+        // 조합이 끝난 첫 거래는 글이 안 바뀌었어도 다시 칠한다(조합 중에 미뤄 둔 색)
+        const ended = prev.composing;
+        if (!tr.docChanged && !meta?.rebuild && !ended && auto === prev.auto) return { deco: prev.deco, composing, auto };
         return { deco: buildDecorations(next.doc, auto), composing, auto };
       },
     },
@@ -146,9 +148,10 @@ export function autoPlugin(): Plugin<AutoState> {
           return false;
         },
         compositionend(view) {
+          // ProseMirror가 조합 결과를 문서에 넣은 뒤에. 그새 다음 글자 조합이 시작됐으면 그대로 둔다.
           setTimeout(() => {
-            if (!view.isDestroyed) view.dispatch(view.state.tr.setMeta(autoKey, { composing: false, rebuild: true }));
-          }, 0);
+            if (!view.isDestroyed && !view.composing) view.dispatch(view.state.tr.setMeta(autoKey, { composing: false, rebuild: true }));
+          }, 30);
           return false;
         },
       },

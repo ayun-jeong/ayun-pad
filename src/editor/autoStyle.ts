@@ -14,11 +14,12 @@ export interface AutoStyle {
 const EXAMPLE_LINE = /^\s*(?:예시?|ex|e\.g\.?)\s*[:)：]/i;
 const INLINE_EXAMPLE = /[(（]\s*(?:예시?|ex|e\.g\.?)\s*[:：][^)）]*[)）]/gi;
 
-// 줄의 첫 ':'. 10:30 · 3:2 같은 숫자 사이 콜론과 https:// 는 건너뛴다.
+// 줄의 첫 ':'(전각 ： · 비슷한 ∶ ﹕ ︓ 도). 10:30 · 3:2 같은 숫자 사이 콜론과 https:// 는 건너뛴다.
+const COLONS = ':：∶﹕︓';
 export function findColon(text: string): number {
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
-    if (ch !== ':' && ch !== '：') continue;
+    if (!COLONS.includes(ch)) continue;
     if (/\d/.test(text[i - 1] ?? '') && /\d/.test(text[i + 1] ?? '')) continue;
     if (text.startsWith('//', i + 1)) continue;
     return i;

@@ -51,8 +51,11 @@ export function indentCmd(delta: 1 | -1): Command {
     if (!plan || !dispatch) return true;
     const pos = positions(c);
     const tr = state.tr;
+    // 빈 보통 줄에서 Tab → 꺾쇠 자식 줄(새 항목을 시작하는 자리라서). 글이 있는 줄은 깊이만 바꾼다.
+    const fresh = delta > 0 && state.selection.empty && a === b && c.container.child(a).content.size === 0 && c.container.child(a).attrs.kind === 'plain';
     for (let i = plan.from; i <= plan.to; i++) {
-      tr.setNodeMarkup(pos[i], undefined, { ...c.container.child(i).attrs, depth: plan.depths[i - plan.from] });
+      const attrs = { ...c.container.child(i).attrs, depth: plan.depths[i - plan.from] };
+      tr.setNodeMarkup(pos[i], undefined, fresh && i === a ? { ...attrs, kind: 'branch' } : attrs);
     }
     dispatch(tr.scrollIntoView());
     return true;

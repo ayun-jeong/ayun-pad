@@ -8,7 +8,7 @@ import { redo, undo, ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
 import type * as Y from 'yjs';
 import { clipboardTextParser, clipboardTextSerializer } from './clipboard';
 import { enterCmd, insertBr, unbranchAtStart } from './commands';
-import { autoPlugin } from './decorations';
+import { autoKey, autoPlugin } from './decorations';
 import { findPlugin } from './find';
 import { idPlugin } from './ids';
 import { rulesPlugin, type RuleSettings } from './inputRules';
@@ -65,6 +65,8 @@ export function createEditor(mount: HTMLElement, fragment: Y.XmlFragment, hooks:
     attributes: { class: 'editor', spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off', 'aria-label': '노트' },
     // ySyncPlugin이 생성자 안에서 첫 내용을 바로 보내므로 바깥 변수(view)가 아니라 this를 쓴다.
     dispatchTransaction(this: EditorView, tr) {
+      // 거래마다 지금 정말 한글 조합 중인지 알려 준다 → 조합이 아니면 자동 색이 늘 새로 칠해진다(색이 옛 상태로 멈추지 않게)
+      if (tr.getMeta(autoKey) === undefined) tr.setMeta(autoKey, { composing: this.composing });
       const next = this.state.apply(tr);
       this.updateState(next);
       hooks.onChange(next, tr);

@@ -9,7 +9,9 @@ const branchRule = new InputRule(/^-\s$/, (state, _match, start, end) => {
   const $s = state.doc.resolve(start);
   const line = $s.parent;
   const c = ctxOf($s);
-  if (!c || $s.parentOffset !== 0 || line.attrs.kind === 'branch') return null;
+  if (!c || $s.parentOffset !== 0) return null;
+  // 이미 꺾쇠 줄(꺾쇠 줄에서 Enter로 생긴 줄)이면 '- '만 지우고 그대로 둔다(글자로 남지 않게)
+  if (line.attrs.kind === 'branch') return state.tr.delete(start, end);
   const depth = branchDepth(line.attrs.depth as number, prevInfo(c));
   const tr = state.tr.delete(start, end);
   tr.setNodeMarkup($s.before(), undefined, { ...line.attrs, depth, kind: 'branch' });

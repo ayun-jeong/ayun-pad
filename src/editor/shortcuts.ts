@@ -1,7 +1,7 @@
 import { Plugin, type Command } from 'prosemirror-state';
 import { addRowAfter, goToNextCell, isInTable } from 'prosemirror-tables';
 import type { EditorView } from 'prosemirror-view';
-import { circleCmd, hlCmd, indentCmd, moveCmd, penCmd, trackCmd } from './commands';
+import { circleCmd, hlCmd, indentCmd, moveCmd, penCmd, toggleBranchCmd, trackCmd } from './commands';
 import { PEN_NAME, isPenKey } from './model';
 
 export type AppAction =
@@ -115,6 +115,11 @@ export function buildShortcuts(): Map<string, Run> {
   // 표 칸에서는 Tab이 다음 칸(마지막 칸이면 행 추가), 들여쓰기는 ⌘] ⌘[
   map.set('Tab', (v, h) => (isInTable(v.state) ? cellTab(v, 1) : exec(indentCmd(1))(v, h)));
   map.set('shift+Tab', (v, h) => (isInTable(v.state) ? cellTab(v, -1) : exec(indentCmd(-1))(v, h)));
+  // ⌥- : 지금 줄을 꺾쇠 줄 ↔ 보통 줄로(줄 어디에 커서가 있어도)
+  map.set('alt+Minus', (v, h) => {
+    const was = v.state.selection.$from.parent.attrs.kind;
+    if (toggleBranchCmd(v.state, v.dispatch, v)) h.toast(was === 'branch' ? '보통 줄' : '꺾쇠 줄');
+  });
   map.set('mod+BracketRight', exec(indentCmd(1)));
   map.set('mod+BracketLeft', exec(indentCmd(-1)));
   map.set('mod+shift+ArrowUp', exec(moveCmd(-1)));

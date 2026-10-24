@@ -271,6 +271,19 @@ try {
   const undone = await page.$eval('.editor > p', (e) => e.textContent);
   check(undone.endsWith('z→<='), `변환 직후 ⌫ → 친 그대로 (${undone.slice(-6)})`);
 
+  // 한글 조합 뒤 색이 멈춰 있지 않기: 조합 중 표시가 남은 채로 줄 끝에 ':'를 쳐도 바로 빨강
+  await k.press('Enter');
+  await k.type('테스트 하는 중');
+  await page.evaluate(() => {
+    const v = window.__ayunpad.view();
+    const key = v.state.plugins.find((p) => p.key.startsWith('auto$')).spec.key;
+    v.dispatch(v.state.tr.setMeta(key, { composing: true })); // 조합 표시가 남은 상황을 흉내
+  });
+  await k.type(':');
+  await sleep(100);
+  const colonRed = await page.$$eval('.editor > p', (ps) => [...ps[ps.length - 1].querySelectorAll('.a-red')].map((x) => x.textContent).join(''));
+  check(colonRed === '테스트 하는 중', `띄어쓰기 있는 줄도 ':' 앞은 바로 빨강 (${colonRed})`);
+
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();
 } catch (e) {
