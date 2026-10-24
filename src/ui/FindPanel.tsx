@@ -20,6 +20,7 @@ interface Props {
   initial: string;
   toast(msg: string): void;
   onClose(): void;
+  onEmph(): void;
 }
 
 const EFFECTS: { k: Effect; name: string; colors: PenKey[] }[] = [
@@ -45,7 +46,7 @@ type Row =
 
 // ⌘F: 이 노트(본문 · 표 · 글상자 · 위젯 이름표)에서 찾고, 고른 곳에만 동그라미 · 밑줄 · 형광펜 · 글자색을 한 번에.
 // 고름은 적용할 때까지 그대로 남고, 판을 닫았다 열어도 · 그 사이 글을 고쳐도 남는다. 검색어를 바꿀 때만 다시 전부 고름.
-export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial, toast, onClose }: Props) {
+export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial, toast, onClose, onEmph }: Props) {
   const fs = findKey.getState(state);
   const [q, setQ] = useState(initial);
   const [rep, setRep] = useState('');
@@ -352,6 +353,9 @@ export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial,
         </button>
         <button type="button" onClick={() => um?.redo()} title="다시 하기 (⌘⇧Z)">
           ↷ 다시
+        </button>
+        <button type="button" onClick={onEmph} title="노트의 강조 표시를 모두 보고 하나씩 · 한 번에 지우기">
+          강조 모아 보기 · 지우기
         </button>
         <span className="note">↑↓ · Enter 이동 · Space 고르기 · ⌘Enter 적용</span>
       </div>

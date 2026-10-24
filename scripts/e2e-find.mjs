@@ -162,6 +162,66 @@ try {
   const circled = await page.$$eval('.editor .circ.circ-r', (e) => e.length);
   check(circled === 3, `화면에 빨간 동그라미 3개 (${circled})`);
 
+  // 6-0) 강조 모아 보기(⌘K 명령): 종류별로 보고, ×로 하나씩 · 단추로 한꺼번에 지우고, 되돌리기
+  const emphCount = (M) => ({ c: M['circ:r']?.length ?? 0, u: M['u:b']?.length ?? 0 });
+  await page.click('.editor');
+  await combo([meta], 'KeyK');
+  await page.waitForSelector('.palette input');
+  await k.type('강조 지우기');
+  await sleep(200);
+  await clickText('.pal-list button .pal-title', '강조 모아 보기');
+  const emphOpen = await page.waitForSelector('.panel.emph', { timeout: 3000 }).then(() => true, () => false);
+  check(emphOpen, '⌘K ‘강조 지우기’ → 강조 모아 보기 판');
+  const chips = await page.$$eval('.panel.emph .chips button', (b) => b.map((x) => x.textContent).join(','));
+  check(chips === '전체 6,동그라미 3,밑줄 3,형광펜 0,글자색 0', `종류별 개수 (${chips})`);
+  await clickText('.panel.emph .chips button', '동그라미');
+  await sleep(100);
+  const circHits = await page.$$eval('.emph-list li .find-snip .circ', (e) => e.map((x) => x.textContent).join(','));
+  check(circHits === '모집,모집,모집', `동그라미만 3개, 종이와 같은 모양으로 (${circHits})`);
+  await page.$$eval('.emph-list .emph-x', (b) => b[0].click());
+  await sleep(150);
+  let EC = emphCount(await marks(page));
+  check(EC.c === 2 && EC.u === 3, `× → 그 동그라미 하나만 지움, 밑줄은 그대로 (${JSON.stringify(EC)})`);
+  const bulkLabel = await page.$eval('.panel.emph .fx-actions .primary', (e) => e.textContent);
+  check(bulkLabel === '동그라미 전부 지우기 (2)', `단추 이름 (${bulkLabel})`);
+  await page.click('.panel.emph .fx-actions .primary');
+  await sleep(150);
+  EC = emphCount(await marks(page));
+  check(EC.c === 0 && EC.u === 3, `동그라미 전부 지우기 → 동그라미만 사라짐 (${JSON.stringify(EC)})`);
+  await clickText('.panel.emph .fx-actions button', '↶');
+  await sleep(150);
+  EC = emphCount(await marks(page));
+  check(EC.c === 2, `되돌리기 한 번 → 한꺼번에 지운 2개가 돌아옴 (${JSON.stringify(EC)})`);
+  await clickText('.panel.emph .fx-actions button', '↶');
+  await sleep(150);
+  check(emphCount(await marks(page)).c === 3, '한 번 더 → ×로 지운 것도 돌아옴');
+  await clickText('.panel.emph .chips button', '전체');
+  await sleep(100);
+  await page.click('.panel.emph .fx-actions .primary');
+  await sleep(150);
+  EC = emphCount(await marks(page));
+  const emptyNote = await page.$eval('.panel.emph .note', (e) => e.textContent);
+  check(EC.c === 0 && EC.u === 0 && emptyNote.includes('없어요'), `전부 지우기 → 강조 0개 (${JSON.stringify(EC)} · ${emptyNote})`);
+  await combo([meta], 'KeyZ');
+  await sleep(150);
+  EC = emphCount(await marks(page));
+  check(EC.c === 3 && EC.u === 3, `⌘Z 한 번 → 전부 돌아옴 (${JSON.stringify(EC)})`);
+  await page.$$eval('.emph-list li > button:first-child', (b) => b[0].click());
+  await sleep(150);
+  const went = await page.evaluate(() => {
+    const st = window.__ayunpad.view().state;
+    return st.doc.textBetween(st.selection.from, st.selection.to);
+  });
+  check(went === '모집', `줄을 누르면 그 강조가 골라짐 (${went})`);
+  await k.press('Escape');
+  await sleep(100);
+  check(!(await page.$('.panel.emph')), 'Esc → 강조 판 닫힘');
+  await page.click('.tbtn[title^="강조 모아 보기"]');
+  const byBtn = await page.waitForSelector('.panel.emph', { timeout: 3000 }).then(() => true, () => false);
+  await page.click('.tbtn[title^="강조 모아 보기"]');
+  await sleep(100);
+  check(byBtn && !(await page.$('.panel.emph')), '위쪽 ◎ 강조 단추로 열고 닫기');
+
   // 6-1) 글상자 안도 찾고 효과를 넣는다. 본문과 글상자를 한 번의 ⌘Z로 되돌린다.
   await page.click('.addnote');
   await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
@@ -216,6 +276,40 @@ try {
     return { body, box: JSON.stringify(tb?.doc ?? {}).includes('"circ"') };
   });
   check(undone.body === 0 && !undone.box, `되돌리기 한 번에 본문 · 글상자 둘 다 취소 (${JSON.stringify(undone)})`);
+  // 6-2) 강조 모아 보기에 글상자 것도 나오고, 본문과 함께 지우고 되돌린다
+  const circs = () =>
+    page.evaluate(() => {
+      const tb = Object.values(window.__ayunpad.doc().shapes.toJSON()).find((s) => s.t === 'text');
+      let body = 0;
+      window.__ayunpad.view().state.doc.descendants((n) => {
+        if (n.isText && n.marks.some((m) => m.type.name === 'circ')) body++;
+        return true;
+      });
+      return { body, box: JSON.stringify(tb?.doc ?? {}).includes('"circ"') };
+    });
+  await page.$$eval('.fx-actions button', (b) => b[0].click());
+  await sleep(150);
+  await clickText('.find-undo button', '강조 모아');
+  await page.waitForSelector('.panel.emph');
+  await sleep(100);
+  const emAt = await page.$$eval('.emph-list .find-at', (e) => e.map((x) => x.textContent));
+  check(!(await page.$('.panel.find')) && emAt.length === 2 && emAt[1].includes('글상자'), `찾기 판 단추 → 강조 판, 본문 + 글상자 (${emAt.join(' / ')})`);
+  await page.$$eval('.emph-list .emph-x', (b) => b[1].click());
+  await sleep(150);
+  let cc = await circs();
+  check(cc.body === 1 && !cc.box && (await page.$$eval('.tbox .circ', (e) => e.length)) === 0, `× → 글상자 동그라미만 지움 (${JSON.stringify(cc)})`);
+  await clickText('.panel.emph .fx-actions button', '↶');
+  await sleep(150);
+  cc = await circs();
+  check(cc.body === 1 && cc.box, `되돌리기 → 글상자 동그라미 돌아옴 (${JSON.stringify(cc)})`);
+  await page.click('.panel.emph .fx-actions .primary');
+  await sleep(150);
+  cc = await circs();
+  check(cc.body === 0 && !cc.box, `전부 지우기 → 본문 · 글상자 둘 다 (${JSON.stringify(cc)})`);
+  await clickText('.panel.emph .fx-actions button', '↶');
+  await sleep(150);
+  cc = await circs();
+  check(cc.body === 1 && cc.box, `되돌리기 한 번에 둘 다 돌아옴 (${JSON.stringify(cc)})`);
   await k.press('Escape');
   await page.$$eval('.note-item .t', (els) => els.find((e) => e.textContent === '견본 · 경영학')?.click());
   await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 11);

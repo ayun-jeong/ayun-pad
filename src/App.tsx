@@ -23,6 +23,7 @@ import { hub, type SyncStatus } from './store/sync';
 import { purgeOld } from './store/trash';
 import { Account, statusText } from './ui/Account';
 import { EditorPane, GUTTER_MM, PX_PER_MM } from './ui/EditorPane';
+import { EmphasisPanel } from './ui/EmphasisPanel';
 import { FindPanel } from './ui/FindPanel';
 import { Help } from './ui/Help';
 import { buildPrintSheets, PagesView, type ViewMode } from './ui/PagesView';
@@ -87,6 +88,9 @@ export function App() {
   const pendingJump = useRef<{ noteId: string; target: JumpTarget } | null>(null);
   const [colorPop, setColorPop] = useState<'pen' | 'hl' | null>(null);
   const [insert, setInsert] = useState(false);
+  const [emph, setEmph] = useState(false);
+  const emphRef = useRef(false);
+  emphRef.current = emph;
   const [subbar, setSubbar] = useState<'pen' | 'hl' | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
   const drawPrefs = useRef<DrawState>(DEFAULT_DRAW);
@@ -248,6 +252,7 @@ export function App() {
           break;
         case 'type':
           setAccount(false);
+          setEmph(false);
           setPanel((p) => !p);
           break;
         case 'print':
@@ -292,7 +297,18 @@ export function App() {
         case 'insert':
           setPanel(false);
           setAccount(false);
+          setEmph(false);
           setInsert((x) => !x);
+          break;
+        case 'emph':
+          if (!viewRef.current) break;
+          setMode('edit');
+          setDraw(null);
+          setFind(null);
+          setPanel(false);
+          setInsert(false);
+          setEdState(viewRef.current.state);
+          setEmph(true);
           break;
         case 'draw-arrow':
           startDraw('arrow');
@@ -316,6 +332,7 @@ export function App() {
           if (!v) break;
           setMode('edit');
           setDraw(null);
+          setEmph(false);
           // 글자를 골라 두고 누르면 그 글자로, 아니면 지난번 검색어(고름 상태도 그대로)
           const { from, to, empty, $from, $to } = v.state.selection;
           const picked = empty || !$from.sameParent($to) ? '' : v.state.doc.textBetween(from, to, ' ');
@@ -355,6 +372,7 @@ export function App() {
         setVersions(false);
         setSearch(null);
         setInsert(false);
+        setEmph(false);
         if (findRef.current) {
           setFind(null);
           viewRef.current?.focus();
@@ -381,6 +399,13 @@ export function App() {
       if (id === 'Slash' && !typing && !drawRef.current) {
         e.preventDefault();
         act('search');
+        return;
+      }
+      // 편집 칸 밖(판의 단추를 누른 뒤 등)에서도 ⌘Z · ⌘⇧Z로 노트를 되돌린다. 그리기 중에는 그림 층이 받는다.
+      if (!typing && !drawRef.current && (id === 'mod+KeyZ' || id === 'mod+shift+KeyZ' || id === 'mod+KeyY')) {
+        e.preventDefault();
+        if (id === 'mod+KeyZ') umRef.current?.undo();
+        else umRef.current?.redo();
         return;
       }
       const a = map[id];
@@ -430,7 +455,7 @@ export function App() {
   const onState = useCallback((state: EditorState) => {
     setPen(penKey.getState(state)?.pen ?? null);
     setHasSel(!state.selection.empty);
-    if (findRef.current) setEdState(state);
+    if (findRef.current || emphRef.current) setEdState(state);
   }, []);
 
   // 검색에서 고른 줄로: 줄 id로 찾고(없으면 블록 번호), 찾은 말을 골라 둔 채 화면을 옮긴다
@@ -587,6 +612,7 @@ export function App() {
       { name: '넣기: 표 · 수직선 · 연표 · 그래프 · 분수 · 글상자 · 도형', alias: ['insert', '표', '그래프', '수직선', '연표', '글상자', '네모'], run: () => act('insert') },
       { name: '그리기', keys: '⌥D', alias: ['draw', '화살표', '도형'], run: () => act('draw') },
       { name: '찾기 · 일괄 강조', keys: '⌘F', alias: ['find', '바꾸기', '동그라미'], run: () => act('find') },
+      { name: '강조 모아 보기 · 지우기', alias: ['강조 지우기', '동그라미 지우기', '밑줄 지우기', '형광펜 지우기'], run: () => act('emph') },
       { name: '글자 모양', keys: '⌥T', alias: ['글꼴', '행간', '자간', '여백', '폰트'], run: () => act('type') },
       { name: '행간 좁게', keys: '⌥⇧,', run: () => act('pitch-down') },
       { name: '행간 넓게', keys: '⌥⇧.', run: () => act('pitch-up') },
@@ -635,7 +661,7 @@ export function App() {
           <span className="subj">›</span>
           <input aria-label="노트 이름" value={note?.title ?? ''} onChange={(e) => note && updateNote(lib, note.id, { title: e.currentTarget.value })} />
         </div>
-        <span className="tbtn" title="지금 든 펜. ⌥A를 누르면 자동 펜으로 돌아갑니다">
+        <span className="tbtn pen-now" title="지금 든 펜. ⌥A를 누르면 자동 펜으로 돌아갑니다">
           <i className={`pen-dot${pen ? '' : ' pen-auto'}`} style={pen ? { background: colorOf(pen) } : undefined} />
           <span className="wide-only">{penText}</span>
         </span>
@@ -665,8 +691,20 @@ export function App() {
         <button type="button" className="tbtn" onClick={() => act('search')} title="전체 검색 · 찾기 · 인쇄 등 모든 명령 (⌘K)" aria-label="검색">
           ⌕<span className="wide-only"> 검색</span>
         </button>
+        <button
+          type="button"
+          className={`tbtn hide-narrow${emph ? ' on' : ''}`}
+          onClick={() => (emph ? setEmph(false) : act('emph'))}
+          title="강조 모아 보기: 동그라미 · 밑줄 · 형광펜 · 글자색을 하나씩 · 한꺼번에 지우기 (넣기는 ⌘F 찾기에서)"
+        >
+          ◎<span className="wide-only"> 강조</span>
+        </button>
         <button type="button" className={`tbtn${insert ? ' on' : ''}`} onClick={() => act('insert')} title="표 · 수직선 · 연표 · 그래프 · 분수 · 글상자 · 도형 넣기 (본문에서 / 도 됨)">
           ＋<span className="wide-only"> 넣기</span>
+        </button>
+        <button type="button" className="tbtn hide-narrow" onClick={() => act('draw-text')} title="글상자: 누르고 종이를 누르면 그 자리에(빈 곳 두 번 누르기 · ⌥+클릭으로도)">
+          <b style={{ fontFamily: 'serif' }}>T</b>
+          <span className="wide-only"> 글상자</span>
         </button>
         <button type="button" className={`tbtn hide-narrow${draw ? ' on' : ''}`} onClick={() => act('draw')} title="그리기: 화살표 · 선 · 네모 · 원 · 글상자 (⌥D)">
           ✎<span className="wide-only"> 그리기</span>
@@ -674,7 +712,7 @@ export function App() {
         <button type="button" className="tbtn hide-narrow" onClick={() => act('print')} title="A4 2단 인쇄 · PDF 저장 (⌘P)">
           인쇄
         </button>
-        <div className="seg" role="group" aria-label="화면 배율">
+        <div className="seg zoomseg" role="group" aria-label="화면 배율">
           <button type="button" onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))} aria-label="작게">
             −
           </button>
@@ -767,8 +805,25 @@ export function App() {
           usable={typo ? fitPitch(typo).usable : 291}
           initial={find.initial}
           toast={toast}
+          onEmph={() => act('emph')}
           onClose={() => {
             setFind(null);
+            viewRef.current?.focus();
+          }}
+        />
+      )}
+      {emph && viewRef.current && edState && docRef.current && (
+        <EmphasisPanel
+          view={viewRef.current}
+          state={edState}
+          ydoc={docRef.current.ydoc}
+          shapes={docRef.current.shapes}
+          um={umRef.current}
+          src={srcRef.current}
+          usable={typo ? fitPitch(typo).usable : 291}
+          toast={toast}
+          onClose={() => {
+            setEmph(false);
             viewRef.current?.focus();
           }}
         />

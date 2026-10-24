@@ -1,5 +1,5 @@
 import type { Mark, MarkType, Node, ResolvedPos } from 'prosemirror-model';
-import { TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
+import { NodeSelection, TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
 import { headRange, infoOf, lineInfos } from './decorations';
 import { clamp } from './layout';
 import { MAX_DEPTH, type LineInfo } from './model';
@@ -127,6 +127,17 @@ export const unbranchAtStart: Command = (state, dispatch) => {
   const { $from, empty } = state.selection;
   if (!empty || $from.parentOffset !== 0 || $from.parent.type !== schema.nodes.line || $from.parent.attrs.kind !== 'branch') return false;
   dispatch?.(state.tr.setNodeMarkup($from.before(), undefined, { ...$from.parent.attrs, kind: 'plain' }));
+  return true;
+};
+
+// 표 바로 다음 줄 맨 앞에서 ⌫: 표를 고른다(한 번 더 ⌫ 하면 표가 지워진다)
+export const selectTableBefore: Command = (state, dispatch) => {
+  const { $from, empty } = state.selection;
+  if (!empty || $from.parentOffset !== 0 || $from.depth !== 1) return false;
+  const idx = $from.index(0);
+  const before = idx > 0 ? state.doc.child(idx - 1) : null;
+  if (!before || before.type.name !== 'table') return false;
+  dispatch?.(state.tr.setSelection(NodeSelection.create(state.doc, $from.before(1) - before.nodeSize)).scrollIntoView());
   return true;
 };
 

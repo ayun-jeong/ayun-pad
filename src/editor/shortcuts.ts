@@ -21,6 +21,7 @@ export type AppAction =
   | 'hl-picker'
   | 'find'
   | 'insert'
+  | 'emph'
   | 'draw-text'
   | 'draw-arrow'
   | 'draw-line'

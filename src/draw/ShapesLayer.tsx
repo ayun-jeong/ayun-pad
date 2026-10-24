@@ -129,6 +129,18 @@ function ShapeSvg({ r }: { r: Resolved }) {
   return <ellipse cx={b.x + b.w / 2} cy={b.y + b.h / 2} rx={b.w / 2} ry={b.h / 2} {...common} />;
 }
 
+// 글쓰기 화면에서 그림을 누를 수 있게 하는 투명한 선(그림 테두리만 닿고 글은 그대로 눌린다)
+function ShapeHit({ r, onPick }: { r: Resolved; onPick(e: React.PointerEvent): void }) {
+  const w = Math.max(2.4, r.w + 1.8);
+  if (r.t === 'path') return <polyline className="sh-hit" points={pts(route(r.pts, r.o))} fill="none" strokeWidth={w} onPointerDown={onPick} />;
+  if (r.t === 'text') return null;
+  const b = boxOf(r.a, r.b);
+  const cls = `sh-hit${r.fill ? ' filled' : ''}`;
+  const fill = r.fill ? 'transparent' : 'none';
+  if (r.t === 'rect') return <rect className={cls} x={b.x} y={b.y} width={b.w} height={b.h} fill={fill} strokeWidth={w} onPointerDown={onPick} />;
+  return <ellipse className={cls} cx={b.x + b.w / 2} cy={b.y + b.h / 2} rx={b.w / 2} ry={b.h / 2} fill={fill} strokeWidth={w} onPointerDown={onPick} />;
+}
+
 interface Ix {
   sel: string | null;
   drawing: { pts: XY[] } | null;
@@ -155,6 +167,41 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     shapes.observe(on);
     return () => shapes.unobserve(on);
   }, [shapes]);
+
+  // 글쓰기 화면에서 그림(화살표 · 선 · 네모 · 원)을 누르면 → 그 그림을 고른 채 그리기 막대로(색 · 굵기 · 직각 · 지우기)
+  const pickShape = (id: string, e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    ix.sel = id;
+    setDraw({ tool: 'select' });
+    host.toast('그림을 골랐어요 · 아래 막대에서 색 · 굵기 · 직각 · 지우기(⌫) · Esc로 끝');
+    repaint();
+  };
+
+  // 글쓰기 화면에서 종이 빈 곳(글이 없는 자리)을 두 번 누르면 → 그 자리에 글상자
+  const dblRef = useRef<(e: MouseEvent) => void>(() => undefined);
+  dblRef.current = (e: MouseEvent) => {
+    if (drawRef.current || !layer.current) return;
+    const t = e.target as HTMLElement | null;
+    if (!t || t.closest('.tbox, .wg, .tblw, .mi, .sh-hit')) return;
+    const line = t.closest('.editor > p') as HTMLElement | null;
+    if (line?.textContent) {
+      const r = document.createRange();
+      r.selectNodeContents(line);
+      const onText = Array.from(r.getClientRects()).some((rc) => e.clientX >= rc.left - 3 && e.clientX <= rc.right + 6 && e.clientY >= rc.top - 1 && e.clientY <= rc.bottom + 1);
+      if (onText) return; // 글자 위 두 번 누르기는 원래대로(낱말 고르기)
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    getSelection()?.removeAllRanges();
+    newText(toMM(e));
+    repaint();
+  };
+  useEffect(() => {
+    const on = (e: MouseEvent) => dblRef.current(e);
+    src.addEventListener('dblclick', on, true);
+    return () => src.removeEventListener('dblclick', on, true);
+  }, [src]);
 
   // 글쓰기 화면에서 ⌥(Alt)+클릭 → 그 자리에 글상자
   const altRef = useRef<(e: PointerEvent) => void>(() => undefined);
@@ -573,6 +620,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
         {resolved.map((r) => (
           <ShapeSvg key={r.id} r={r} />
         ))}
+        {!draw && resolved.map((r) => (r.t === 'text' ? null : <ShapeHit key={`hit-${r.id}`} r={r} onPick={(e) => pickShape(r.id, e)} />))}
         {preview && preview.length >= 2 && (
           <polyline className="sh-ui" points={pts(preview)} fill="none" stroke={strokeOf(draw?.c ?? 'r')} strokeWidth={draw?.w ?? DEFAULT_W} strokeLinejoin="round" strokeLinecap="round" strokeOpacity={0.75} />
         )}
@@ -667,50 +715,37 @@ interface BarProps {
 
 const alt = isMac ? '⌥' : 'Alt+';
 
+const KIND_NAME: Record<string, string> = { path: '선', rect: '네모', ellipse: '원', text: '글상자' };
+
+// 그리기 막대. 그림을 고르면 그 그림의 색 · 굵기 · 직각 · 화살촉 · 점선 · 복제 · 지우기만 보여 준다(이미 그린 것 고치기),
+// 고른 게 없으면 새로 그릴 도구와 설정.
 function DrawBar({ draw, sel, drawing, setDraw, update, remove, duplicate, finish }: BarProps) {
   const keep = (e: React.PointerEvent) => e.preventDefault();
   const c = sel?.c ?? draw.c;
   const w = sel?.w ?? draw.w;
   const setW = (dir: 1 | -1) => {
     const v = stepW(w, dir);
-    setDraw({ w: v });
     if (sel) update({ w: v });
+    else setDraw({ w: v });
   };
-  return (
-    <div className="drawbar" role="toolbar" aria-label="그리기 도구" onPointerDown={keep}>
-      <div className="dgroup">
-        {TOOLS.map((t) => (
-          <button key={t.t} type="button" className={draw.tool === t.t ? 'on' : ''} onClick={() => setDraw({ tool: t.t })} title={`${t.name} (${t.key})`}>
-            {t.name}
-            <kbd>{t.key}</kbd>
-          </button>
-        ))}
-      </div>
-      <div className="dgroup">
-        <button type="button" className={draw.ortho ? 'on' : ''} onClick={() => setDraw({ ortho: !draw.ortho })} title="가로 · 세로로만 꺾기 (H). ⇧를 누르고 있으면 45°마다">
-          직각<kbd>H</kbd>
+  const swatches = (
+    <div className="dgroup swatches">
+      {COLORS.map((k) => (
+        <button
+          key={k}
+          type="button"
+          className={c === k ? 'on' : ''}
+          onClick={() => (sel ? update({ c: k }) : setDraw({ c: k }))}
+          title={`${PEN_NAME[k]} (${alt}${k.toUpperCase()})`}
+          aria-label={PEN_NAME[k]}
+        >
+          <i style={{ background: strokeOf(k) }} />
         </button>
-        <button type="button" className={draw.lock ? 'on' : ''} onClick={() => setDraw({ lock: !draw.lock })} title="다 그린 뒤에도 같은 도구 유지 (Q)">
-          고정<kbd>Q</kbd>
-        </button>
-      </div>
-      <div className="dgroup swatches">
-        {COLORS.map((k) => (
-          <button
-            key={k}
-            type="button"
-            className={c === k ? 'on' : ''}
-            onClick={() => {
-              setDraw({ c: k });
-              if (sel) update({ c: k });
-            }}
-            title={`${PEN_NAME[k]} (${alt}${k.toUpperCase()})`}
-            aria-label={PEN_NAME[k]}
-          >
-            <i style={{ background: strokeOf(k) }} />
-          </button>
-        ))}
-      </div>
+      ))}
+    </div>
+  );
+  const width =
+    sel?.t === 'text' ? null : (
       <div className="dgroup">
         <button type="button" onClick={() => setW(-1)} title="가늘게 ([) · 0.2 / 0.35 / 0.5 / 0.8mm" aria-label="가늘게">
           −
@@ -720,51 +755,82 @@ function DrawBar({ draw, sel, drawing, setDraw, update, remove, duplicate, finis
           +
         </button>
       </div>
-      {sel && sel.t !== 'text' && (
-        <div className="dgroup">
-          <button type="button" className={sel.dash ? 'on' : ''} onClick={() => update({ dash: !sel.dash } as Partial<Shape>)}>
-            점선
-          </button>
-          {sel.t === 'path' && (
-            <>
-              <button type="button" onClick={() => update({ head: nextHead(sel.head) } as Partial<Shape>)} title="화살촉: 끝 → 양쪽 → 시작 → 없음">
-                화살촉 {HEAD_NAME[sel.head]}
+    );
+  const kind = sel ? (sel.t === 'path' ? (sel.head ? '화살표' : '선') : KIND_NAME[sel.t]) : '';
+  return (
+    <div className={`drawbar${sel ? ' has-sel' : ''}`} role="toolbar" aria-label="그리기 도구" onPointerDown={keep}>
+      {sel ? (
+        <>
+          <div className="dgroup dsel">
+            <b>고른 {kind}</b>
+          </div>
+          {swatches}
+          {width}
+          <div className="dgroup">
+            {sel.t === 'path' && (
+              <>
+                <button type="button" className={sel.o ? 'on' : ''} onClick={() => update({ o: !sel.o } as Partial<Shape>)} title="직선 ↔ 직각(가로 · 세로로만 꺾임)">
+                  직각
+                </button>
+                <button type="button" onClick={() => update({ head: nextHead(sel.head) } as Partial<Shape>)} title="화살촉: 끝 → 양쪽 → 시작 → 없음">
+                  화살촉 {HEAD_NAME[sel.head]}
+                </button>
+              </>
+            )}
+            {(sel.t === 'rect' || sel.t === 'ellipse') && (
+              <button type="button" className={sel.fill ? 'on' : ''} onClick={() => update({ fill: sel.fill ? null : sel.c } as Partial<Shape>)} title={`채우기 (${alt}⇧색, ${alt}⇧X 지우기)`}>
+                채우기
               </button>
-              <button type="button" className={sel.o ? 'on' : ''} onClick={() => update({ o: !sel.o } as Partial<Shape>)} title="이 화살표를 직선 ↔ 직각 경로로">
-                직각 경로
+            )}
+            {sel.t !== 'text' && (
+              <button type="button" className={sel.dash ? 'on' : ''} onClick={() => update({ dash: !sel.dash } as Partial<Shape>)}>
+                점선
               </button>
-            </>
-          )}
-          {sel.t !== 'path' && (
-            <button type="button" className={sel.fill ? 'on' : ''} onClick={() => update({ fill: sel.fill ? null : sel.c } as Partial<Shape>)} title={`채우기 (${alt}⇧색, ${alt}⇧X 지우기)`}>
-              채우기
+            )}
+            {sel.t === 'text' && (
+              <button type="button" className={sel.box ? 'on' : ''} onClick={() => update({ box: !sel.box } as Partial<Shape>)}>
+                테두리
+              </button>
+            )}
+          </div>
+          <div className="dgroup">
+            <button type="button" onClick={duplicate} title="복제 (⌘D)">
+              복제
+            </button>
+            <button type="button" className="ddel" onClick={remove} title="지우기 (⌫)">
+              지우기
+            </button>
+          </div>
+          <span className="dhint">끌어서 옮기기 · 점 끌어 모양 바꾸기 · 선을 두 번 눌러 점 추가</span>
+        </>
+      ) : (
+        <>
+          <div className="dgroup">
+            {TOOLS.map((t) => (
+              <button key={t.t} type="button" className={draw.tool === t.t ? 'on' : ''} onClick={() => setDraw({ tool: t.t })} title={`${t.name} (${t.key})`}>
+                {t.name}
+                <kbd>{t.key}</kbd>
+              </button>
+            ))}
+          </div>
+          <div className="dgroup">
+            <button type="button" className={draw.ortho ? 'on' : ''} onClick={() => setDraw({ ortho: !draw.ortho })} title="새로 그릴 때 가로 · 세로로만 꺾기 (H). ⇧를 누르고 있으면 45°마다">
+              직각<kbd>H</kbd>
+            </button>
+            <button type="button" className={draw.lock ? 'on' : ''} onClick={() => setDraw({ lock: !draw.lock })} title="다 그린 뒤에도 같은 도구 유지 (Q)">
+              고정<kbd>Q</kbd>
+            </button>
+          </div>
+          {swatches}
+          {width}
+          {drawing && (
+            <button type="button" className="dfinish" onClick={finish} title="지금까지 찍은 점으로 완성 (Enter)">
+              완성
             </button>
           )}
-        </div>
+          <span className="dhint">{drawing ? '누를 때마다 꺾임 · 두 번 눌러 끝 · ⌫ 마지막 점 빼기' : '이미 그린 그림을 누르면 색 · 굵기 · 직각을 바꿀 수 있어요'}</span>
+        </>
       )}
-      {sel && sel.t === 'text' && (
-        <div className="dgroup">
-          <button type="button" className={sel.box ? 'on' : ''} onClick={() => update({ box: !sel.box } as Partial<Shape>)}>
-            테두리
-          </button>
-        </div>
-      )}
-      {sel && (
-        <div className="dgroup">
-          <button type="button" onClick={duplicate} title="복제 (⌘D)">
-            복제
-          </button>
-          <button type="button" onClick={remove} title="지우기 (⌫)">
-            지우기
-          </button>
-        </div>
-      )}
-      {drawing && (
-        <button type="button" className="dfinish" onClick={finish} title="지금까지 찍은 점으로 완성 (Enter)">
-          완성
-        </button>
-      )}
-      <span className="dhint">{drawing ? '누를 때마다 꺾임 · 두 번 눌러 끝 · ⌫ 마지막 점 빼기' : sel ? '끌어서 옮기기 · 점 끌기 · 선 두 번 눌러 점 추가' : ''}</span>
       <button type="button" className="ddone" onClick={() => setDraw(null)} title="그리기 끝 (Esc · ⌥D)">
         완료
       </button>

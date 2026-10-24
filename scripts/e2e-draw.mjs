@@ -242,7 +242,7 @@ try {
   const z2 = (await shapes()).find((s) => s.id === z.id);
   const movedPts = z2.pts.map((p, i) => Math.hypot(p.x - z.pts[i].x, p.y - z.pts[i].y) > 0.5);
   check(movedPts.filter(Boolean).length === 1 && movedPts[5], `점 하나(6번째)만 끌어서 고침 (${movedPts.map((m) => (m ? 1 : 0)).join('')})`);
-  await page.$$eval('.drawbar button', (bs) => bs.find((b) => b.textContent.includes('직각 경로'))?.click());
+  await page.$$eval('.drawbar.has-sel button', (bs) => bs.find((b) => b.textContent === '직각')?.click());
   await sleep(80);
   check((await shapes()).find((s) => s.id === z.id)?.o === true, '막대의 직각 경로 → 그린 화살표를 직선에서 직각으로');
   await k.press('Backspace');
@@ -466,7 +466,7 @@ try {
   const shrink = async (sel) => {
     await page.hover(sel);
     await sleep(80);
-    const b = await (await page.$(`${sel} > .wg-size`)).boundingBox();
+    const b = await (await page.$(`${sel} .wg-size`)).boundingBox();
     await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
     await page.mouse.down();
     await page.mouse.move(b.x - 200, b.y, { steps: 8 });
@@ -539,6 +539,121 @@ try {
   await page.keyboard.press('Digit1');
   await page.keyboard.up('Alt');
   await sleep(150);
+
+  // 18) 지우기 · 고치기: 표(막대 · ⌫⌫) · 그래프 · 이미 그린 화살표, 줄여도 꺾쇠 자리 그대로, 빈 곳 두 번 누르기 글상자
+  await page.click('.addnote');
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+  await page.click('.editor');
+  await k.type('경영학');
+  await k.press('Enter');
+  await k.type('- 마케팅');
+  await k.press('Enter');
+  await k.type('/표 2x2');
+  await page.waitForSelector('.slash button.on');
+  await k.press('Enter');
+  await page.waitForSelector('.editor table');
+  const padOf = () => page.$eval('.editor .tblw', (e) => getComputedStyle(e).paddingLeft);
+  const pad0 = await padOf();
+  await page.hover('.editor .tblw');
+  const hb = await (await page.$('.editor .tblw > .wg-size')).boundingBox();
+  await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(hb.x - 150, hb.y, { steps: 6 });
+  await page.mouse.up();
+  await sleep(250);
+  const pad1 = await padOf();
+  check(pad0 === pad1 && parseFloat(pad0) > 0, `표를 줄여도 들여쓰기 · 가지선 자리는 그대로 (${pad0} → ${pad1})`);
+  const tableBtn = (label) => page.$$eval('.editor .tblw .tbl-ctl button', (bs, l) => bs.find((b) => b.textContent === l)?.click(), label);
+  await page.hover('.editor .tblw');
+  await tableBtn('행＋');
+  await tableBtn('열＋');
+  await sleep(100);
+  const grid = await page.$$eval('.editor table tr', (rs) => rs.map((r) => r.children.length).join(','));
+  check(grid === '3,3,3', `표 막대: 행＋ · 열＋ (${grid})`);
+  await tableBtn('표 지우기');
+  await sleep(120);
+  check(!(await page.$('.editor table')), '표 막대: 표 지우기');
+  await page.keyboard.down(meta);
+  await page.keyboard.press('KeyZ');
+  await page.keyboard.up(meta);
+  await sleep(150);
+  check(!!(await page.$('.editor table')), '⌘Z → 지운 표 되살림');
+  // 표 다음 줄 맨 앞에서 ⌫ ⌫ → 표 지우기
+  await page.evaluate(() => {
+    const v = window.__ayunpad.view();
+    let pos = -1;
+    v.state.doc.forEach((n, p, i) => {
+      if (n.type.name === 'table') pos = p + n.nodeSize + 1;
+    });
+    v.focus();
+    v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, pos)));
+  });
+  await k.press('Backspace');
+  await sleep(60);
+  const selTable = await page.$('.editor .tblw.ProseMirror-selectednode');
+  await k.press('Backspace');
+  await sleep(100);
+  check(!!selTable && !(await page.$('.editor table')), '표 다음 줄 맨 앞 ⌫ → 표 고르기, 한 번 더 ⌫ → 표 지움');
+  // 그래프 지우기 단추
+  await k.type('/그래프');
+  await page.waitForSelector('.slash button.on');
+  await k.press('Enter');
+  await page.waitForSelector('.wg.graph');
+  await page.hover('.wg.graph');
+  await page.$$eval('.wg.graph .wg-ctl button', (bs) => bs.find((b) => b.textContent === '지우기')?.click());
+  await sleep(120);
+  check(!(await page.$('.wg.graph')), '그래프 지우기 단추');
+  // 이미 그린 화살표: 글쓰기 화면에서 눌러 고르기 → 색 · 직각 · 굵기 · 지우기
+  await page.keyboard.down('Alt');
+  await page.keyboard.press('KeyD');
+  await page.keyboard.up('Alt');
+  await page.waitForSelector('.drawbar');
+  await k.press('KeyA'); // 마지막에 쓴 도구(네모)가 아니라 화살표로
+  const L4 = await page.$eval('.shapes-layer', (e) => {
+    const r = e.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, mmW: e.offsetWidth / (96 / 25.4) };
+  });
+  const at4 = (x, y) => [L4.x + (x / L4.mmW) * L4.w, L4.y + (y / L4.mmW) * L4.w];
+  await page.mouse.click(...at4(20, 40));
+  await sleep(420);
+  await page.mouse.click(...at4(70, 52), { count: 2 });
+  await sleep(150);
+  await k.press('Escape');
+  await k.press('Escape');
+  await sleep(150);
+  check(!(await page.$('.drawbar')), '화살표 그리고 글쓰기 화면으로');
+  const arrowId = await page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).find((x) => x.t === 'path')?.id);
+  await page.mouse.click(...at4(45, 46)); // 화살표 선 위
+  await page.waitForSelector('.drawbar.has-sel', { timeout: 3000 }).catch(() => {});
+  check(!!(await page.$('.drawbar.has-sel')), '글쓰기 화면에서 화살표를 누르면 그 화살표가 골라짐');
+  await page.$$eval('.drawbar .swatches button', (bs) => bs.find((b) => b.getAttribute('aria-label') === '파랑')?.click());
+  await page.$$eval('.drawbar button', (bs) => bs.find((b) => b.textContent === '직각')?.click());
+  await page.$$eval('.drawbar button', (bs) => bs.find((b) => b.getAttribute('aria-label') === '가늘게')?.click());
+  await sleep(120);
+  const ed = await page.evaluate((id) => window.__ayunpad.doc().shapes.get(id), arrowId);
+  check(ed.c === 'b' && ed.o === true && ed.w < 0.35, `이미 그린 화살표 색 · 직각 · 굵기 바꾸기 (${ed.c}, 직각 ${ed.o}, ${ed.w}mm)`);
+  await page.$$eval('.drawbar button', (bs) => bs.find((b) => b.textContent === '지우기')?.click());
+  await sleep(120);
+  check(!(await page.evaluate((id) => window.__ayunpad.doc().shapes.has(id), arrowId)), '막대의 지우기 → 화살표 지움');
+  await k.press('Escape');
+  await sleep(100);
+  // 종이 빈 곳 두 번 누르기 → 글상자, 위쪽 T 글상자 단추
+  const p0 = await (await page.$('.editor > p')).boundingBox();
+  await page.mouse.click(p0.x + p0.width - 30, p0.y + p0.height / 2, { count: 2 });
+  await page.waitForSelector('.tbox.tedit .tb-edit', { timeout: 3000 }).catch(() => {});
+  check(!!(await page.$('.tbox.tedit .tb-edit')), '종이 빈 곳 두 번 누르기 → 그 자리에 글상자');
+  await k.type('빈 곳 글상자');
+  await k.press('Escape');
+  await sleep(100);
+  await page.$$eval('.top .tbtn', (bs) => bs.find((b) => b.textContent.includes('글상자'))?.click());
+  await sleep(80);
+  await page.mouse.click(...at4(30, 70));
+  await page.waitForSelector('.tbox.tedit .tb-edit', { timeout: 3000 }).catch(() => {});
+  await k.type('단추 글상자');
+  await k.press('Escape');
+  await sleep(120);
+  const texts = await page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).filter((x) => x.t === 'text').map((x) => x.text));
+  check(texts.includes('빈 곳 글상자') && texts.includes('단추 글상자'), `위쪽 T 글상자 단추로도 (${texts.join(' | ')})`);
 
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();

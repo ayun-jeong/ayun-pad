@@ -1,6 +1,6 @@
 import type { Node } from 'prosemirror-model';
-import { NodeSelection, Plugin, Selection, type EditorState, type Transaction } from 'prosemirror-state';
-import { TableView } from 'prosemirror-tables';
+import { NodeSelection, Plugin, Selection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
+import { addColumnAfter, addRowAfter, deleteColumn, deleteRow, TableView } from 'prosemirror-tables';
 import type { EditorView, NodeView } from 'prosemirror-view';
 import { undo, yUndoPluginKey } from 'y-prosemirror';
 import { arrowize } from './arrows';
@@ -142,7 +142,8 @@ export const SCALE_MIN = 0.35;
 const clampScale = (v: number) => Math.round(Math.min(1, Math.max(SCALE_MIN, v)) * 20) / 20;
 
 // 모서리 손잡이 끌기: 오른쪽으로 끌면 커지고 왼쪽으로 끌면 작아진다. 끄는 동안은 화면에서만, 놓으면 저장(되돌리기 한 걸음).
-function resizeHandle(target: () => HTMLElement, current: () => number, commit: (s: number) => void): HTMLElement {
+// measure = 지금 크기를 재는 상자(줄어드는 내용), target = --s 를 붙일 상자.
+function resizeHandle(measure: () => HTMLElement, target: () => HTMLElement, current: () => number, commit: (s: number) => void): HTMLElement {
   const h = document.createElement('span');
   h.className = 'wg-size';
   h.title = '끌어서 크기 바꾸기(글자도 같이)';
@@ -153,7 +154,7 @@ function resizeHandle(target: () => HTMLElement, current: () => number, commit: 
     e.stopPropagation();
     const el = target();
     const x0 = e.clientX;
-    const w0 = el.getBoundingClientRect().width || 1;
+    const w0 = measure().getBoundingClientRect().width || 1;
     const s0 = current();
     let s = s0;
     const move = (ev: PointerEvent) => {
@@ -315,11 +316,13 @@ abstract class WidgetView implements NodeView {
     return !!t?.closest?.('.wg-ed, .wg-ctl, .wg-size');
   }
 
-  // 크기: --s 를 붙이고 모서리 손잡이를 단다(render 끝에서 부른다)
-  protected sized() {
+  // 크기: 바깥 상자(가지선 · 들여쓰기)는 그대로 두고 안쪽 내용 상자(inner)만 --s 만큼 줄인다.
+  // 모서리 손잡이는 내용 상자 오른쪽 아래에(render 끝에서 부른다)
+  protected sized(inner: HTMLElement) {
     this.dom.style.setProperty('--s', String((this.node.attrs.scale as number) ?? 1));
-    this.dom.appendChild(
+    inner.appendChild(
       resizeHandle(
+        () => inner,
         () => this.dom,
         () => (this.node.attrs.scale as number) ?? 1,
         (scale) => {
@@ -332,6 +335,14 @@ abstract class WidgetView implements NodeView {
 
   ignoreMutation(): boolean {
     return true;
+  }
+
+  // 위젯 지우기(되돌리기 가능)
+  protected remove() {
+    const pos = this.getPos();
+    if (pos == null) return;
+    this.view.dispatch(this.view.state.tr.delete(pos, pos + this.node.nodeSize));
+    this.view.focus();
   }
 
   protected control(label: string, title: string, fn: () => void, parent: HTMLElement) {
@@ -368,9 +379,10 @@ class TimelineView extends WidgetView {
     const n = d.vals.length;
     this.dom.replaceChildren();
     this.dom.style.setProperty('--n', String(n));
-    const lab = el('div', 'tl-row tl-lab', this.dom);
-    const axis = el('div', 'tl-axis', this.dom);
-    const val = el('div', 'tl-row tl-val', this.dom);
+    const inner = el('div', 'wg-in', this.dom);
+    const lab = el('div', 'tl-row tl-lab', inner);
+    const axis = el('div', 'tl-axis', inner);
+    const val = el('div', 'tl-row tl-val', inner);
     for (let i = 0; i < n; i++) {
       const a = editable(d.labels[i] ?? '', 'tl-cell', '');
       a.dataset.i = String(i);
@@ -385,7 +397,8 @@ class TimelineView extends WidgetView {
     const ctl = el('div', 'wg-ctl', this.dom);
     this.control('＋', '눈금 하나 더', () => this.resize(1), ctl);
     this.control('－', '마지막 눈금 빼기', () => this.resize(-1), ctl);
-    this.sized();
+    this.control('지우기', '이 연표 · 수직선 지우기', () => this.remove(), ctl);
+    this.sized(inner);
   }
 
   protected collect(target: HTMLElement) {
@@ -441,6 +454,7 @@ class GraphView extends WidgetView {
     const tpl = TEMPLATES[d.tpl] ?? TEMPLATES.blank;
     this.dom.replaceChildren();
     this.dom.style.setProperty('--rows', String(d.rows));
+    const inner = el('div', 'wg-in', this.dom);
     const svg = document.createElementNS(SVGNS, 'svg');
     svg.setAttribute('viewBox', '0 0 100 60');
     svg.setAttribute('preserveAspectRatio', 'none');
@@ -452,9 +466,9 @@ class GraphView extends WidgetView {
       path.setAttribute('vector-effect', 'non-scaling-stroke');
       svg.appendChild(path);
     }
-    this.dom.appendChild(svg);
+    inner.appendChild(svg);
     for (const [x, y] of tpl.dots ?? []) {
-      const dot = el('i', 'gr-dot', this.dom);
+      const dot = el('i', 'gr-dot', inner);
       dot.style.left = `${x}%`;
       dot.style.top = `${(y / 60) * 100}%`;
     }
@@ -463,7 +477,7 @@ class GraphView extends WidgetView {
       s.dataset.k = l.key;
       s.style.left = `${l.x}%`;
       s.style.top = `${(l.y / 60) * 100}%`;
-      this.dom.appendChild(s);
+      inner.appendChild(s);
     }
     const ctl = el('div', 'wg-ctl', this.dom);
     this.control('틀', `다른 틀로 (지금: ${tpl.name})`, () => {
@@ -479,7 +493,8 @@ class GraphView extends WidgetView {
       this.commit({ rows: Math.max(4, d.rows - 1) });
       this.render();
     }, ctl);
-    this.sized();
+    this.control('지우기', '이 그래프 지우기', () => this.remove(), ctl);
+    this.sized(inner);
   }
 
   protected collect(target: HTMLElement) {
@@ -494,6 +509,7 @@ class GraphView extends WidgetView {
 // 끌어서 바꾼 열 너비는 '비율'로 써서 표를 줄여도 열이 같이 줄어든다.
 class PadTableView extends TableView {
   private handle: HTMLElement;
+  private ctl: HTMLElement;
   private ro: ResizeObserver;
 
   constructor(
@@ -504,6 +520,7 @@ class PadTableView extends TableView {
     super(node, cellMinWidth);
     this.dom.classList.add('tblw');
     this.handle = resizeHandle(
+      () => this.table,
       () => this.dom,
       () => (this.node.attrs.scale as number) ?? 1,
       (scale) => {
@@ -512,6 +529,29 @@ class PadTableView extends TableView {
       },
     );
     this.dom.appendChild(this.handle);
+    // 표 위 작은 막대: 행 · 열 넣고 빼기, 표 지우기
+    this.ctl = document.createElement('div');
+    this.ctl.className = 'tbl-ctl';
+    this.ctl.contentEditable = 'false';
+    const btn = (label: string, title: string, fn: () => void) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'wg-btn';
+      b.textContent = label;
+      b.title = title;
+      b.addEventListener('mousedown', (e) => e.preventDefault());
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        fn();
+      });
+      this.ctl.appendChild(b);
+    };
+    btn('행＋', '아래에 행 넣기', () => this.cmd(addRowAfter));
+    btn('열＋', '오른쪽에 열 넣기', () => this.cmd(addColumnAfter));
+    btn('행－', '지금 행 지우기', () => this.cmd(deleteRow));
+    btn('열－', '지금 열 지우기', () => this.cmd(deleteColumn));
+    btn('표 지우기', '표를 통째로 지우기(⌘Z로 되돌림)', () => this.removeTable());
+    this.dom.appendChild(this.ctl);
     this.ro = new ResizeObserver(() => this.placeHandle());
     this.ro.observe(this.table);
     this.applyScale();
@@ -532,6 +572,29 @@ class PadTableView extends TableView {
   private placeHandle() {
     this.handle.style.left = `${this.table.offsetLeft + this.table.offsetWidth}px`;
     this.handle.style.top = `${this.table.offsetTop + this.table.offsetHeight}px`;
+    this.ctl.style.left = `${this.table.offsetLeft}px`;
+    this.ctl.style.top = `${this.table.offsetTop}px`;
+  }
+
+  // 표 명령: 커서가 이 표 안에 없으면 마지막 칸으로 옮긴 뒤
+  private cmd(c: Command) {
+    const v = this.view;
+    const pos = this.pos();
+    if (!v || pos == null) return;
+    const $f = v.state.selection.$from;
+    let inThis = false;
+    for (let d = $f.depth; d > 0; d--) if ($f.node(d).type.name === 'table') inThis = $f.before(d) === pos;
+    if (!inThis) v.dispatch(v.state.tr.setSelection(Selection.near(v.state.doc.resolve(pos + this.node.nodeSize - 1), -1)));
+    c(v.state, v.dispatch, v);
+    v.focus();
+  }
+
+  private removeTable() {
+    const v = this.view;
+    const pos = this.pos();
+    if (!v || pos == null) return;
+    v.dispatch(v.state.tr.delete(pos, pos + this.node.nodeSize).scrollIntoView());
+    v.focus();
   }
 
   private applyScale() {
@@ -550,12 +613,12 @@ class PadTableView extends TableView {
   }
 
   ignoreMutation(record: Parameters<TableView['ignoreMutation']>[0]): boolean {
-    if (record.type !== 'selection' && (record.target === this.dom || this.handle.contains(record.target as globalThis.Node))) return true;
+    if (record.type !== 'selection' && (record.target === this.dom || this.handle.contains(record.target as globalThis.Node) || this.ctl.contains(record.target as globalThis.Node))) return true;
     return super.ignoreMutation(record);
   }
 
   stopEvent(e: Event): boolean {
-    return this.handle.contains(e.target as globalThis.Node);
+    return this.handle.contains(e.target as globalThis.Node) || this.ctl.contains(e.target as globalThis.Node);
   }
 
   destroy() {
