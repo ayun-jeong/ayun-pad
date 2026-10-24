@@ -284,12 +284,17 @@ try {
   const colonRed = await page.$$eval('.editor > p', (ps) => [...ps[ps.length - 1].querySelectorAll('.a-red')].map((x) => x.textContent).join(''));
   check(colonRed === '테스트 하는 중', `띄어쓰기 있는 줄도 ':' 앞은 바로 빨강 (${colonRed})`);
 
-  // 옆 가지(⌥]): 경영학 ┬─ 마케팅 / ├─ 인사관리 / └─ 재무관리
+  // 옆 가지(⌥Tab): 경영학 ┬─ 마케팅 / ├─ 인사관리 / └─ 재무관리
+  const altTab = async () => {
+    await k.down('Alt');
+    await k.press('Tab');
+    await k.up('Alt');
+  };
   await page.click('.addnote');
   await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
   await page.click('.editor');
   await k.type('경영학');
-  await alt('BracketRight');
+  await altTab();
   await k.type('마케팅');
   await k.press('Enter');
   await k.type('인사관리');
@@ -325,14 +330,14 @@ try {
     v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, 2)));
     v.focus();
   });
-  await alt('BracketRight');
+  await altTab();
   await sleep(300);
   G = await geo();
-  check(G[1].top > G[0].top && G[1].left < G2[1].left, `부모 줄에서 ⌥] → 자식을 아래로 (${G[1].top} > ${G[0].top})`);
-  await alt('BracketRight');
+  check(G[1].top > G[0].top && G[1].left < G2[1].left, `부모 줄에서 ⌥Tab → 자식을 아래로 (${G[1].top} > ${G[0].top})`);
+  await altTab();
   await sleep(300);
   G = await geo();
-  check(G[1].top === G[0].top, '⌥] 한 번 더 → 다시 옆으로');
+  check(G[1].top === G[0].top, '⌥Tab 한 번 더 → 다시 옆으로');
   // A4 보기에도 같은 모양
   await alt('Digit3');
   await page.waitForSelector('.pages.a4 .psheet');

@@ -444,6 +444,55 @@ try {
   B = await boxes();
   check(B.length === 1 && !B.some((b) => b.id === memo.id) && !(await page.$('.tbox.tedit')), '× → 글상자 지움');
 
+  // 16) 표 · 그래프 크기: 오른쪽 아래 모서리 손잡이를 끌면 줄어들고 글자도 같이, 다음 줄은 줄 칸에 그대로
+  await page.click('.addnote');
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+  await page.click('.editor');
+  await k.type('크기 시험');
+  await k.press('Enter');
+  await k.type('/표 3x3');
+  await page.waitForSelector('.slash button.on');
+  await k.press('Enter');
+  await page.waitForSelector('.editor table');
+  await k.type('구분');
+  await (await page.evaluateHandle(() => document.querySelector('.editor .tblw').nextElementSibling)).click();
+  await k.type('/수요공급');
+  await page.waitForSelector('.slash button.on');
+  await k.press('Enter');
+  await page.waitForSelector('.wg.graph');
+  await k.type('아래 줄');
+  await sleep(200);
+  const font0 = await page.$eval('.editor .tblw th', (e) => parseFloat(getComputedStyle(e).fontSize));
+  const shrink = async (sel) => {
+    await page.hover(sel);
+    await sleep(80);
+    const b = await (await page.$(`${sel} > .wg-size`)).boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(b.x - 200, b.y, { steps: 8 });
+    await page.mouse.up();
+    await sleep(300);
+  };
+  await shrink('.editor .tblw');
+  await shrink('.editor .wg.graph');
+  const sz = await page.evaluate(() => {
+    const sc = {};
+    window.__ayunpad.view().state.doc.forEach((n) => {
+      if (n.attrs.scale !== undefined) sc[n.type.name] = n.attrs.scale;
+    });
+    const ps = [...document.querySelectorAll('.editor > *')];
+    const t0 = ps[0].getBoundingClientRect();
+    return { sc, font: parseFloat(getComputedStyle(document.querySelector('.editor .tblw th')).fontSize), rows: (ps[ps.length - 1].getBoundingClientRect().top - t0.top) / t0.height };
+  });
+  check(sz.sc.table < 0.9 && sz.sc.graph < 0.9, `손잡이로 표 · 그래프 줄이기 (표 ${sz.sc.table}, 그래프 ${sz.sc.graph})`);
+  check(sz.font < font0 * 0.9, `표를 줄이면 칸 글자도 작아짐 (${font0.toFixed(1)} → ${sz.font.toFixed(1)}px)`);
+  check(Math.abs(sz.rows - Math.round(sz.rows)) < 0.01, `줄인 뒤에도 다음 줄은 줄 칸에 딱 맞음 (${sz.rows.toFixed(3)}줄)`);
+  await page.keyboard.down(meta);
+  await page.keyboard.press('KeyZ');
+  await page.keyboard.up(meta);
+  await sleep(150);
+  check((await page.evaluate(() => window.__ayunpad.view().state.doc.child(2).attrs.scale)) === 1, '⌘Z → 그래프 크기 되돌림');
+
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();
 } catch (e) {

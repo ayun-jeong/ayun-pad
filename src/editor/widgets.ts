@@ -135,6 +135,42 @@ export const TEMPLATES: Record<GraphTpl, Tpl> = {
 
 export const TPL_ORDER: GraphTpl[] = ['blank', 'sd', 'bep', 'plc'];
 
+// ── 크기(글자도 같이) ─────────────────────────────────────────────────────
+// 표 · 그래프 · 연표의 scale(0.35~1). 오른쪽 아래 모서리 손잡이를 끌어 바꾼다. 줄어든 높이는 줄 격자에 맞춰
+// 아래를 채운다(EditorPane.pushWidgets) → 다음 줄이 A4 줄 칸에서 어긋나지 않는다.
+export const SCALE_MIN = 0.35;
+const clampScale = (v: number) => Math.round(Math.min(1, Math.max(SCALE_MIN, v)) * 20) / 20;
+
+// 모서리 손잡이 끌기: 오른쪽으로 끌면 커지고 왼쪽으로 끌면 작아진다. 끄는 동안은 화면에서만, 놓으면 저장(되돌리기 한 걸음).
+function resizeHandle(target: () => HTMLElement, current: () => number, commit: (s: number) => void): HTMLElement {
+  const h = document.createElement('span');
+  h.className = 'wg-size';
+  h.title = '끌어서 크기 바꾸기(글자도 같이)';
+  h.contentEditable = 'false';
+  h.addEventListener('mousedown', (e) => e.preventDefault());
+  h.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const el = target();
+    const x0 = e.clientX;
+    const w0 = el.getBoundingClientRect().width || 1;
+    const s0 = current();
+    let s = s0;
+    const move = (ev: PointerEvent) => {
+      s = clampScale((s0 * (w0 + ev.clientX - x0)) / w0);
+      el.style.setProperty('--s', String(s));
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      if (s !== s0) commit(s);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  });
+  return h;
+}
+
 // ── 노드 뷰 ───────────────────────────────────────────────────────────
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -261,6 +297,7 @@ abstract class WidgetView implements NodeView {
     if (node.type !== this.node.type) return false;
     const same = node.attrs.data === this.node.attrs.data;
     this.node = node;
+    this.dom.style.setProperty('--s', String((node.attrs.scale as number) ?? 1));
     if (!same && !this.dom.contains(document.activeElement)) this.render();
     return true;
   }
@@ -275,7 +312,22 @@ abstract class WidgetView implements NodeView {
 
   stopEvent(e: Event): boolean {
     const t = e.target as HTMLElement | null;
-    return !!t?.closest?.('.wg-ed, .wg-ctl');
+    return !!t?.closest?.('.wg-ed, .wg-ctl, .wg-size');
+  }
+
+  // 크기: --s 를 붙이고 모서리 손잡이를 단다(render 끝에서 부른다)
+  protected sized() {
+    this.dom.style.setProperty('--s', String((this.node.attrs.scale as number) ?? 1));
+    this.dom.appendChild(
+      resizeHandle(
+        () => this.dom,
+        () => (this.node.attrs.scale as number) ?? 1,
+        (scale) => {
+          const pos = this.getPos();
+          if (pos != null) this.view.dispatch(this.view.state.tr.setNodeMarkup(pos, undefined, { ...this.node.attrs, scale }));
+        },
+      ),
+    );
   }
 
   ignoreMutation(): boolean {
@@ -333,6 +385,7 @@ class TimelineView extends WidgetView {
     const ctl = el('div', 'wg-ctl', this.dom);
     this.control('＋', '눈금 하나 더', () => this.resize(1), ctl);
     this.control('－', '마지막 눈금 빼기', () => this.resize(-1), ctl);
+    this.sized();
   }
 
   protected collect(target: HTMLElement) {
@@ -426,6 +479,7 @@ class GraphView extends WidgetView {
       this.commit({ rows: Math.max(4, d.rows - 1) });
       this.render();
     }, ctl);
+    this.sized();
   }
 
   protected collect(target: HTMLElement) {
@@ -436,11 +490,76 @@ class GraphView extends WidgetView {
   }
 }
 
-// 표: prosemirror-tables의 기본 뷰를 그대로 쓰고, 칸 안 줄은 일반 줄과 같은 규칙으로 칠해진다.
+// 표: prosemirror-tables의 기본 뷰 + 크기(--s). 칸 안 줄은 일반 줄과 같은 규칙으로 칠해진다.
+// 끌어서 바꾼 열 너비는 '비율'로 써서 표를 줄여도 열이 같이 줄어든다.
 class PadTableView extends TableView {
-  constructor(node: Node, cellMinWidth: number) {
+  private handle: HTMLElement;
+  private ro: ResizeObserver;
+
+  constructor(
+    node: Node,
+    cellMinWidth: number,
+    private view?: EditorView,
+  ) {
     super(node, cellMinWidth);
     this.dom.classList.add('tblw');
+    this.handle = resizeHandle(
+      () => this.dom,
+      () => (this.node.attrs.scale as number) ?? 1,
+      (scale) => {
+        const pos = this.pos();
+        if (pos != null && this.view) this.view.dispatch(this.view.state.tr.setNodeMarkup(pos, undefined, { ...this.node.attrs, scale }));
+      },
+    );
+    this.dom.appendChild(this.handle);
+    this.ro = new ResizeObserver(() => this.placeHandle());
+    this.ro.observe(this.table);
+    this.applyScale();
+  }
+
+  // 표 노드의 문서 위치(TableView는 getPos를 받지 않아서 DOM으로 찾는다)
+  private pos(): number | null {
+    if (!this.view) return null;
+    try {
+      const $p = this.view.state.doc.resolve(this.view.posAtDOM(this.contentDOM, 0));
+      for (let d = $p.depth; d > 0; d--) if ($p.node(d).type.name === 'table') return $p.before(d);
+    } catch {
+      /* 이미 지워진 표 */
+    }
+    return null;
+  }
+
+  private placeHandle() {
+    this.handle.style.left = `${this.table.offsetLeft + this.table.offsetWidth}px`;
+    this.handle.style.top = `${this.table.offsetTop + this.table.offsetHeight}px`;
+  }
+
+  private applyScale() {
+    this.dom.style.setProperty('--s', String((this.node.attrs.scale as number) ?? 1));
+    const cols = Array.from(this.colgroup.children) as HTMLElement[];
+    const px = cols.map((c) => parseFloat(c.style.width) || 0);
+    const total = px.reduce((a, b) => a + b, 0);
+    if (cols.length && px.every((w) => w > 0)) cols.forEach((c, i) => (c.style.width = `${(px[i] / total) * 100}%`));
+    this.placeHandle();
+  }
+
+  update(node: Node): boolean {
+    if (!super.update(node)) return false;
+    this.applyScale();
+    return true;
+  }
+
+  ignoreMutation(record: Parameters<TableView['ignoreMutation']>[0]): boolean {
+    if (record.type !== 'selection' && (record.target === this.dom || this.handle.contains(record.target as globalThis.Node))) return true;
+    return super.ignoreMutation(record);
+  }
+
+  stopEvent(e: Event): boolean {
+    return this.handle.contains(e.target as globalThis.Node);
+  }
+
+  destroy() {
+    this.ro.disconnect();
   }
 }
 

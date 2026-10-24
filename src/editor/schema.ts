@@ -46,7 +46,7 @@ function widget(name: string): NodeSpec {
     atom: true,
     selectable: true,
     draggable: false,
-    attrs: { ...blockAttrs, data: { default: '{}' } },
+    attrs: { ...blockAttrs, data: { default: '{}' }, scale: { default: 1 } }, // scale: 크기(글자도 같이) 0.35~1
     parseDOM: [{ tag: `div[data-${name}]`, getAttrs: (el) => ({ depth: depthOf(el as HTMLElement), data: (el as HTMLElement).getAttribute(`data-${name}`) || '{}' }) }],
     toDOM: (n): DOMOutputSpec => ['div', { class: `wg ${name}`, [`data-${name}`]: n.attrs.data, 'data-depth': String(n.attrs.depth) }],
   };
@@ -55,7 +55,7 @@ function widget(name: string): NodeSpec {
 const tables = tableNodes({ tableGroup: 'block', cellContent: 'line+', cellAttributes: {} });
 tables.table = {
   ...tables.table,
-  attrs: blockAttrs,
+  attrs: { ...blockAttrs, scale: { default: 1 } }, // scale: 표 크기(칸 글자도 같이) 0.35~1
   parseDOM: [{ tag: 'table', getAttrs: (el) => ({ depth: depthOf(el as HTMLElement) }) }],
   toDOM: (n): DOMOutputSpec => ['table', { class: 'tbl', 'data-depth': String(n.attrs.depth) }, ['tbody', 0]],
 };

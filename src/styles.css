@@ -239,7 +239,7 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
 /* 4단계: 표 · 수직선 · 연표 · 그래프 */
 .sheet-src { position: relative; }
 .editor .blk { margin: 0; }
-.editor .tableWrapper { overflow-x: auto; }
+.editor .tableWrapper { overflow: visible; }
 .editor table { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: 100%; margin: 0; }
 .editor td, .editor th { position: relative; vertical-align: top; padding: 0 0.8mm; box-shadow: inset -0.2mm 0 0 #4a4f57, inset 0 -0.2mm 0 #4a4f57; font-weight: inherit; text-align: left; }
 .editor tr:first-child > td, .editor tr:first-child > th { box-shadow: inset -0.2mm 0 0 #4a4f57, inset 0 -0.2mm 0 #4a4f57, inset 0 0.2mm 0 #4a4f57; }
@@ -455,3 +455,14 @@ body.drawing .toasts { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 104
 .panel.insert .ins-row > button { border: 1px solid var(--rule-2); background: var(--surface); border-radius: 7px; padding: 4px 10px; }
 .panel.insert .ins-row > button.primary { margin-left: auto; border-color: var(--ink); background: var(--ink); color: var(--bg); }
 .panel.insert .ins-note { margin: -6px 0 0 60px; }
+
+/* 표 · 그래프 · 연표 크기(--s, 글자도 같이). 오른쪽 아래 모서리 손잡이로 */
+.editor .tblw { position: relative; --lh: calc(var(--lh0) * var(--s, 1)); font-size: calc(var(--fs0) * var(--s, 1)); line-height: var(--lh); }
+.editor .tblw > table { width: calc(100% * var(--s, 1)) !important; min-width: 0 !important; }
+.editor .tblw td, .editor .tblw th { padding: 0 calc(0.8mm * var(--s, 1)); }
+.editor .wg.graph { width: calc(100% * var(--s, 1)); height: calc(var(--lh) * var(--rows) * var(--s, 1)); font-size: calc(var(--fs) * var(--s, 1)); }
+.editor .wg.tl { width: calc(100% * var(--s, 1)); height: calc(var(--lh) * 3 * var(--s, 1)); grid-template-rows: repeat(3, calc(var(--lh) * var(--s, 1))); font-size: calc(var(--fs) * var(--s, 1)); }
+.wg-size { position: absolute; right: -1.2mm; bottom: -1.2mm; width: 2.6mm; height: 2.6mm; transform: none; display: none; z-index: 3; cursor: nwse-resize; touch-action: none; border-radius: 0.5mm; background: #fff linear-gradient(135deg, transparent 42%, #0064e8 42% 54%, transparent 54% 66%, #0064e8 66% 78%, transparent 78%); box-shadow: 0 0 0 0.2mm #0064e8; }
+.editor .tblw > .wg-size { right: auto; bottom: auto; margin: -2.6mm 0 0 -2.6mm; }
+.editor .wg:hover > .wg-size, .editor .wg.sel > .wg-size, .editor .tblw:hover > .wg-size, .editor .tblw:focus-within > .wg-size { display: block; }
+.pcol .wg-size { display: none !important; }

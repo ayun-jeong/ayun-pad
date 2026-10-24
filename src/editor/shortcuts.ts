@@ -121,8 +121,11 @@ export function buildShortcuts(): Map<string, Run> {
     const was = v.state.selection.$from.parent.attrs.kind;
     if (toggleBranchCmd(v.state, v.dispatch, v)) h.toast(was === 'branch' ? '보통 줄' : '꺾쇠 줄');
   });
-  // ⌥] : 글 바로 옆으로 가지(┬─). 자식이 있으면 아래 ↔ 옆 바꾸기
-  map.set('alt+BracketRight', (v, h) => sideCmd((side, created) => h.toast(created ? '옆 가지: 이어서 Enter로 다음 항목' : side ? '자식을 옆으로' : '자식을 아래로'))(v.state, v.dispatch, v));
+  // ⌥Tab : 글 바로 옆으로 가지(┬─). Tab(아래 가지)과 짝. 자식이 있으면 아래 ↔ 옆 바꾸기.
+  // 윈도는 Alt+Tab이 창 바꾸기라 Alt+] 로.
+  const side: Run = (v, h) => sideCmd((s, created) => h.toast(created ? '옆 가지: Enter로 다음 항목' : s ? '자식을 옆으로' : '자식을 아래로'))(v.state, v.dispatch, v);
+  map.set('alt+Tab', side);
+  if (!isMac) map.set('alt+BracketRight', side);
   map.set('mod+BracketRight', exec(indentCmd(1)));
   map.set('mod+BracketLeft', exec(indentCmd(-1)));
   map.set('mod+shift+ArrowUp', exec(moveCmd(-1)));

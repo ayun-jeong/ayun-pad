@@ -40,17 +40,26 @@ interface Live {
   um: Y.UndoManager;
 }
 
-// 수직선 · 그래프가 반쪽 경계(접는 선 · 장 넘김)에 걸리면 다음 반쪽 맨 위로 민다. 줄 높이의 배수만큼 밀어서 줄 칸은 그대로 맞는다.
-// 표는 행 단위로 나뉘어도 읽을 수 있어서 밀지 않는다.
-function pushWidgets(editor: HTMLElement, usablePx: number) {
+// 1) 크기를 줄인 표 · 그래프 · 연표는 높이가 줄 높이의 배수가 되게 아래를 채운다(다음 줄이 줄 칸에 맞게).
+// 2) 수직선 · 그래프가 반쪽 경계(접는 선 · 장 넘김)에 걸리면 다음 반쪽 맨 위로 민다. 줄 높이의 배수만큼 밀어서 줄 칸은 그대로 맞는다.
+//    표는 행 단위로 나뉘어도 읽을 수 있어서 밀지 않는다.
+function pushWidgets(editor: HTMLElement, usablePx: number, lhPx: number, zoom: number) {
+  const top0 = editor.getBoundingClientRect().top;
   for (const el of Array.from(editor.children) as HTMLElement[]) {
-    if (!el.classList.contains('wg')) continue;
+    const wg = el.classList.contains('wg');
+    if (!wg && !el.classList.contains('tblw')) continue;
+    const curB = parseFloat(el.style.marginBottom) || 0;
+    // 소수점까지 정확한 높이 · 위치(offsetHeight · offsetTop은 정수로 반올림돼 줄 칸이 조금씩 어긋난다)
+    const h = parseFloat(getComputedStyle(el).height) || el.offsetHeight;
+    // 줄 높이의 배수에 정확히 맞춘다(아주 조금 넘치면 소수점 px만큼 음수도 허용)
+    const needB = Math.ceil(h / lhPx - 0.02) * lhPx - h;
+    if (Math.abs(needB - curB) > 0.01) el.style.marginBottom = Math.abs(needB) > 0.01 ? `${needB.toFixed(3)}px` : '';
+    if (!wg) continue;
     const cur = parseFloat(el.style.marginTop) || 0;
-    const top = el.offsetTop - cur;
-    const h = el.offsetHeight;
+    const top = (el.getBoundingClientRect().top - top0) / zoom - cur;
     const within = top - Math.floor(top / usablePx + 1e-6) * usablePx;
     const need = h < usablePx - 0.5 && within + h > usablePx + 0.5 ? usablePx - within : 0;
-    if (Math.abs(need - cur) > 0.5) el.style.marginTop = need ? `${need}px` : '';
+    if (Math.abs(need - cur) > 0.01) el.style.marginTop = need ? `${need.toFixed(3)}px` : '';
   }
 }
 
@@ -72,6 +81,8 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
   cb.current = { toast, app, onState, onEdit, onDoc };
   const typoRef = useRef(typo);
   typoRef.current = typo;
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
   const hostRef = useRef<EditorHooks | null>(null);
   // 노트 설정(화살표 자동 변환 등). 편집기 규칙이 이 객체를 그때그때 읽는다.
   const settings = useRef<RuleSettings>({ arrows: true, math: true }).current;
@@ -86,7 +97,8 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
     frame.current = requestAnimationFrame(() => {
       frame.current = 0;
       const ed = mountRef.current?.querySelector<HTMLElement>('.editor');
-      if (ed) pushWidgets(ed, fitPitch(typoRef.current).usable * PX_PER_MM);
+      const f = fitPitch(typoRef.current);
+      if (ed) pushWidgets(ed, f.usable * PX_PER_MM, f.pitch * PX_PER_MM, zoomRef.current || 1);
       // 그림 층은 그림이 있을 때만 다시 그린다(글만 쓰는 동안은 가볍게)
       if (liveRef.current?.doc.shapes.size || drawOn.current) bumpTick();
     });
@@ -184,6 +196,8 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
     '--font': fontStack(typo.font),
     '--fs': `${typo.fontPt}pt`,
     '--lh': `${fit.pitch}mm`,
+    '--lh0': `${fit.pitch}mm`,
+    '--fs0': `${typo.fontPt}pt`,
     '--trk': `${typo.tracking}em`,
     '--wb': typo.wordBreak === 'all' ? 'break-all' : 'keep-all',
     padding: `${typo.mTop}mm ${typo.mInner}mm ${typo.mTop}mm ${typo.mOuter}mm`,
