@@ -154,6 +154,18 @@ export function TypePanel({ typo, fonts, hasSelection, onChange, onUpload, onSel
           <p className="note">글자를 고르면 그 글자만 글꼴 · 자간을 바꿀 수 있습니다. 자간은 ⌥, ⌥.로도 됩니다.</p>
         )}
       </div>
+      <div className="sub">
+        <label>자동 규칙 (이 노트)</label>
+        <label className="check">
+          <input type="checkbox" checked={typo.auto} onChange={() => onChange({ auto: !typo.auto })} />
+          자동 색: 꺾쇠 줄 · 대제목 빨강 + 깊이별 형광펜, 예시 파랑
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={typo.arrows} onChange={() => onChange({ arrows: !typo.arrows })} />
+          화살표 자동 변환: {'<- -> <| |>'} → ← → ↑ ↓
+        </label>
+        <p className="note">가지선은 규칙을 꺼도 그대로 그립니다. 직접 칠한 색은 언제나 남습니다.</p>
+      </div>
     </section>
   );
 }

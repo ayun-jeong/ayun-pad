@@ -121,6 +121,25 @@ try {
   await sleep(100);
   check((await marks(page))['circ:r']?.length === 3, '⌘⇧Z → 다시');
 
+  // 4-1) 판을 닫았다 열어도(글자 선택 없이) 검색어와 고름 상태가 그대로
+  await page.click('.editor');
+  await page.evaluate(() => {
+    const v = window.__ayunpad.view();
+    v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.atStart(v.state.doc)));
+  });
+  await combo([meta], 'KeyF');
+  await page.waitForSelector('.panel.find input[type=search]');
+  await sleep(150);
+  const kept = await page.evaluate(() => ({ q: document.querySelector('.panel.find input[type=search]').value, c: [...document.querySelectorAll('.find-list li input[type=checkbox]')].map((e) => e.checked).join() }));
+  check(kept.q === '모집' && kept.c === 'true,false,true,true', `다시 열면 검색어 · 고름 그대로 (${JSON.stringify(kept)})`);
+  await k.press('ArrowDown');
+  await k.press('ArrowDown');
+  await sleep(100);
+  const curIdx = await page.$$eval('.find-list li', (ls) => ls.findIndex((l) => l.classList.contains('cur')));
+  check(curIdx === 1, `↓ 두 번 → 두 번째 결과로 (${curIdx})`);
+  await k.press('Escape');
+  await sleep(100);
+
   // 5) 바꾸기: 유통 → 물류
   await combo([meta], 'KeyF');
   await page.waitForSelector('.panel.find input[type=search]');
@@ -143,6 +162,65 @@ try {
   const circled = await page.$$eval('.editor .circ.circ-r', (e) => e.length);
   check(circled === 3, `화면에 빨간 동그라미 3개 (${circled})`);
 
+  // 6-1) 글상자 안도 찾고 효과를 넣는다. 본문과 글상자를 한 번의 ⌘Z로 되돌린다.
+  await page.click('.addnote');
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+  await page.click('.editor');
+  await k.type('재무관리 본문');
+  await combo(['Alt'], 'KeyD');
+  await page.waitForSelector('.drawbar');
+  await k.press('KeyT');
+  const lb = await page.$eval('.shapes-layer', (e) => {
+    const r = e.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, mmW: e.offsetWidth / (96 / 25.4) };
+  });
+  await page.mouse.click(lb.x + (40 / lb.mmW) * lb.w, lb.y + 60);
+  await page.waitForSelector('.tbox.tedit .tb-edit');
+  await k.type('재무관리 글상자');
+  await k.press('Escape');
+  await sleep(100);
+  await k.press('Escape');
+  await k.press('Escape');
+  await sleep(100);
+  await page.click('.editor');
+  await combo([meta], 'KeyF');
+  await page.waitForSelector('.panel.find input[type=search]');
+  await page.$eval('.panel.find input[type=search]', (e) => e.select());
+  await k.type('재무관리');
+  await sleep(200);
+  const at2 = await page.$$eval('.find-list .find-at', (e) => e.map((x) => x.textContent));
+  check(at2.length === 2 && at2[1].includes('글상자'), `본문 1곳 + 글상자 1곳 (${at2.join(' / ')})`);
+  await page.$$eval('.fx-actions button', (b) => b[0].click());
+  await sleep(150);
+  const both = await page.evaluate(() => {
+    const d = window.__ayunpad.doc();
+    const tb = Object.values(d.shapes.toJSON()).find((s) => s.t === 'text');
+    let body = 0;
+    window.__ayunpad.view().state.doc.descendants((n) => {
+      if (n.isText && n.marks.some((m) => m.type.name === 'circ')) body++;
+      return true;
+    });
+    return { body, box: JSON.stringify(tb?.doc ?? {}).includes('"circ"') };
+  });
+  check(both.body === 1 && both.box, `본문과 글상자 모두 동그라미 (${JSON.stringify(both)})`);
+  check((await page.$$eval('.tbox .circ', (e) => e.length)) === 1, '글상자에 동그라미가 보임');
+  await page.$$eval('.find-undo button', (b) => b[0].click());
+  await sleep(150);
+  const undone = await page.evaluate(() => {
+    const tb = Object.values(window.__ayunpad.doc().shapes.toJSON()).find((s) => s.t === 'text');
+    let body = 0;
+    window.__ayunpad.view().state.doc.descendants((n) => {
+      if (n.isText && n.marks.some((m) => m.type.name === 'circ')) body++;
+      return true;
+    });
+    return { body, box: JSON.stringify(tb?.doc ?? {}).includes('"circ"') };
+  });
+  check(undone.body === 0 && !undone.box, `되돌리기 한 번에 본문 · 글상자 둘 다 취소 (${JSON.stringify(undone)})`);
+  await k.press('Escape');
+  await page.$$eval('.note-item .t', (els) => els.find((e) => e.textContent === '견본 · 경영학')?.click());
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 11);
+  await sleep(300);
+
   // 7) ⌘K: 초성으로 본문 찾기 → 그 줄로
   await page.click('.editor');
   await combo([meta], 'KeyK');
@@ -158,6 +236,71 @@ try {
     return st.doc.textBetween(st.selection.from, st.selection.to);
   });
   check(selText === '스타벅스', `Enter → 그 줄의 찾은 말이 골라짐 (${selText})`);
+
+  // 7-1) ⌘K 명령: '>'는 전부, '반쪽' → 반쪽 보기. 글을 쓰지 않을 때 / 로도 열린다.
+  await page.click('.desk', { offset: { x: 30, y: 400 } });
+  await page.evaluate(() => document.activeElement?.blur());
+  await k.press('Slash');
+  const slashOpen = await page.waitForSelector('.palette input', { timeout: 3000 }).then(() => true, () => false);
+  check(slashOpen, '글을 쓰지 않을 때 / → 검색 열림');
+  await k.type('>');
+  await sleep(150);
+  const ncmd = await page.$$eval('.pal-group', (gs) => gs.find((g) => g.querySelector('h4')?.textContent === '명령')?.querySelectorAll('button').length ?? 0);
+  check(ncmd >= 15, `'>' → 명령 전부 (${ncmd}개)`);
+  await k.press('Backspace');
+  await k.type('반쪽');
+  await sleep(150);
+  const firstCmd = await page.$eval('.pal-list button.on .pal-title', (e) => e.textContent);
+  check(firstCmd === '반쪽 보기', `'반쪽' → 반쪽 보기 명령 (${firstCmd})`);
+  await k.press('Enter');
+  const halfView = await page.waitForSelector('.pages.half', { timeout: 3000 }).then(() => true, () => false);
+  check(halfView, '명령 실행 → 반쪽 보기');
+  await combo(['Alt'], 'Digit1');
+  await sleep(200);
+
+  // 7-2) ⌥C: 최근 색 5개 기억 → 숫자로 바로
+  await page.evaluate(() => localStorage.setItem('ayunpad-recent-colors', JSON.stringify(['#12A4B5'])));
+  await page.click('.editor');
+  await page.evaluate(() => {
+    const v = window.__ayunpad.view();
+    v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, 1, 4)));
+  });
+  await sleep(100);
+  await combo(['Alt'], 'KeyC');
+  await page.waitForSelector('.colorpop');
+  await k.press('Digit1');
+  await sleep(150);
+  const custom = await marks(page);
+  check(!!custom['pen:#12A4B5'], `⌥C → 최근 색 1번으로 칠함 (${Object.keys(custom).join(',')})`);
+  await combo([meta], 'KeyZ');
+  await sleep(100);
+
+  // 7-3) 자동 규칙 끄기 · 켜기(글자 모양 판)
+  await combo(['Alt'], 'KeyT');
+  await page.waitForSelector('.panel');
+  const autoBox = await page.$$('.panel label.check input');
+  await autoBox[0].click();
+  await sleep(150);
+  const redOff = await page.$$eval('.editor .a-red', (e) => e.length);
+  check(redOff === 0, `자동 색 끄면 빨강 · 형광펜 사라짐 (${redOff})`);
+  await autoBox[0].click();
+  await sleep(150);
+  check((await page.$$eval('.editor .a-red', (e) => e.length)) > 5, '다시 켜면 돌아옴');
+  await autoBox[1].click();
+  await sleep(100);
+  await k.press('Escape');
+  const lastP = await page.evaluateHandle(() => [...document.querySelectorAll('.editor > p')].pop());
+  await lastP.click();
+  await k.press('End');
+  await k.type(' a->b');
+  await sleep(100);
+  const plain = await page.$eval('.editor > p:last-child', (e) => e.textContent);
+  check(plain.endsWith('a->b'), `화살표 변환 끄면 -> 그대로 (${plain.slice(-6)})`);
+  await combo(['Alt'], 'KeyT');
+  await page.waitForSelector('.panel');
+  await (await page.$$('.panel label.check input'))[1].click();
+  await k.press('Escape');
+  await sleep(100);
 
   // 8) ⌘K에서 새 노트
   await combo([meta], 'KeyK');
@@ -186,7 +329,7 @@ try {
   await page.waitForFunction(() => !!window.__blob, { timeout: 8000 });
   const json = await page.evaluate(() => window.__blob);
   const data = JSON.parse(json);
-  check(data.app === 'ayun-pad' && Object.keys(data.notes).length === 2, `백업 파일: 노트 2개 (${Object.keys(data.notes).length})`);
+  check(data.app === 'ayun-pad' && Object.keys(data.notes).length === 3, `백업 파일: 노트 3개 (${Object.keys(data.notes).length})`);
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ayunpad-')), 'backup.json');
   fs.writeFileSync(file, json);
   const ctx = await browser.createBrowserContext();

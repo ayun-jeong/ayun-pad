@@ -22,9 +22,9 @@ interface Base {
 export interface PathShape extends Base {
   t: 'path';
   pts: Anchor[];
-  head: 0 | 1 | 2; // 화살촉: 없음 · 끝 · 양쪽
+  head: 0 | 1 | 2 | 3; // 화살촉: 없음 · 끝 · 양쪽 · 시작
   dash?: boolean;
-  o?: boolean; // 가로 · 세로로만 꺾기
+  o?: boolean; // 직각 경로: 점과 점 사이를 가로 · 세로 선으로만 잇는다(언제든 바꿀 수 있다)
 }
 
 export interface BoxShape extends Base {
@@ -39,7 +39,8 @@ export interface TextShape extends Base {
   t: 'text';
   a: Anchor;
   bw: number; // 글상자 폭(mm)
-  text: string;
+  text: string; // 찾기 · 옛 글상자용 맨 글
+  doc?: unknown; // 글상자 내용(ProseMirror JSON). 펜 · 형광펜 · 동그라미 · 밑줄이 그대로 들어간다
   box?: boolean; // 테두리
 }
 
@@ -62,9 +63,19 @@ export const SHAPES = Symbol('shapes'); // Yjs 변경 출처: 그림 고치기(�
 
 export const shapesOf = (ydoc: Y.Doc) => ydoc.getMap<Shape>('shapes');
 
-export const W_MIN = 0.15;
-export const W_MAX = 1.5;
+// 굵기는 [ ] 로 이 단계만큼 바꾼다
+export const W_STEPS = [0.2, 0.35, 0.5, 0.8];
+export const W_MIN = W_STEPS[0];
+export const W_MAX = W_STEPS[W_STEPS.length - 1];
 export const DEFAULT_W = 0.35;
+
+export function stepW(w: number, dir: 1 | -1): number {
+  if (dir > 0) return W_STEPS.find((x) => x > w + 1e-6) ?? W_MAX;
+  return [...W_STEPS].reverse().find((x) => x < w - 1e-6) ?? W_MIN;
+}
+
+export const HEAD_NAME = ['없음', '끝', '양쪽', '시작'] as const;
+export const nextHead = (h: number) => ([2, 3, 0, 1] as const)[h] ?? 1; // 끝 → 양쪽 → 시작 → 없음 → 끝
 
 export const strokeOf = (c: string) => colorOf(c);
 
@@ -157,12 +168,34 @@ export function boxOf(a: XY, b: XY) {
   return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
 }
 
+// 실제로 그리는 경로. 직각이면 두 점 사이에 꺾는 점(가로 먼저)을 끼운다.
+export function route(pts: XY[], ortho: boolean | undefined): XY[] {
+  if (!ortho || pts.length < 2) return pts;
+  const out: XY[] = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    if (Math.abs(a.x - b.x) > 1e-6 && Math.abs(a.y - b.y) > 1e-6) out.push({ x: b.x, y: a.y });
+    out.push(b);
+  }
+  return out;
+}
+
+// 그려지는 선분마다 몇 번째 저장 점 사이인지(점 끼우기에 쓴다)
+function segments(pts: XY[], ortho: boolean | undefined): { a: XY; b: XY; i: number }[] {
+  const out: { a: XY; b: XY; i: number }[] = [];
+  for (let i = 1; i < pts.length; i++) {
+    const part = route([pts[i - 1], pts[i]], ortho);
+    for (let k = 1; k < part.length; k++) out.push({ a: part[k - 1], b: part[k], i });
+  }
+  return out;
+}
+
 // 누른 점이 그림에 닿았나(mm). 글상자 높이는 화면에서 잰 값을 받는다.
 export function hit(r: Resolved, p: XY, tol: number, textH: (id: string) => number): boolean {
   if (r.t === 'path') {
     const t = Math.max(tol, r.w / 2 + tol * 0.6);
-    for (let i = 1; i < r.pts.length; i++) if (distToSeg(p, r.pts[i - 1], r.pts[i]) <= t) return true;
-    return false;
+    return segments(r.pts, r.o).some((sg) => distToSeg(p, sg.a, sg.b) <= t);
   }
   if (r.t === 'text') {
     const h = textH(r.id);
@@ -217,14 +250,14 @@ export function moveCorner(r: Resolved & { t: 'rect' | 'ellipse' }, i: number, p
 }
 
 // 선분 위를 두 번 눌렀을 때 점을 끼울 자리(몇 번째 점 앞인지)
-export function segmentAt(pts: XY[], p: XY, tol: number): number {
+export function segmentAt(pts: XY[], p: XY, tol: number, ortho?: boolean): number {
   let best = -1;
   let bd = Infinity;
-  for (let i = 1; i < pts.length; i++) {
-    const d = distToSeg(p, pts[i - 1], pts[i]);
+  for (const sg of segments(pts, ortho)) {
+    const d = distToSeg(p, sg.a, sg.b);
     if (d < bd) {
       bd = d;
-      best = i;
+      best = sg.i;
     }
   }
   return bd <= tol ? best : -1;

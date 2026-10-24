@@ -53,7 +53,7 @@ const isCell = (n: Node) => n.type.spec.tableRole === 'cell' || n.type.spec.tabl
 
 // 그릇 하나에 가지선 · 자동 볼펜 · 자동 형광펜을 단다. base = 그릇 안쪽이 시작하는 문서 위치.
 // 표 칸도 그릇이라 칸 안에서 '- '로 만든 꺾쇠 줄도 똑같이 칠해진다.
-function decorate(container: Node, base: number, decos: Decoration[]) {
+function decorate(container: Node, base: number, decos: Decoration[], auto: boolean) {
   const tree = computeTree(lineInfos(container));
   let i = 0;
   container.forEach((node, offset) => {
@@ -65,7 +65,7 @@ function decorate(container: Node, base: number, decos: Decoration[]) {
       if (node.type.name === 'table')
         node.descendants((child, p) => {
           if (!isCell(child)) return true;
-          decorate(child, pos + 1 + p + 1, decos);
+          decorate(child, pos + 1 + p + 1, decos, auto);
           return false;
         });
       i++;
@@ -74,6 +74,10 @@ function decorate(container: Node, base: number, decos: Decoration[]) {
     const kind = node.attrs.kind as Kind;
     const isTitle = kind !== 'branch' && row.hasBranchChild;
     decos.push(Decoration.node(pos, pos + node.nodeSize, { style: bg ? `background:${bg}` : '', class: isTitle ? 'ln title' : 'ln' }));
+    if (!auto) {
+      i++;
+      return;
+    }
     const text = lineText(node);
     const st = autoStyle(text, kind, isTitle);
     const start = pos + 1;
@@ -89,9 +93,9 @@ function decorate(container: Node, base: number, decos: Decoration[]) {
   });
 }
 
-export function buildDecorations(doc: Node): DecorationSet {
+export function buildDecorations(doc: Node, auto = true): DecorationSet {
   const decos: Decoration[] = [];
-  decorate(doc, 0, decos);
+  decorate(doc, 0, decos, auto);
   return DecorationSet.create(doc, decos);
 }
 
@@ -114,6 +118,7 @@ export function headRange(state: EditorState): { from: number; to: number } {
 interface AutoState {
   deco: DecorationSet;
   composing: boolean;
+  auto: boolean; // 노트 설정 '자동 색'
 }
 
 export const autoKey = new PluginKey<AutoState>('auto');
@@ -123,13 +128,14 @@ export function autoPlugin(): Plugin<AutoState> {
   return new Plugin<AutoState>({
     key: autoKey,
     state: {
-      init: (_, state) => ({ deco: buildDecorations(state.doc), composing: false }),
+      init: (_, state) => ({ deco: buildDecorations(state.doc), composing: false, auto: true }),
       apply(tr, prev, _old, next) {
-        const meta = tr.getMeta(autoKey) as { composing?: boolean; rebuild?: boolean } | undefined;
+        const meta = tr.getMeta(autoKey) as { composing?: boolean; rebuild?: boolean; auto?: boolean } | undefined;
         const composing = meta?.composing ?? prev.composing;
-        if (composing) return { deco: prev.deco.map(tr.mapping, tr.doc), composing };
-        if (!tr.docChanged && !meta?.rebuild) return { deco: prev.deco, composing };
-        return { deco: buildDecorations(next.doc), composing };
+        const auto = meta?.auto ?? prev.auto;
+        if (composing) return { deco: prev.deco.map(tr.mapping, tr.doc), composing, auto };
+        if (!tr.docChanged && !meta?.rebuild && auto === prev.auto) return { deco: prev.deco, composing, auto };
+        return { deco: buildDecorations(next.doc, auto), composing, auto };
       },
     },
     props: {

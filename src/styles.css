@@ -124,32 +124,32 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
 .editor .ln[data-depth='6'], .editor .blk[data-depth='6'] { padding-left: calc(var(--ind) * 5); }
 .editor .ln[data-depth='7'], .editor .blk[data-depth='7'] { padding-left: calc(var(--ind) * 6); }
 .editor .ln[data-depth='8'], .editor .blk[data-depth='8'] { padding-left: calc(var(--ind) * 7); }
-.editor .a-red { color: var(--pen-r); }
-.editor .a-blue { color: var(--pen-b); }
-.editor .pen-r { color: var(--pen-r); }
-.editor .pen-b { color: var(--pen-b); }
-.editor .pen-k { color: var(--pen-k); }
-.editor .pen-p { color: var(--pen-p); }
-.editor .pen-y { color: var(--pen-y); }
-.editor .pen-g { color: var(--pen-g); }
-.editor .mf { line-height: 0; }
+.a-red { color: var(--pen-r); }
+.a-blue { color: var(--pen-b); }
+.pen-r { color: var(--pen-r); }
+.pen-b { color: var(--pen-b); }
+.pen-k { color: var(--pen-k); }
+.pen-p { color: var(--pen-p); }
+.pen-y { color: var(--pen-y); }
+.pen-g { color: var(--pen-g); }
+.mf { line-height: 0; }
 /* 형광펜: 글자 높이의 절반쯤 되는 얇은 띠, 끝은 비스듬하고 번진 펜 자국. 띠마다 끝 모양을 조금씩 다르게. */
-.editor .hl { --hc: var(--hl-y); padding: 0 0.12em; margin: 0 -0.12em; border-radius: 0.25em 0.55em 0.3em 0.6em / 0.35em 0.6em 0.45em 0.7em; background: linear-gradient(97deg, transparent 0, var(--hc) 0.32em, var(--hc) calc(100% - 0.38em), transparent 100%) 0 84% / 100% 48% no-repeat; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
-.editor .hl.v2 { border-radius: 0.5em 0.25em 0.6em 0.3em / 0.6em 0.35em 0.7em 0.4em; background-image: linear-gradient(94deg, transparent 0, var(--hc) 0.26em, var(--hc) calc(100% - 0.3em), transparent 100%); background-position: 0 88%; }
-.editor .hl.v3 { background-image: linear-gradient(100deg, transparent 0, var(--hc) 0.4em, var(--hc) calc(100% - 0.28em), transparent 100%); background-position: 0 80%; }
-.editor .hl-r { --hc: var(--hl-r); }
-.editor .hl-y { --hc: var(--hl-y); }
-.editor .hl-b { --hc: var(--hl-b); }
-.editor .hl-g { --hc: var(--hl-g); }
-.editor .hl-p { --hc: var(--hl-p); }
-.editor .hl-none { background: none; }
-.editor .circ { padding: 0.22em 0.42em; margin: 0 -0.42em; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%23EC3535' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
-.editor .circ-b { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%230064E8' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
-.editor .circ-k { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%23000000' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
-.editor .circ-p { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%234D00E8' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
-.editor .circ-y { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%23FFCB10' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
-.editor .circ-g { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%2352D407' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
-.editor u { text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
+.hl { --hc: var(--hl-y); padding: 0 0.12em; margin: 0 -0.12em; border-radius: 0.25em 0.55em 0.3em 0.6em / 0.35em 0.6em 0.45em 0.7em; background: linear-gradient(97deg, transparent 0, var(--hc) 0.32em, var(--hc) calc(100% - 0.38em), transparent 100%) 0 84% / 100% 48% no-repeat; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.hl.v2 { border-radius: 0.5em 0.25em 0.6em 0.3em / 0.6em 0.35em 0.7em 0.4em; background-image: linear-gradient(94deg, transparent 0, var(--hc) 0.26em, var(--hc) calc(100% - 0.3em), transparent 100%); background-position: 0 88%; }
+.hl.v3 { background-image: linear-gradient(100deg, transparent 0, var(--hc) 0.4em, var(--hc) calc(100% - 0.28em), transparent 100%); background-position: 0 80%; }
+.hl-r { --hc: var(--hl-r); }
+.hl-y { --hc: var(--hl-y); }
+.hl-b { --hc: var(--hl-b); }
+.hl-g { --hc: var(--hl-g); }
+.hl-p { --hc: var(--hl-p); }
+.hl-none { background: none; }
+.circ { padding: 0.22em 0.42em; margin: 0 -0.42em; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%23EC3535' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.circ-b { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%230064E8' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
+.circ-k { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%23000000' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
+.circ-p { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%234D00E8' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
+.circ-y { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%23FFCB10' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
+.circ-g { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%2352D407' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
+.editor u, .tb-doc u { text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
 
 /* 반쪽 보기 · A4 합침 보기 · 인쇄 */
 .seg button.on { background: var(--ink); color: var(--bg); }
@@ -292,7 +292,7 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
 .tbox.boxed { border-color: currentColor; padding: 0 0.8mm; }
 textarea.tbox.tedit { pointer-events: auto; resize: none; overflow: hidden; background: rgba(255, 255, 255, 0.92); outline: 0.25mm dashed #0064e8; outline-offset: 0.3mm; display: block; }
 
-.drawbar { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 25; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: calc(100vw - 24px); padding: 6px 8px; background: var(--surface); border: 1px solid var(--rule-2); border-radius: 12px; box-shadow: var(--shadow); font-size: 13px; }
+.drawbar { position: fixed; bottom: max(14px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 25; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: calc(100vw - 24px); padding: 6px 8px; background: var(--surface); border: 1px solid var(--rule-2); border-radius: 12px; box-shadow: var(--shadow); font-size: 13px; }
 .drawbar .dgroup { display: inline-flex; align-items: center; gap: 2px; padding-right: 6px; border-right: 1px solid var(--rule); }
 .drawbar button { border: 1px solid transparent; background: transparent; border-radius: 7px; padding: 4px 7px; display: inline-flex; align-items: center; gap: 4px; min-height: 30px; white-space: nowrap; }
 .drawbar button:hover { border-color: var(--rule-2); }
@@ -305,7 +305,8 @@ textarea.tbox.tedit { pointer-events: auto; resize: none; overflow: hidden; back
 .drawbar .dhint { color: var(--ink-3); font-size: 12px; flex: 1 1 160px; }
 .drawbar .ddone { border-color: var(--ink); background: var(--ink); color: var(--bg); font-weight: 600; }
 @media (pointer: coarse), (max-width: 720px) {
-  .drawbar { top: auto; bottom: max(8px, env(safe-area-inset-bottom)); flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; }
+  .drawbar { bottom: max(8px, env(safe-area-inset-bottom)); flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; }
+  .hide-narrow { display: none !important; }
   .drawbar kbd, .drawbar .dhint { display: none; }
 }
 
@@ -371,3 +372,39 @@ textarea.tbox.tedit { pointer-events: auto; resize: none; overflow: hidden; back
 .selbar .hl-sw.hl-y { background: var(--pen-y); opacity: 0.6; }
 .selbar .hl-sw.hl-r { background: var(--pen-r); opacity: 0.5; }
 .selbar .hl-sw.hl-b { background: var(--pen-b); opacity: 0.5; }
+.find-nobox { width: 13px; flex: none; }
+@keyframes ayun-flash { 0%, 100% { box-shadow: none; } 20%, 60% { box-shadow: 0 0 0 1.2mm rgba(0, 100, 232, 0.35); } }
+.flash { animation: ayun-flash 1.1s ease-out; border-radius: 1mm; }
+.editor .fh.cur { animation: ayun-flash 1.1s ease-out; }
+
+/* 글상자(본문과 같은 펜 · 형광펜 · 동그라미) */
+.tb-doc { white-space: pre-wrap; overflow-wrap: anywhere; }
+.tb-doc p { margin: 0; min-height: var(--lh); }
+.tbox.tedit { pointer-events: auto; background: rgba(255, 255, 255, 0.94); outline: 0.25mm dashed #0064e8; outline-offset: 0.3mm; }
+.tb-edit { outline: none; min-height: var(--lh); }
+.drawbar .dfinish { border-color: #0064e8; color: #0064e8; font-weight: 600; }
+.panel label.check { display: flex; gap: 8px; align-items: flex-start; color: var(--ink); font-size: 13.5px; line-height: 1.45; }
+.panel label.check input { margin-top: 2px; }
+
+/* 색 고르기(⌥C) · 폰 막대 */
+.colorpop { position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 46; display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; background: var(--surface); border: 1px solid var(--rule-2); border-radius: 12px; box-shadow: var(--shadow); font-size: 13.5px; }
+.cp-recent { display: flex; gap: 4px; align-items: center; }
+.cp-recent button { border: 1px solid var(--rule); background: var(--surface); border-radius: 8px; padding: 4px 6px; display: inline-flex; align-items: center; gap: 4px; }
+.cp-recent i { width: 18px; height: 18px; border-radius: 50%; display: block; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15); }
+.cp-recent kbd, .cp-wheel kbd { font-size: 10.5px; min-width: 14px; padding: 0 3px; color: var(--ink-3); border-bottom-width: 1px; }
+.cp-wheel { border: 1px solid var(--ink); background: var(--ink); color: var(--bg); border-radius: 8px; padding: 5px 10px; display: inline-flex; gap: 6px; align-items: center; font-weight: 600; }
+.cp-wheel kbd { color: inherit; background: transparent; border-color: rgba(255, 255, 255, 0.4); }
+@media (pointer: coarse), (max-width: 720px) {
+  .touchbar.subbar { bottom: calc(56px + env(safe-area-inset-bottom)); border-top: 1px solid var(--rule); box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.06); }
+  .touchbar button.on { border-color: var(--ink); }
+  .touchbar .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; }
+  .touchbar .hl-sw.hl-y { background: var(--pen-y); opacity: 0.6; }
+  .touchbar .hl-sw.hl-r { background: var(--pen-r); opacity: 0.5; }
+  .touchbar .hl-sw.hl-b { background: var(--pen-b); opacity: 0.5; }
+  .touchbar .hl-sw.hl-g { background: var(--pen-g); opacity: 0.5; }
+  .touchbar .hl-sw.hl-p { background: var(--pen-p); opacity: 0.5; }
+}
+
+/* 그리는 동안 알림은 아래 도구 막대 위로 */
+body.drawing .toasts { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 104px); }
+.desk.drawing { padding-bottom: 200px; }

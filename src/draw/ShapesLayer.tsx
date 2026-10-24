@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as Y from 'yjs';
 import { newId } from '../editor/ids';
+import type { RuleSettings } from '../editor/inputRules';
 import { PEN_NAME, type PenKey } from '../editor/model';
-import { isMac, keyId } from '../editor/shortcuts';
+import { isMac, keyId, type ShortcutHost } from '../editor/shortcuts';
+import { emptyTextDoc, plainText, TextBoxEditor, TextBoxView } from './TextBox';
 import {
   anchorAt,
   arrowHead,
@@ -12,16 +14,18 @@ import {
   DEFAULT_W,
   dist,
   handles,
+  HEAD_NAME,
   hit,
   moveCorner,
+  nextHead,
   resolve,
+  route,
   segmentAt,
   SHAPES,
+  stepW,
   strokeOf,
   translate,
   unresolve,
-  W_MAX,
-  W_MIN,
   type Lines,
   type PathShape,
   type Resolved,
@@ -53,6 +57,8 @@ interface Props {
   draw: DrawState | null;
   setDraw(patch: Partial<DrawState> | null): void;
   onExtent(bottomMm: number): void;
+  host: ShortcutHost;
+  settings: RuleSettings;
 }
 
 // 편집 칸 위에 얹힌 그림 층. 평소에는 그림만 보여 주고(누르면 글로 지나감), 그리기(⌥D) 중에는 누르기를 받는다.
@@ -85,21 +91,22 @@ const TOOLS: { t: Tool; name: string; key: string }[] = [
 ];
 const TOOL_KEYS: Record<string, Tool> = { KeyV: 'select', KeyA: 'arrow', KeyL: 'line', KeyR: 'rect', KeyO: 'ellipse', KeyT: 'text' };
 const PEN_CODES: Record<string, PenKey> = { KeyR: 'r', KeyB: 'b', KeyK: 'k', KeyP: 'p', KeyY: 'y', KeyG: 'g' };
-const DOUBLE_MS = 380;
-const DOUBLE_MM = 2.2;
+// 두 번 누름: 마우스 0.45초 · 손가락 0.3초 안에, 화면에서 8px 안
+const DOUBLE_MS = { mouse: 450, touch: 300 };
+const DOUBLE_PX = 8;
 
 function ShapeSvg({ r }: { r: Resolved }) {
   const stroke = strokeOf(r.c);
   const dash = r.t !== 'text' && r.dash ? `${(r.w * 3.2).toFixed(2)} ${(r.w * 2.6).toFixed(2)}` : undefined;
   if (r.t === 'path') {
-    let line = r.pts;
+    let line = route(r.pts, r.o);
     const heads: XY[][] = [];
-    if (r.head >= 1 && line.length >= 2) {
+    if ((r.head === 1 || r.head === 2) && line.length >= 2) {
       const h = arrowHead(line[line.length - 2], line[line.length - 1], r.w);
       heads.push(h.poly);
       line = [...line.slice(0, -1), h.base];
     }
-    if (r.head === 2 && line.length >= 2) {
+    if ((r.head === 2 || r.head === 3) && line.length >= 2) {
       const h = arrowHead(line[1], line[0], r.w);
       heads.push(h.poly);
       line = [h.base, ...line.slice(1)];
@@ -132,12 +139,12 @@ interface Ix {
   last: { t: number; p: XY } | null;
 }
 
-export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, setDraw, onExtent }: Props) {
+export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, setDraw, onExtent, host, settings }: Props) {
   const [, repaint] = useReducer((x: number) => x + 1, 0);
   const layer = useRef<HTMLDivElement>(null);
   const ix = useRef<Ix>({ sel: null, drawing: null, cursor: null, press: null, box: null, drag: null, draft: null, last: null }).current;
   const textH = useRef(new Map<string, number>());
-  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
   const drawRef = useRef(draw);
   drawRef.current = draw;
 
@@ -150,7 +157,10 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   // 그리기를 시작하면 편집 칸에서 커서를 뺀다(도구 글자가 노트에 쳐지지 않게)
   const active = !!draw;
   useEffect(() => {
-    if (active) (document.activeElement as HTMLElement | null)?.blur?.();
+    if (!active) return;
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    document.body.classList.add('drawing');
+    return () => document.body.classList.remove('drawing');
   }, [active]);
 
   // 줄 위치는 그릴 때마다 화면에서 잰다(tick = 편집 칸이 바뀐 횟수). 그림이 없으면 재지 않는다.
@@ -166,7 +176,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
 
   // 그림이 마지막 줄보다 아래로 내려가면 종이(반쪽 · 인쇄)도 그만큼 늘린다
   const bottom = resolved.reduce((m, r) => {
-    if (r.t === 'path') return Math.max(m, ...r.pts.map((p) => p.y));
+    if (r.t === 'path') return Math.max(m, ...route(r.pts, r.o).map((p) => p.y));
     if (r.t === 'text') return Math.max(m, r.a.y + th(r.id));
     return Math.max(m, r.a.y, r.b.y);
   }, 0);
@@ -197,6 +207,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   );
 
   const put = useCallback((s: Shape) => write(() => shapes.set(s.id, clean(s))), [write, shapes]);
+  // 글상자에 글을 치는 동안은 되돌리기를 끊지 않는다(타자처럼 0.5초씩 묶임)
+  const putTyping = useCallback((s: Shape) => ydoc.transact(() => shapes.set(s.id, clean(s)), SHAPES), [ydoc, shapes]);
   const nextZ = () => all.reduce((m, s) => Math.max(m, s.z), 0) + 1;
 
   const finishPath = () => {
@@ -249,8 +261,14 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     if (!d || (e.pointerType === 'mouse' && e.button !== 0)) return;
     e.preventDefault();
     const p = toMM(e);
+    // 글상자를 고치던 중이면 먼저 끝낸다(누르기는 그대로 이어서 처리)
+    if (editing) {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      setEditing(null);
+    }
     const now = performance.now();
-    const dbl = !!ix.last && now - ix.last.t < DOUBLE_MS && dist(ix.last.p, p) < DOUBLE_MM;
+    const pxPerMm = layer.current!.getBoundingClientRect().width / W;
+    const dbl = !!ix.last && now - ix.last.t < DOUBLE_MS[e.pointerType === 'touch' ? 'touch' : 'mouse'] && dist(ix.last.p, p) * pxPerMm < DOUBLE_PX;
     // 두 번 누름을 한 번 알아들으면 기록을 지운다(세 번째 누름이 또 두 번 누름이 되지 않게)
     ix.last = dbl ? null : { t: now, p };
     layer.current?.setPointerCapture(e.pointerId);
@@ -278,10 +296,10 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       return repaint();
     }
     if (d.tool === 'text') {
-      const s: Shape = { id: newId(), t: 'text', a: anchorAt({ x: p.x, y: p.y - pitch / 2 }, lines), bw: Math.min(30, Math.max(8, W - p.x)), text: '', c: d.c, w: d.w, z: nextZ() };
+      const s: Shape = { id: newId(), t: 'text', a: anchorAt({ x: p.x, y: p.y - pitch / 2 }, lines), bw: Math.min(30, Math.max(8, W - p.x)), text: '', doc: emptyTextDoc(), c: 'k', w: d.w, z: nextZ() };
       put(s);
       ix.sel = s.id;
-      setEditing({ id: s.id, text: '' });
+      setEditing(s.id);
       if (!d.lock) setDraw({ tool: 'select' });
       return repaint();
     }
@@ -305,7 +323,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       return repaint();
     }
     if (dbl && target.t === 'path') {
-      const at = segmentAt(target.pts, p, tol * 1.5);
+      const at = segmentAt(target.pts, p, tol * 1.5, target.o);
       if (at > 0) {
         const next = [...target.pts];
         next.splice(at, 0, p);
@@ -316,7 +334,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     }
     if (dbl && target.t === 'text') {
       ix.sel = target.id;
-      setEditing({ id: target.id, text: target.text });
+      setEditing(target.id);
       return repaint();
     }
     ix.sel = target.id;
@@ -429,10 +447,10 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       if (TOOL_KEYS[id]) {
         finishOrCancel();
         setDraw({ tool: TOOL_KEYS[id] });
-      } else if (id === 'KeyH') setDraw({ ortho: !d.ortho });
+      } else if (id === 'KeyH') setDraw({ ortho: !d.ortho }); // 앞으로 그릴 방식(이미 그린 화살표는 막대의 '직각 경로')
       else if (id === 'KeyQ') setDraw({ lock: !d.lock });
       else if (id === 'BracketLeft' || id === 'BracketRight') {
-        const w = Math.round(Math.min(W_MAX, Math.max(W_MIN, (sel?.w ?? d.w) + (id === 'BracketRight' ? 0.05 : -0.05))) * 100) / 100;
+        const w = stepW(sel?.w ?? d.w, id === 'BracketRight' ? 1 : -1);
         setDraw({ w });
         if (sel) update({ w });
       } else if (id.startsWith('alt+shift+') && (PEN_CODES[code] || code === 'KeyX')) {
@@ -454,14 +472,14 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       else if (id === 'mod+shift+KeyZ' || id === 'mod+KeyY') um?.redo();
       else if (code === 'Enter' || code === 'NumpadEnter') {
         if (ix.drawing) finishPath();
-        else if (sel?.t === 'text') setEditing({ id: sel.id, text: sel.text });
+        else if (sel?.t === 'text') setEditing(sel.id);
       } else if (code === 'Escape') {
         if (ix.drawing || ix.box) finishOrCancel();
         else if (ix.sel) ix.sel = null;
         else setDraw(null);
         repaint();
       } else if (/^(shift\+)?Arrow(Up|Down|Left|Right)$/.test(id) && sel) {
-        const s = id.startsWith('shift') ? 2 : 0.5;
+        const s = id.startsWith('shift') ? 5 : 0.5;
         const k = id.replace('shift+', '');
         nudge(k === 'ArrowLeft' ? -s : k === 'ArrowRight' ? s : 0, k === 'ArrowUp' ? -s : k === 'ArrowDown' ? s : 0);
       } else handled = false;
@@ -474,13 +492,13 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     return () => window.removeEventListener('keydown', onKey, true);
   });
 
-  const commitText = (text: string) => {
-    if (!editing) return;
-    const s = shapes.get(editing.id);
+  const doneText = () => {
+    const id = editing;
     setEditing(null);
-    if (!s || s.t !== 'text') return;
-    if (!text.trim()) write(() => shapes.delete(s.id));
-    else if (text !== s.text) put({ ...s, text });
+    const s = id ? shapes.get(id) : undefined;
+    if (s?.t === 'text' && !s.text.trim()) write(() => shapes.delete(s.id));
+    if (!drawRef.current) return;
+    repaint();
   };
 
   const selR = byId(ix.sel);
@@ -515,45 +533,23 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
         ))}
       </svg>
       <div className="tboxes">
-        {resolved.map((r) =>
-          r.t === 'text' && editing?.id !== r.id ? (
-            <div key={r.id} className={`tbox${r.box ? ' boxed' : ''}`} data-sid={r.id} style={tboxStyle(r)}>
-              {r.text || ' '}
-            </div>
-          ) : null,
-        )}
+        {resolved.map((r) => (r.t === 'text' && editing !== r.id ? <TextBoxView key={r.id} r={r} /> : null))}
         {editing &&
           (() => {
-            const r = byId(editing.id);
+            const r = byId(editing);
             if (!r || r.t !== 'text') return null;
             return (
-              <textarea
-                key={editing.id}
-                className={`tbox tedit${r.box ? ' boxed' : ''}`}
-                style={tboxStyle(r)}
-                autoFocus
-                value={editing.text}
-                rows={1}
-                ref={fitHeight}
-                onPointerDown={(e) => e.stopPropagation()}
-                onChange={(e) => {
-                  // 바꾼 글을 칸에 바로 넣고 커서도 바로 옮긴다(React가 같은 값이면 건드리지 않아 커서가 튀지 않는다)
-                  const ta = e.currentTarget;
-                  const [v, caret] = arrowize(ta.value, ta.selectionStart);
-                  if (v !== ta.value) {
-                    ta.value = v;
-                    ta.setSelectionRange(caret, caret);
-                  }
-                  setEditing({ id: editing.id, text: v });
-                  fitHeight(ta);
+              <TextBoxEditor
+                key={editing}
+                r={r}
+                um={um}
+                settings={settings}
+                host={host}
+                onSave={(doc) => {
+                  const s = shapes.get(r.id);
+                  if (s?.t === 'text') putTyping({ ...s, doc: doc.toJSON(), text: plainText(doc) });
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape' || (e.key === 'Enter' && (e.metaKey || e.ctrlKey))) {
-                    e.preventDefault();
-                    e.currentTarget.blur();
-                  }
-                }}
-                onBlur={(e) => commitText(e.currentTarget.value)}
+                onDone={doneText}
               />
             );
           })()}
@@ -571,6 +567,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
             update={update}
             remove={remove}
             duplicate={duplicate}
+            finish={finishPath}
           />,
           document.body,
         )}
@@ -578,37 +575,9 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   );
 }
 
-// 글상자에서도 <- -> <| |> 를 화살표로(커서 바로 앞만 본다)
-const ARROW_RULES: [RegExp, string][] = [
-  [/<-$/, '←'],
-  [/->$/, '→'],
-  [/<\|$/, '↑'],
-  [/\|>$/, '↓'],
-];
-function arrowize(v: string, caret: number): [string, number] {
-  const before = v.slice(0, caret);
-  for (const [re, ch] of ARROW_RULES) {
-    if (re.test(before)) {
-      const nb = before.replace(re, ch);
-      return [nb + v.slice(caret), nb.length];
-    }
-  }
-  return [v, caret];
-}
-
-function fitHeight(ta: HTMLTextAreaElement | null) {
-  if (!ta) return;
-  ta.style.height = 'auto';
-  ta.style.height = `${ta.scrollHeight}px`;
-}
-
 function square(a: XY, p: XY): XY {
   const s = Math.max(Math.abs(p.x - a.x), Math.abs(p.y - a.y));
   return { x: a.x + Math.sign(p.x - a.x || 1) * s, y: a.y + Math.sign(p.y - a.y || 1) * s };
-}
-
-function tboxStyle(r: Resolved & { t: 'text' }): CSSProperties {
-  return { left: `${r.a.x}mm`, top: `${r.a.y}mm`, width: `${r.bw}mm`, color: strokeOf(r.c) };
 }
 
 function SelBox({ r, th }: { r: Resolved; th: (id: string) => number }) {
@@ -631,16 +600,17 @@ interface BarProps {
   update(patch: Partial<Shape>): void;
   remove(): void;
   duplicate(): void;
+  finish(): void;
 }
 
 const alt = isMac ? '⌥' : 'Alt+';
 
-function DrawBar({ draw, sel, drawing, setDraw, update, remove, duplicate }: BarProps) {
+function DrawBar({ draw, sel, drawing, setDraw, update, remove, duplicate, finish }: BarProps) {
   const keep = (e: React.PointerEvent) => e.preventDefault();
   const c = sel?.c ?? draw.c;
   const w = sel?.w ?? draw.w;
-  const setW = (d: number) => {
-    const v = Math.round(Math.min(W_MAX, Math.max(W_MIN, w + d)) * 100) / 100;
+  const setW = (dir: 1 | -1) => {
+    const v = stepW(w, dir);
     setDraw({ w: v });
     if (sel) update({ w: v });
   };
@@ -680,11 +650,11 @@ function DrawBar({ draw, sel, drawing, setDraw, update, remove, duplicate }: Bar
         ))}
       </div>
       <div className="dgroup">
-        <button type="button" onClick={() => setW(-0.05)} title="가늘게 ([)" aria-label="가늘게">
+        <button type="button" onClick={() => setW(-1)} title="가늘게 ([) · 0.2 / 0.35 / 0.5 / 0.8mm" aria-label="가늘게">
           −
         </button>
         <span className="dval">{w.toFixed(2)}mm</span>
-        <button type="button" onClick={() => setW(0.05)} title="굵게 (])" aria-label="굵게">
+        <button type="button" onClick={() => setW(1)} title="굵게 (]) · 0.2 / 0.35 / 0.5 / 0.8mm" aria-label="굵게">
           +
         </button>
       </div>
@@ -694,9 +664,14 @@ function DrawBar({ draw, sel, drawing, setDraw, update, remove, duplicate }: Bar
             점선
           </button>
           {sel.t === 'path' && (
-            <button type="button" onClick={() => update({ head: ((sel.head + 1) % 3) as 0 | 1 | 2 } as Partial<Shape>)} title="화살촉: 없음 → 끝 → 양쪽">
-              화살촉 {['없음', '끝', '양쪽'][sel.head]}
-            </button>
+            <>
+              <button type="button" onClick={() => update({ head: nextHead(sel.head) } as Partial<Shape>)} title="화살촉: 끝 → 양쪽 → 시작 → 없음">
+                화살촉 {HEAD_NAME[sel.head]}
+              </button>
+              <button type="button" className={sel.o ? 'on' : ''} onClick={() => update({ o: !sel.o } as Partial<Shape>)} title="이 화살표를 직선 ↔ 직각 경로로">
+                직각 경로
+              </button>
+            </>
           )}
           {sel.t !== 'path' && (
             <button type="button" className={sel.fill ? 'on' : ''} onClick={() => update({ fill: sel.fill ? null : sel.c } as Partial<Shape>)} title={`채우기 (${alt}⇧색, ${alt}⇧X 지우기)`}>
@@ -721,6 +696,11 @@ function DrawBar({ draw, sel, drawing, setDraw, update, remove, duplicate }: Bar
             지우기
           </button>
         </div>
+      )}
+      {drawing && (
+        <button type="button" className="dfinish" onClick={finish} title="지금까지 찍은 점으로 완성 (Enter)">
+          완성
+        </button>
       )}
       <span className="dhint">{drawing ? '누를 때마다 꺾임 · 두 번 눌러 끝 · ⌫ 마지막 점 빼기' : sel ? '끌어서 옮기기 · 점 끌기 · 선 두 번 눌러 점 추가' : ''}</span>
       <button type="button" className="ddone" onClick={() => setDraw(null)} title="그리기 끝 (Esc · ⌥D)">

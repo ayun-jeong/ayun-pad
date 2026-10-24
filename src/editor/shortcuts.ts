@@ -140,8 +140,10 @@ export function buildShortcuts(): Map<string, Run> {
 }
 
 // 편집 칸에서 키를 가장 먼저 받는다. 위젯(수직선 · 그래프) 안 글칸에서 누른 키는 건드리지 않는다.
-export function shortcutPlugin(host: ShortcutHost): Plugin {
+// only를 주면 그 키만(글상자 편집기는 펜 · 형광펜 · 동그라미 · 자간만 쓴다).
+export function shortcutPlugin(host: ShortcutHost, only?: (id: string) => boolean): Plugin {
   const map = buildShortcuts();
+  if (only) for (const id of [...map.keys()]) if (!only(id)) map.delete(id);
   return new Plugin({
     view(view) {
       const onKey = (e: KeyboardEvent) => {

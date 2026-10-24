@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { NodeSelection, Selection, TextSelection, type EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
-import { undo } from 'y-prosemirror';
+import { redo, undo } from 'y-prosemirror';
 import type * as Y from 'yjs';
 import { DEFAULT_DRAW, type DrawState } from './draw/ShapesLayer';
 import type { Tool } from './draw/model';
 import { circleCmd, fontCmd, hlCmd, indentCmd, penCmd, toggleBranchCmd, trackCmd } from './editor/commands';
 import { lineText } from './editor/decorations';
+import { findKey } from './editor/find';
 import { fitPitch, type Typo } from './editor/layout';
 import { colorOf, isPenKey, PEN_NAME } from './editor/model';
 import { penKey } from './editor/pen';
@@ -25,7 +26,9 @@ import { EditorPane, PX_PER_MM } from './ui/EditorPane';
 import { FindPanel } from './ui/FindPanel';
 import { Help } from './ui/Help';
 import { buildPrintSheets, PagesView, type ViewMode } from './ui/PagesView';
-import { SearchPalette, type JumpTarget } from './ui/SearchPalette';
+import { ColorPop, rememberColor } from './ui/ColorPop';
+import { SearchPalette, type JumpTarget, type PaletteCommand } from './ui/SearchPalette';
+import { indexNotes } from './store/searchIndex';
 import { Sidebar } from './ui/Sidebar';
 import { TypePanel } from './ui/TypePanel';
 import { Versions } from './ui/Versions';
@@ -81,6 +84,9 @@ export function App() {
   const findRef = useRef(false);
   findRef.current = !!find;
   const pendingJump = useRef<{ noteId: string; target: JumpTarget } | null>(null);
+  const [colorPop, setColorPop] = useState<'pen' | 'hl' | null>(null);
+  const [subbar, setSubbar] = useState<'pen' | 'hl' | null>(null);
+  const importInput = useRef<HTMLInputElement>(null);
   const drawPrefs = useRef<DrawState>(DEFAULT_DRAW);
   const srcRef = useRef<HTMLElement | null>(null);
   const umRef = useRef<Y.UndoManager | null>(null);
@@ -156,6 +162,8 @@ export function App() {
       setReady(true);
       lib.fonts.forEach((f) => void ensureFont(f.id));
       purgeOld(lib);
+      // ⌘K가 바로 뜨도록 노트 본문 색인을 미리 만들어 둔다
+      setTimeout(() => void indexNotes(lib, null, () => undefined, () => false), 4000);
       void hub
         .init()
         .then(() => consumeLoginLink())
@@ -299,10 +307,11 @@ export function App() {
           if (!v) break;
           setMode('edit');
           setDraw(null);
-          const { from, to, empty } = v.state.selection;
-          const picked = empty ? '' : v.state.doc.textBetween(from, to, ' ');
+          // 글자를 골라 두고 누르면 그 글자로, 아니면 지난번 검색어(고름 상태도 그대로)
+          const { from, to, empty, $from, $to } = v.state.selection;
+          const picked = empty || !$from.sameParent($to) ? '' : v.state.doc.textBetween(from, to, ' ');
           setEdState(v.state);
-          setFind({ initial: picked.length <= 40 && !picked.includes('\n') ? picked : '' });
+          setFind({ initial: picked && picked.length <= 40 ? picked : (findKey.getState(v.state)?.query ?? '') });
           break;
         }
         case 'pitch-down':
@@ -318,7 +327,7 @@ export function App() {
         case 'pen-picker':
         case 'hl-picker':
           pickerMode.current = a === 'pen-picker' ? 'pen' : 'hl';
-          picker.current?.click();
+          setColorPop(pickerMode.current);
           break;
       }
     },
@@ -356,6 +365,14 @@ export function App() {
         'alt+KeyD': 'draw',
         'mod+KeyF': 'find',
       };
+      // 글을 쓰는 중이 아닐 때 / → 검색
+      const t = e.target as HTMLElement | null;
+      const typing = !!t && (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
+      if (id === 'Slash' && !typing && !drawRef.current) {
+        e.preventDefault();
+        act('search');
+        return;
+      }
       const a = map[id];
       if (!a) return;
       e.preventDefault();
@@ -531,6 +548,50 @@ export function App() {
     unobserve.current = () => doc.meta.unobserve(syncTypo);
   }, [jumpTo]);
 
+  const applyColor = useCallback(
+    (hex: string, m: 'pen' | 'hl') => {
+      withView((v) => (m === 'pen' ? penCmd(hex)(v.state, v.dispatch, v) : hlCmd(hex)(v.state, v.dispatch, v)));
+      rememberColor(hex);
+      setColorPop(null);
+      toast(m === 'pen' ? `고른 색 펜 ${hex}` : `고른 색 형광펜 ${hex}`);
+    },
+    [withView, toast],
+  );
+
+  // 컬러휠은 고르기를 마쳤을 때(change)만 칠한다(끄는 동안 계속 칠하지 않게)
+  useEffect(() => {
+    const el = picker.current;
+    if (!el) return;
+    const on = () => applyColor(el.value.toUpperCase(), pickerMode.current);
+    el.addEventListener('change', on);
+    return () => el.removeEventListener('change', on);
+  }, [applyColor]);
+
+  // ⌘K 명령 목록
+  const commands = useMemo<PaletteCommand[]>(
+    () => [
+      { name: '편집 화면', keys: '⌥1', run: () => act('view-edit') },
+      { name: '반쪽 보기', keys: '⌥2', run: () => act('view-half') },
+      { name: 'A4 합침 보기', keys: '⌥3', run: () => act('view-a4') },
+      { name: '인쇄 · PDF 저장', keys: '⌘P', alias: ['print', '프린트'], run: () => setTimeout(() => window.print(), 80) },
+      { name: '그리기', keys: '⌥D', alias: ['draw', '화살표', '도형'], run: () => act('draw') },
+      { name: '찾기 · 일괄 강조', keys: '⌘F', alias: ['find', '바꾸기', '동그라미'], run: () => act('find') },
+      { name: '글자 모양', keys: '⌥T', alias: ['글꼴', '행간', '자간', '여백', '폰트'], run: () => act('type') },
+      { name: '행간 좁게', keys: '⌥⇧,', run: () => act('pitch-down') },
+      { name: '행간 넓게', keys: '⌥⇧.', run: () => act('pitch-up') },
+      { name: '단축키 도움말', keys: '⌘/', alias: ['help'], run: () => setHelp(true) },
+      { name: '과목 목록 열고 닫기', keys: '⌘\\', alias: ['사이드바'], run: () => act('sidebar') },
+      { name: '지금 동기화', keys: '⌘S', alias: ['저장', 'sync'], run: () => act('save') },
+      { name: '계정 · 로그인', alias: ['login', '카카오', '로그아웃', '비밀번호'], run: () => setAccount(true) },
+      { name: '버전 기록', alias: ['history', '복원'], run: () => setVersions(true) },
+      { name: '백업 내보내기', alias: ['backup', 'export'], run: () => void onExport() },
+      { name: '백업 가져오기', alias: ['import'], run: () => importInput.current?.click() },
+      { name: '자동 색 규칙 켜기 · 끄기', alias: ['자동 펜', '자동 형광펜'], run: () => typoRef.current && changeTypo({ auto: !typoRef.current.auto }) },
+      { name: '화살표 자동 변환 켜기 · 끄기', run: () => typoRef.current && changeTypo({ arrows: !typoRef.current.arrows }) },
+    ],
+    [act, changeTypo, onExport],
+  );
+
   const onUpload = async (file: File) => {
     const name = file.name.replace(/\.(ttf|otf|woff2?)$/i, '');
     const buf = await file.arrayBuffer();
@@ -590,10 +651,13 @@ export function App() {
             A4
           </button>
         </div>
-        <button type="button" className={`tbtn${draw ? ' on' : ''}`} onClick={() => act('draw')} title="그리기: 화살표 · 선 · 네모 · 원 · 글상자 (⌥D)">
+        <button type="button" className="tbtn" onClick={() => act('search')} title="전체 검색 · 찾기 · 인쇄 등 모든 명령 (⌘K)" aria-label="검색">
+          ⌕<span className="wide-only"> 검색</span>
+        </button>
+        <button type="button" className={`tbtn hide-narrow${draw ? ' on' : ''}`} onClick={() => act('draw')} title="그리기: 화살표 · 선 · 네모 · 원 · 글상자 (⌥D)">
           ✎<span className="wide-only"> 그리기</span>
         </button>
-        <button type="button" className="tbtn" onClick={() => act('print')} title="A4 2단 인쇄 · PDF 저장 (⌘P)">
+        <button type="button" className="tbtn hide-narrow" onClick={() => act('print')} title="A4 2단 인쇄 · PDF 저장 (⌘P)">
           인쇄
         </button>
         <div className="seg" role="group" aria-label="화면 배율">
@@ -608,7 +672,7 @@ export function App() {
         <button type="button" className={`tbtn${panel ? ' on' : ''}`} onClick={() => act('type')}>
           Aa<span className="wide-only"> 글자 모양</span>
         </button>
-        <button type="button" className="tbtn" onClick={() => setHelp(true)} aria-label="단축키 도움말">
+        <button type="button" className="tbtn hide-narrow" onClick={() => setHelp(true)} aria-label="단축키 도움말">
           ?
         </button>
       </header>
@@ -626,7 +690,7 @@ export function App() {
         onImport={(f) => void onImport(f)}
       />
 
-      <main className="desk">
+      <main className={`desk${draw ? ' drawing' : ''}`}>
         {ready && noteId ? (
           <>
             <div hidden={mode !== 'edit'}>
@@ -677,10 +741,12 @@ export function App() {
         <Versions docId={`note:${docRef.current.id}`} ydoc={docRef.current.ydoc} view={viewRef.current} toast={toast} onClose={() => setVersions(false)} />
       )}
       {help && <Help onClose={() => setHelp(false)} />}
-      {find && viewRef.current && edState && (
+      {find && viewRef.current && edState && docRef.current && (
         <FindPanel
           view={viewRef.current}
           state={edState}
+          ydoc={docRef.current.ydoc}
+          shapes={docRef.current.shapes}
           um={umRef.current}
           src={srcRef.current}
           usable={typo ? fitPitch(typo).usable : 291}
@@ -692,7 +758,7 @@ export function App() {
           }}
         />
       )}
-      {search && <SearchPalette lib={lib} live={search.live} onOpen={openFromSearch} onNew={newFromSearch} onClose={() => setSearch(null)} />}
+      {search && <SearchPalette lib={lib} commands={commands} live={search.live} onOpen={openFromSearch} onNew={newFromSearch} onClose={() => setSearch(null)} />}
 
       <div className="toasts" aria-live="polite">
         {toasts.map((t) => (
@@ -702,18 +768,32 @@ export function App() {
         ))}
       </div>
 
+      <input ref={picker} type="color" className="picker" aria-label="색 고르기" />
       <input
-        ref={picker}
-        type="color"
-        className="picker"
-        aria-label="색 고르기"
+        ref={importInput}
+        type="file"
+        accept="application/json,.json"
+        hidden
         onChange={(e) => {
-          const hex = e.currentTarget.value.toUpperCase();
-          const m = pickerMode.current;
-          withView((v) => (m === 'pen' ? penCmd(hex)(v.state, v.dispatch, v) : hlCmd(hex)(v.state, v.dispatch, v)));
-          toast(m === 'pen' ? `고른 색 펜 ${hex}` : `고른 색 형광펜 ${hex}`);
+          const f = e.currentTarget.files?.[0];
+          e.currentTarget.value = '';
+          if (f) void onImport(f);
         }}
       />
+      {colorPop && (
+        <ColorPop
+          mode={colorPop}
+          onPick={(hex) => applyColor(hex, colorPop)}
+          onWheel={() => {
+            pickerMode.current = colorPop;
+            picker.current?.click();
+          }}
+          onClose={() => {
+            setColorPop(null);
+            viewRef.current?.focus();
+          }}
+        />
+      )}
 
       <div className="print-root" ref={printRef} aria-hidden="true" />
 
@@ -737,6 +817,46 @@ export function App() {
           </button>
         </nav>
       )}
+      {mode === 'edit' && !draw && !hasSel && subbar && (
+        <nav className="touchbar subbar" aria-label={subbar === 'pen' ? '펜 색' : '형광펜 색'}>
+          {(subbar === 'pen' ? (['r', 'b', 'k', 'p', 'y', 'g'] as const) : (['r', 'y', 'b', 'g', 'p'] as const)).map((c) => (
+            <button
+              key={c}
+              type="button"
+              onPointerDown={keepFocus}
+              onClick={() => {
+                withView((v) => (subbar === 'pen' ? penCmd(c)(v.state, v.dispatch, v) : hlCmd(c)(v.state, v.dispatch, v)));
+                setSubbar(null);
+              }}
+            >
+              <span className={subbar === 'pen' ? '' : `swatch hl-sw hl-${c}`} style={subbar === 'pen' ? { color: `var(--pen-${c})` } : undefined}>
+                {subbar === 'pen' ? '●' : ''}
+              </span>{' '}
+              {PEN_NAME[c]}
+            </button>
+          ))}
+          <button
+            type="button"
+            onPointerDown={keepFocus}
+            onClick={() => {
+              withView((v) => (subbar === 'pen' ? penCmd(null)(v.state, v.dispatch, v) : hlCmd(null)(v.state, v.dispatch, v)));
+              setSubbar(null);
+            }}
+          >
+            자동
+          </button>
+          <button
+            type="button"
+            onPointerDown={keepFocus}
+            onClick={() => {
+              act(subbar === 'pen' ? 'pen-picker' : 'hl-picker');
+              setSubbar(null);
+            }}
+          >
+            컬러휠
+          </button>
+        </nav>
+      )}
       {mode === 'edit' && !draw && !hasSel && (
         <nav className="touchbar" aria-label="편집 도구">
           <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => indentCmd(-1)(v.state, v.dispatch, v))}>
@@ -748,17 +868,30 @@ export function App() {
           <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => toggleBranchCmd(v.state, v.dispatch, v))}>
             ├ 꺾쇠
           </button>
-          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => penCmd('r')(v.state, v.dispatch, v))}>
-            <span style={{ color: 'var(--pen-r)' }}>●</span> 빨강
+          <button type="button" className={subbar === 'pen' ? 'on' : ''} onPointerDown={keepFocus} onClick={() => setSubbar((x) => (x === 'pen' ? null : 'pen'))}>
+            <i className={`pen-dot${pen ? '' : ' pen-auto'}`} style={pen ? { background: colorOf(pen) } : undefined} /> 펜
           </button>
-          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => penCmd('b')(v.state, v.dispatch, v))}>
-            <span style={{ color: 'var(--pen-b)' }}>●</span> 파랑
-          </button>
-          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => penCmd(null)(v.state, v.dispatch, v))}>
-            자동 펜
+          <button type="button" className={subbar === 'hl' ? 'on' : ''} onPointerDown={keepFocus} onClick={() => setSubbar((x) => (x === 'hl' ? null : 'hl'))}>
+            <span className="swatch hl-sw hl-y" /> 형광펜
           </button>
           <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => void undo(v.state))}>
-            ↶ 되돌리기
+            ↶
+          </button>
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => void redo(v.state))}>
+            ↷
+          </button>
+          <button
+            type="button"
+            onPointerDown={keepFocus}
+            onClick={() =>
+              withView((v) => {
+                const $f = v.state.selection.$from;
+                const before = $f.parent.textBetween(0, $f.parentOffset, undefined, '​');
+                v.dispatch(v.state.tr.insertText(before === '' || /\s$/.test(before) ? '/' : ' /'));
+              })
+            }
+          >
+            / 넣기
           </button>
           <button type="button" onPointerDown={keepFocus} onClick={() => act('draw')}>
             ✎ 그리기

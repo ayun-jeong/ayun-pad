@@ -15,11 +15,21 @@ const branchRule = new InputRule(/^-\s$/, (state, _match, start, end) => {
   return tr;
 });
 
-// 화살표 자동 변환: <- → ←, -> → →, <| → ↑, |> → ↓
-const arrow = (re: RegExp, ch: string) => new InputRule(re, (state, _m, start, end) => state.tr.insertText(ch, start, end));
+// 화살표 자동 변환: <- → ←, -> → →, <| → ↑, |> → ↓. 노트 설정에서 끌 수 있다(settings.arrows).
+export interface RuleSettings {
+  arrows: boolean;
+}
 
-export function rulesPlugin(): Plugin {
-  return inputRules({
-    rules: [branchRule, arrow(/<-$/, '←'), arrow(/->$/, '→'), arrow(/<\|$/, '↑'), arrow(/\|>$/, '↓')],
-  });
+const arrow = (settings: RuleSettings, re: RegExp, ch: string) =>
+  new InputRule(re, (state, _m, start, end) => (settings.arrows ? state.tr.insertText(ch, start, end) : null));
+
+const arrows = (settings: RuleSettings) => [arrow(settings, /<-$/, '←'), arrow(settings, /->$/, '→'), arrow(settings, /<\|$/, '↑'), arrow(settings, /\|>$/, '↓')];
+
+export function rulesPlugin(settings: RuleSettings = { arrows: true }): Plugin {
+  return inputRules({ rules: [branchRule, ...arrows(settings)] });
+}
+
+// 글상자 편집기: 꺾쇠 규칙 없이 화살표만
+export function arrowRulesPlugin(settings: RuleSettings = { arrows: true }): Plugin {
+  return inputRules({ rules: arrows(settings) });
 }

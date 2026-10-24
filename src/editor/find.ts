@@ -15,10 +15,11 @@ export interface FindState {
   query: string;
   hits: Hit[];
   cur: number;
+  open: boolean; // 판이 열려 있을 때만 본문에 테두리. 닫아도 찾은 곳과 고름은 남아 있다.
   deco: DecorationSet;
 }
 
-const EMPTY: FindState = { query: '', hits: [], cur: -1, deco: DecorationSet.empty };
+const EMPTY: FindState = { query: '', hits: [], cur: -1, open: false, deco: DecorationSet.empty };
 
 export const findKey = new PluginKey<FindState>('find');
 
@@ -38,35 +39,44 @@ export function searchDoc(doc: Node, query: string): { from: number; to: number 
   return out;
 }
 
-type Meta = { query?: string; toggle?: number; all?: boolean; cur?: number; close?: boolean };
+function lineKey(doc: Node, pos: number): string {
+  const $p = doc.resolve(pos);
+  return `${($p.parent.attrs.id as string | null) ?? `@${$p.before()}`}:${pos - $p.start()}`;
+}
+
+type Meta = { query?: string; toggle?: number; all?: boolean; cur?: number; open?: boolean };
 
 export function findPlugin(): Plugin<FindState> {
   return new Plugin<FindState>({
     key: findKey,
     state: {
       init: () => EMPTY,
-      apply(tr, prev, _old, state) {
+      apply(tr, prev, oldState, state) {
         const meta = tr.getMeta(findKey) as Meta | undefined;
-        if (meta?.close) return EMPTY;
-        let { query, hits, cur } = prev;
+        let { query, hits, cur, open } = prev;
+        if (meta?.open !== undefined) open = meta.open;
         if (meta?.query !== undefined && meta.query !== query) {
           query = meta.query;
           hits = searchDoc(state.doc, query).map((h) => ({ ...h, on: true }));
           cur = hits.length ? 0 : -1;
         } else if (tr.docChanged && query) {
+          // 고름 상태 옮기기: 위치 따라가기 → 안 되면 '같은 줄(id)의 같은 자리'(되돌리기 · 다른 기기 변경은 문서를 통째로 바꿔 넣어서)
           const was = new Map(prev.hits.map((h) => [`${tr.mapping.map(h.from)}:${tr.mapping.map(h.to, -1)}`, h.on]));
-          hits = searchDoc(state.doc, query).map((h) => ({ ...h, on: was.get(`${h.from}:${h.to}`) ?? true }));
+          const byLine = new Map(prev.hits.map((h) => [lineKey(oldState.doc, h.from), h.on]));
+          hits = searchDoc(state.doc, query).map((h) => ({ ...h, on: was.get(`${h.from}:${h.to}`) ?? byLine.get(lineKey(state.doc, h.from)) ?? true }));
           cur = Math.min(cur, hits.length - 1);
         }
         if (meta?.toggle !== undefined) hits = hits.map((h, i) => (i === meta.toggle ? { ...h, on: !h.on } : h));
         if (meta?.all !== undefined) hits = hits.map((h) => ({ ...h, on: meta.all! }));
         if (meta?.cur !== undefined) cur = meta.cur;
-        if (hits === prev.hits && cur === prev.cur && query === prev.query) return prev;
-        const deco = DecorationSet.create(
-          state.doc,
-          hits.map((h, i) => Decoration.inline(h.from, h.to, { class: `fh${h.on ? ' on' : ''}${i === cur ? ' cur' : ''}` })),
-        );
-        return { query, hits, cur, deco };
+        if (hits === prev.hits && cur === prev.cur && query === prev.query && open === prev.open) return prev;
+        const deco = open
+          ? DecorationSet.create(
+              state.doc,
+              hits.map((h, i) => Decoration.inline(h.from, h.to, { class: `fh${h.on ? ' on' : ''}${i === cur ? ' cur' : ''}` })),
+            )
+          : DecorationSet.empty;
+        return { query, hits, cur, open, deco };
       },
     },
     props: { decorations: (s) => findKey.getState(s)?.deco },
@@ -106,6 +116,33 @@ export function replaceHits(state: EditorState, text: string): Transaction | nul
     else tr.delete(h.from, h.to);
   }
   return tr;
+}
+
+// 위젯(연표 · 수직선 · 그래프) 이름표에서 찾기. 이름표는 맨 글이라 효과는 못 넣고 찾아가기만 한다.
+export interface LabelHit {
+  pos: number;
+  kind: 'tl' | 'graph';
+  text: string;
+  at: number;
+}
+
+export function searchLabels(doc: Node, query: string): LabelHit[] {
+  if (!query) return [];
+  const q = query.toLowerCase();
+  const out: LabelHit[] = [];
+  doc.forEach((n, pos) => {
+    if (n.type.name !== 'tl' && n.type.name !== 'graph') return;
+    try {
+      const d = JSON.parse(n.attrs.data as string) as { labels?: Record<string, string> | string[]; vals?: string[] };
+      for (const t of [...Object.values(d.labels ?? {}), ...(d.vals ?? [])]) {
+        const at = String(t).toLowerCase().indexOf(q);
+        if (at >= 0) out.push({ pos, kind: n.type.name as 'tl' | 'graph', text: String(t), at });
+      }
+    } catch {
+      /* 설정이 깨진 위젯은 건너뛴다 */
+    }
+  });
+  return out;
 }
 
 // 찾은 곳의 위치 설명: 트리 경로(위 줄들의 주제어). 표 칸 안이면 '표'.

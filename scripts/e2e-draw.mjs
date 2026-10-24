@@ -87,12 +87,12 @@ try {
   // 3) 표 뒤 줄로 나가서 연표
   const after = await page.evaluateHandle(() => document.querySelector('.editor table').closest('.tableWrapper').nextElementSibling);
   await after.click();
-  await k.type('/연표 1990 10 5');
+  await k.type('/연표 1950 4 10');
   await page.waitForSelector('.slash button.on');
   await k.press('Enter');
   await page.waitForSelector('.wg.tl');
   const vals = await page.$$eval('.wg.tl .tl-val .wg-ed', (e) => e.map((x) => x.textContent).join(' '));
-  check(vals === '1990 2000 2010 2020 2030', `연표 1990부터 10년씩 5칸 (${vals})`);
+  check(vals === '1950 1960 1970 1980 1990', `/연표 1950 4 10 → 1950~1990년 10년 간격 4칸 (${vals})`);
   // 사건 칸 고쳐 쓰기
   await page.click('.wg.tl .tl-lab .wg-ed');
   await k.type('외환위기');
@@ -106,6 +106,26 @@ try {
     return d;
   });
   check(tlData?.labels?.[0] === '외환위기', `연표 사건 칸이 문서에 저장 (${tlData?.labels?.[0]})`);
+
+  // 3-1) /수직선 10 → 0~10 (10등분), /연표 2016 10 → 2016~2026
+  let ll = await page.evaluateHandle(() => [...document.querySelectorAll('.editor > p')].pop());
+  await ll.click();
+  await k.type('/수직선 10');
+  await page.waitForSelector('.slash button.on');
+  await k.press('Enter');
+  await sleep(150);
+  const nl = await page.$$eval('.wg.tl', (ws) => ws.map((w) => [...w.querySelectorAll('.tl-val .wg-ed')].map((x) => x.textContent).join(',')));
+  check(nl.includes('0,1,2,3,4,5,6,7,8,9,10'), `/수직선 10 → 0~10 (${nl[nl.length - 1]})`);
+  ll = await page.evaluateHandle(() => [...document.querySelectorAll('.editor > p')].pop());
+  await ll.click();
+  await k.type('/연표 2016 10');
+  await page.waitForSelector('.slash button.on');
+  await k.press('Enter');
+  await sleep(150);
+  const ch = await page.$$eval('.wg.tl', (ws) => ws.map((w) => [...w.querySelectorAll('.tl-val .wg-ed')].map((x) => x.textContent)));
+  const last = ch[ch.length - 1];
+  check(last.length === 11 && last[0] === '2016' && last[10] === '2026', `/연표 2016 10 → 2016~2026년 10칸 (${last.join(',')})`);
+  await k.press('Escape');
 
   // 4) 그래프: 줄 하나 내려가서 /수요공급
   await page.evaluate(() => {
@@ -186,13 +206,47 @@ try {
   await sleep(100);
   await k.press('KeyT');
   await page.mouse.click(...at(55, 34));
-  await page.waitForSelector('textarea.tedit');
-  await k.type('메모 -> 중요');
+  await page.waitForSelector('.tbox.tedit .tb-edit');
+  await k.type('메모 -> ');
+  await combo(['Alt'], 'KeyR');
+  await k.type('중요');
   await k.press('Escape');
   await sleep(150);
   S = await shapes();
   const tb = S.find((s) => s.t === 'text');
-  check(S.some((s) => s.t === 'rect') && tb?.text === '메모 → 중요', `네모 + 글상자(화살표 변환) (${tb?.text})`);
+  const tbPen = JSON.stringify(tb?.doc ?? {}).includes('"type":"pen"');
+  check(S.some((s) => s.t === 'rect') && tb?.text === '메모 → 중요' && tbPen, `네모 + 글상자: 화살표 변환, 글상자 안에서 ⌥R 빨간 펜 (${tb?.text}, 펜 ${tbPen})`);
+  check((await page.$eval('.tbox[data-sid] .pen-r', (e) => e.textContent).catch(() => '')) === '중요', '글상자에 빨간 글자로 보임');
+
+  // 8-1) 꺾임 점 10개짜리 화살표 → 점 하나만 끌어 고치기, 굵기 단계 ]
+  await k.press('KeyA');
+  const zig = Array.from({ length: 11 }, (_, i) => [8 + i * 7, 46 + (i % 2) * 5]);
+  for (const [x, y] of zig.slice(0, -1)) {
+    await page.mouse.click(...at(x, y));
+    await sleep(420);
+  }
+  await page.mouse.click(...at(...zig[10]), { count: 2 });
+  await sleep(150);
+  S = await shapes();
+  const z = S.filter((s) => s.t === 'path').sort((a, b) => b.z - a.z)[0];
+  check(z?.pts.length === 11, `꺾임 점 10개짜리 화살표 (점 ${z?.pts.length}개)`);
+  await k.press('BracketRight');
+  await sleep(80);
+  check((await shapes()).find((s) => s.id === z.id)?.w === 0.5, '] → 굵기 0.35 → 0.5mm');
+  const p5 = [...zig[5]];
+  await page.mouse.move(...at(...p5));
+  await page.mouse.down();
+  await page.mouse.move(...at(p5[0], p5[1] + 8), { steps: 5 });
+  await page.mouse.up();
+  await sleep(100);
+  const z2 = (await shapes()).find((s) => s.id === z.id);
+  const movedPts = z2.pts.map((p, i) => Math.hypot(p.x - z.pts[i].x, p.y - z.pts[i].y) > 0.5);
+  check(movedPts.filter(Boolean).length === 1 && movedPts[5], `점 하나(6번째)만 끌어서 고침 (${movedPts.map((m) => (m ? 1 : 0)).join('')})`);
+  await page.$$eval('.drawbar button', (bs) => bs.find((b) => b.textContent.includes('직각 경로'))?.click());
+  await sleep(80);
+  check((await shapes()).find((s) => s.id === z.id)?.o === true, '막대의 직각 경로 → 그린 화살표를 직선에서 직각으로');
+  await k.press('Backspace');
+  await sleep(80);
 
   // 9) 고르고 끌어 옮기기
   await k.press('KeyV');

@@ -11,7 +11,7 @@ import { enterCmd, insertBr, unbranchAtStart } from './commands';
 import { autoPlugin } from './decorations';
 import { findPlugin } from './find';
 import { idPlugin } from './ids';
-import { rulesPlugin } from './inputRules';
+import { rulesPlugin, type RuleSettings } from './inputRules';
 import { penPlugin } from './pen';
 import { schema } from './schema';
 import { shortcutPlugin, type ShortcutHost } from './shortcuts';
@@ -24,7 +24,7 @@ export interface EditorHooks extends ShortcutHost {
 
 // 노트 하나의 편집기. 내용은 Yjs 문서(fragment)에 들어 있고, 같은 문서를 이 기기 IndexedDB와 서버가 나눠 갖는다.
 // undoManager를 주면 글과 그림(같은 Yjs 문서의 'shapes')을 한 줄로 되돌린다.
-export function createEditor(mount: HTMLElement, fragment: Y.XmlFragment, hooks: EditorHooks, undoManager?: Y.UndoManager): EditorView {
+export function createEditor(mount: HTMLElement, fragment: Y.XmlFragment, hooks: EditorHooks, undoManager?: Y.UndoManager, settings?: RuleSettings): EditorView {
   const state = EditorState.create({
     schema,
     plugins: [
@@ -32,7 +32,7 @@ export function createEditor(mount: HTMLElement, fragment: Y.XmlFragment, hooks:
       yUndoPlugin(undoManager ? { undoManager } : undefined),
       slashPlugin(hooks),
       shortcutPlugin(hooks),
-      rulesPlugin(),
+      rulesPlugin(settings),
       columnResizing({ View: TableViewClass, cellMinWidth: 24 }),
       tableEditing(),
       keymap({

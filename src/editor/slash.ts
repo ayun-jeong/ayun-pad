@@ -18,11 +18,23 @@ const num = (s: string | undefined, d: number) => {
   return s !== undefined && s !== '' && Number.isFinite(n) ? n : d;
 };
 
-function timeline(view: EditorView, args: string[], dflt: [number, number, number] | null) {
-  const [a, b, c] = args;
-  const data = args.length || dflt ? makeTimeline(num(a, dflt?.[0] ?? 0), num(b, dflt?.[1] ?? 1), num(c, dflt?.[2] ?? 6)) : { labels: ['', '', '', '', ''], vals: ['', '', '', '', ''] };
+// /수직선 10 → 0~10 (10등분), /수직선 -5 5 → -5~5
+function numberLine(view: EditorView, args: string[]) {
+  const a = num(args[0], 6);
+  const [from, to] = args.length >= 2 ? [a, num(args[1], a + 6)] : [0, a];
+  const span = Math.abs(to - from) || 1;
+  const step = Math.sign(to - from || 1) * Math.max(1, Math.ceil(span / 23));
+  const data = makeTimeline(from, step, Math.floor(span / Math.abs(step)) + 1);
+  insertBlock(view.state, view.dispatch, (depth) => schema.nodes.tl.create({ depth, data: JSON.stringify(data) }));
+}
+
+// /연표 2016 10 → 2016~2026년 1년 간격 10칸, /연표 1950 7 10 → 1950~2020년 10년 간격. 값 없이 /연표 → 빈 5칸
+function chronology(view: EditorView, args: string[]) {
+  const data = args.length
+    ? makeTimeline(num(args[0], 2000), num(args[2], 1), Math.min(23, Math.max(1, Math.round(num(args[1], 5)))) + 1)
+    : { labels: ['', '', '', '', ''], vals: ['', '', '', '', ''] };
   const node = insertBlock(view.state, view.dispatch, (depth) => schema.nodes.tl.create({ depth, data: JSON.stringify(data) }));
-  if (node && !dflt) focusFirstLabel(view);
+  if (node) focusFirstLabel(view);
 }
 
 function graph(view: EditorView, tpl: GraphTpl, rows: number) {
@@ -48,8 +60,8 @@ export const SLASH_ITEMS: SlashItem[] = [
       });
     },
   },
-  { name: '수직선', alias: ['number line'], hint: '/수직선 0 1 7 → 0부터 1씩 7칸', run: (v, a) => timeline(v, a, [0, 1, 7]) },
-  { name: '연표', alias: ['timeline'], hint: '/연표 1990 10 5 → 1990부터 10년씩 5칸', run: (v, a) => timeline(v, a, null) },
+  { name: '수직선', alias: ['number line'], hint: '/수직선 10 → 0~10, 10등분', run: numberLine },
+  { name: '연표', alias: ['timeline'], hint: '/연표 2016 10 → 2016~2026년 10칸', run: chronology },
   {
     name: '그래프',
     alias: ['graph'],
@@ -113,7 +125,7 @@ export function runSlash(view: EditorView, host: ShortcutHost, item?: SlashItem)
   if (!it) return false;
   view.dispatch(view.state.tr.delete(st.from, st.to));
   it.run(view, st.args, host);
-  if (!view.isDestroyed && it.name !== '연표') view.focus();
+  if (!view.isDestroyed && it.name !== '연표') view.focus(); // 연표는 첫 연도 칸으로 커서가 간다
   return true;
 }
 

@@ -7,6 +7,8 @@ import * as Y from 'yjs';
 import { SHAPES } from '../draw/model';
 import { ShapesLayer, type DrawState } from '../draw/ShapesLayer';
 import { createEditor, type EditorHooks } from '../editor/createEditor';
+import { autoKey } from '../editor/decorations';
+import type { RuleSettings } from '../editor/inputRules';
 import { fitPitch, halfLabel, HALF_W, DEFAULT_TYPO, type Typo } from '../editor/layout';
 import { fontStack, schema } from '../editor/schema';
 import type { AppAction } from '../editor/shortcuts';
@@ -67,6 +69,8 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
   const typoRef = useRef(typo);
   typoRef.current = typo;
   const hostRef = useRef<EditorHooks | null>(null);
+  // 노트 설정(화살표 자동 변환 등). 편집기 규칙이 이 객체를 그때그때 읽는다.
+  const settings = useRef<RuleSettings>({ arrows: true }).current;
   const frame = useRef(0);
   const liveRef = useRef<Live | null>(null);
   liveRef.current = live;
@@ -120,7 +124,7 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
         },
       };
       hostRef.current = hooks;
-      view = createEditor(mountRef.current, doc.fragment, hooks, um);
+      view = createEditor(mountRef.current, doc.fragment, hooks, um, settings);
       setLive({ doc, view, um });
       cb.current.onDoc(doc, view, srcRef.current, um);
       hub.attach(`note:${noteId}`, doc.ydoc);
@@ -136,7 +140,7 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
       view?.destroy(); // 되돌리기 관리자(um)도 함께 정리된다(y-prosemirror)
       doc.destroy();
     };
-  }, [noteId, relayout]);
+  }, [noteId, relayout, settings]);
 
   useEffect(() => {
     if (typo.font.startsWith('u-')) void ensureFont(typo.font);
@@ -158,6 +162,12 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
 
   // 글자 모양이 바뀌면 줄 위치가 바뀐다 → 위젯 밀기 · 그림 위치 다시
   useLayoutEffect(() => relayout(), [typo, relayout]);
+  // 노트 설정: 화살표 자동 변환은 규칙이 바로 읽고, 자동 색은 장식을 다시 만든다
+  useEffect(() => {
+    settings.arrows = typo.arrows;
+    const v = live?.view;
+    if (v && !v.isDestroyed && autoKey.getState(v.state)?.auto !== typo.auto) v.dispatch(v.state.tr.setMeta(autoKey, { auto: typo.auto }));
+  }, [typo.arrows, typo.auto, live, settings]);
   useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
   const fit = fitPitch(typo);
@@ -201,6 +211,8 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
                   draw={draw}
                   setDraw={setDraw}
                   onExtent={onExtent}
+                  host={hostRef.current!}
+                  settings={settings}
                 />
               )}
             </div>
