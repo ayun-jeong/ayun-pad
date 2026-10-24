@@ -1,18 +1,17 @@
-import { useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react';
-import { baseKeymap, toggleMark } from 'prosemirror-commands';
-import { keymap } from 'prosemirror-keymap';
-import { DOMSerializer, Node, type Mark } from 'prosemirror-model';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { Node, type Mark } from 'prosemirror-model';
 import { EditorState, Selection } from 'prosemirror-state';
 import { Transform } from 'prosemirror-transform';
 import { EditorView } from 'prosemirror-view';
 import type * as Y from 'yjs';
-import { insertBr } from '../editor/commands';
+import { engineNodeViews, enginePlugins, markComposing } from '../editor/createEditor';
 import { lineText } from '../editor/decorations';
 import { searchDoc, type Effect } from '../editor/find';
-import { arrowRulesPlugin, type RuleSettings } from '../editor/inputRules';
-import { penPlugin } from '../editor/pen';
+import type { RuleSettings } from '../editor/inputRules';
+import { mathKey, type MathMenuState } from '../editor/mathMenu';
 import { schema } from '../editor/schema';
-import { shortcutPlugin, type ShortcutHost } from '../editor/shortcuts';
+import type { ShortcutHost } from '../editor/shortcuts';
+import { MathMenu } from '../ui/Menus';
 import { strokeOf, type Resolved, type TextShape } from './model';
 
 // 글상자 내용: ProseMirror 문서(JSON). 옛 글상자(text만 있음)는 줄마다 나눠 읽는다.
@@ -65,83 +64,71 @@ export function tboxStyle(r: Resolved & { t: 'text' }): CSSProperties {
   return { left: `${r.a.x}mm`, top: `${r.a.y}mm`, width: `${r.bw}mm`, color: strokeOf(r.c) };
 }
 
-const serializer = () => DOMSerializer.fromSchema(schema);
-
-// 평소 모습(반쪽 보기 · 인쇄에도 그대로 복제된다). onEdit가 있으면(글쓰기 화면) 누르면 바로 고친다.
-export function TextBoxView({ r, onEdit }: { r: Resolved & { t: 'text' }; onEdit?: (e: React.PointerEvent) => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const key = JSON.stringify(r.doc ?? null) + r.text;
-  useLayoutEffect(() => {
-    ref.current?.replaceChildren(serializer().serializeFragment(textDoc(r).content));
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
-  return <div ref={ref} className={`tbox tb-doc${r.box ? ' boxed' : ''}${onEdit ? ' live' : ''}`} data-sid={r.id} style={tboxStyle(r)} onPointerDown={onEdit} title={onEdit ? '눌러서 고치기' : undefined} />;
-}
-
-interface EditorProps {
+interface BoxProps {
   r: Resolved & { t: 'text' };
   um: Y.UndoManager | null;
   settings: RuleSettings;
   host: ShortcutHost;
+  active: boolean; // 커서가 들어와 있음 → 손잡이 · 폭 · × 를 보인다
+  autoFocus: boolean;
   onSave(doc: Node): void;
-  onDone(): void;
+  onFocus(): void;
+  onBlur(): void;
   onDrag(mode: 'move' | 'width', e: React.PointerEvent): void;
   onDelete(): void;
 }
 
-const PEN_KEYS = /^alt\+(shift\+)?Key[RBKPYGAX]$|^alt\+KeyO$|^alt\+(Comma|Period)$/;
-
-// 고치는 중: 작은 편집기. 펜(⌥R …) · 형광펜(⌥⇧Y …) · 동그라미(⌥O) · 굵게 · 밑줄이 노트 본문과 같은 키로 된다.
-export function TextBoxEditor({ r, um, settings, host, onSave, onDone, onDrag, onDelete }: EditorProps) {
-  const ref = useRef<HTMLDivElement>(null);
+// 글상자 = 본문과 똑같은 필기 엔진의 또 하나의 편집기. 늘 살아 있어서 누르면 바로 쓰고,
+// 트리(- 스페이스 · Tab · ⌥Tab) · 자동 색 · 화살표 변환 · 기호 메뉴 · 분수 · 루트 · 펜이 본문과 같다.
+// 내용은 도형 지도(shapes)에 ProseMirror JSON으로 저장되고, 되돌리기는 노트와 같은 줄(⌘Z)이다.
+export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFocus, onBlur, onDrag, onDelete }: BoxProps) {
+  const mount = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
-  const cb = useRef({ onSave, onDone });
-  cb.current = { onSave, onDone };
+  const [math, setMath] = useState<MathMenuState | null>(null);
+  const cb = useRef({ onSave });
+  cb.current = { onSave };
   const key = JSON.stringify(r.doc ?? null) + r.text;
 
   useLayoutEffect(() => {
-    const done = () => {
-      cb.current.onDone();
+    const leave = () => {
+      (document.activeElement as HTMLElement | null)?.blur();
       return true;
     };
-    const v = new EditorView(ref.current!, {
+    const v = new EditorView(mount.current!, {
       state: EditorState.create({
         schema,
         doc: textDoc(r),
-        plugins: [
-          shortcutPlugin(host, (id) => PEN_KEYS.test(id)),
-          arrowRulesPlugin(settings),
-          keymap({
-            'Mod-z': () => (um?.undo(), true),
-            'Mod-Shift-z': () => (um?.redo(), true),
-            'Mod-y': () => (um?.redo(), true),
-            'Mod-b': toggleMark(schema.marks.b),
-            'Mod-u': toggleMark(schema.marks.u),
-            'Mod-Shift-x': toggleMark(schema.marks.s),
-            'Shift-Enter': insertBr,
-            Escape: done,
-            'Mod-Enter': done,
-          }),
-          keymap(baseKeymap),
-          penPlugin(),
-        ],
+        plugins: enginePlugins({
+          host,
+          settings,
+          undo: () => (um?.undo(), true),
+          redo: () => (um?.redo(), true),
+          keys: { Escape: leave, 'Mod-Enter': leave },
+        }),
       }),
-      attributes: { class: 'tb-doc tb-edit', spellcheck: 'false', 'aria-label': '글상자' },
+      nodeViews: engineNodeViews,
+      attributes: { class: 'pad-text tb-edit', spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off', 'aria-label': '글상자' },
       dispatchTransaction(this: EditorView, tr) {
+        markComposing(this, tr);
         const next = this.state.apply(tr);
         this.updateState(next);
         if (tr.docChanged) cb.current.onSave(next.doc);
+        const ms = mathKey.getState(next);
+        setMath(ms?.active ? ms : null);
       },
     });
-    v.dispatch(v.state.tr.setSelection(Selection.atEnd(v.state.doc)));
-    v.focus();
     view.current = v;
+    if (autoFocus) {
+      v.focus();
+      v.dispatch(v.state.tr.setSelection(Selection.atEnd(v.state.doc)));
+    }
     return () => {
       view.current = null;
       v.destroy();
     };
   }, [r.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 되돌리기 등으로 글상자 내용이 밖에서 바뀌면 편집기도 맞춘다
+  // 되돌리기 · 다른 기기 변경으로 글상자 내용이 밖에서 바뀌면 편집기도 맞춘다
   useEffect(() => {
     const v = view.current;
     if (!v) return;
@@ -151,32 +138,38 @@ export function TextBoxEditor({ r, um, settings, host, onSave, onDone, onDrag, o
     v.updateState(EditorState.create({ schema, doc: ext, plugins: v.state.plugins, selection: Selection.near(ext.resolve(pos)) }));
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 손잡이 · 폭 · 지우기 단추는 누를 때 글상자 편집기에서 커서가 빠지지 않게(preventDefault)
+  // 손잡이 · 폭 · 지우기 단추는 누를 때 커서가 빠지지 않게(preventDefault)
   return (
     <div
-      className={`tbox tedit${r.box ? ' boxed' : ''}`}
+      className={`tbox${active ? ' tedit' : ''}${r.box ? ' boxed' : ''}`}
+      data-sid={r.id}
       style={tboxStyle(r)}
-      onPointerDown={(e) => e.stopPropagation()}
+      onFocus={onFocus}
       onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) cb.current.onDone();
+        if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) onBlur();
       }}
     >
-      <div ref={ref} className="tb-mount" />
-      <span className="tb-grip" title="끌어서 옮기기" aria-label="글상자 옮기기" onPointerDown={(e) => onDrag('move', e)} />
-      <span className="tb-width" title="끌어서 폭 바꾸기" aria-label="글상자 폭" onPointerDown={(e) => onDrag('width', e)} />
-      <button
-        type="button"
-        className="tb-del"
-        title="글상자 지우기"
-        aria-label="글상자 지우기"
-        onPointerDown={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        }}
-        onClick={onDelete}
-      >
-        ×
-      </button>
+      <div ref={mount} className="tb-mount" />
+      {active && (
+        <>
+          <span className="tb-grip" title="끌어서 옮기기" aria-label="글상자 옮기기" onPointerDown={(e) => onDrag('move', e)} />
+          <span className="tb-width" title="끌어서 폭 바꾸기" aria-label="글상자 폭" onPointerDown={(e) => onDrag('width', e)} />
+          <button
+            type="button"
+            className="tb-del"
+            title="글상자 지우기"
+            aria-label="글상자 지우기"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onClick={onDelete}
+          >
+            ×
+          </button>
+        </>
+      )}
+      {math && view.current && <MathMenu st={math} view={view.current} />}
     </div>
   );
 }

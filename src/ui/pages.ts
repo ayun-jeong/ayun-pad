@@ -27,7 +27,8 @@ function column(source: HTMLElement, typo: Typo): HTMLElement {
   // 편집용 손잡이 · 버튼은 빼고, 글칸은 읽기 전용으로
   clone.querySelectorAll('.sh-ui, .wg-ctl, .column-resize-handle, .drawbar, textarea.tedit').forEach((e) => e.remove());
   for (const e of [clone, ...Array.from(clone.querySelectorAll<HTMLElement>('[contenteditable]'))]) e.removeAttribute('contenteditable');
-  clone.querySelectorAll('.ProseMirror-focused, .sel, .selectedCell, .fh').forEach((e) => e.classList.remove('ProseMirror-focused', 'sel', 'selectedCell', 'fh', 'on', 'cur'));
+  clone.querySelectorAll('.ProseMirror-focused, .sel, .selectedCell, .fh, .tedit').forEach((e) => e.classList.remove('ProseMirror-focused', 'sel', 'selectedCell', 'fh', 'on', 'cur', 'tedit'));
+  clone.querySelectorAll('.tb-grip, .tb-width, .tb-del, .wg-size').forEach((e) => e.remove());
   clone.removeAttribute('role');
   clone.setAttribute('aria-hidden', 'true');
   clone.classList.remove('ProseMirror-focused');

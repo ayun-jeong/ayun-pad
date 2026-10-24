@@ -493,6 +493,53 @@ try {
   await sleep(150);
   check((await page.evaluate(() => window.__ayunpad.view().state.doc.child(2).attrs.scale)) === 1, '⌘Z → 그래프 크기 되돌림');
 
+  // 17) 하나의 엔진: 글상자도 본문과 똑같이(꺾쇠 · 가지선 · 자동 색 · 기호 메뉴 · 화살표 · Tab)
+  const L3 = await page.$eval('.shapes-layer', (e) => {
+    const r = e.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, mmW: e.offsetWidth / (96 / 25.4) };
+  });
+  const px3 = L3.w / L3.mmW;
+  await page.keyboard.down('Alt');
+  await page.mouse.click(L3.x + 50 * px3, L3.y + 60 * px3);
+  await page.keyboard.up('Alt');
+  await page.waitForSelector('.tbox.tedit .tb-edit');
+  await k.type('경영학');
+  await k.press('Enter');
+  await k.type('- 마케팅');
+  await k.press('Enter');
+  await k.type('p=');
+  await page.waitForSelector('.mathmenu', { timeout: 2000 }).catch(() => {});
+  const boxMenu = !!(await page.$('.mathmenu'));
+  await k.press('Tab');
+  await k.type(' a->b');
+  await k.press('Enter');
+  await k.press('Enter');
+  await k.press('Enter');
+  await k.press('Tab');
+  await k.type('하위');
+  await sleep(200);
+  const inBox = await page.$$eval('.tbox.tedit .tb-edit > p', (ps) =>
+    ps.map((p) => ({ k: p.dataset.kind, d: p.dataset.depth, t: p.textContent, red: [...p.querySelectorAll('.a-red')].map((x) => x.textContent).join(''), hl: !!p.querySelector('.hl'), tree: (p.getAttribute('style') || '').includes('gradient') })),
+  );
+  check(inBox[1]?.k === 'branch' && inBox[1]?.tree && inBox[1]?.red === '마케팅' && inBox[1]?.hl, `글상자에서 '- ' → 꺾쇠 줄 + 빨간 가지선 + 자동 빨강 · 형광펜 (${JSON.stringify(inBox[1])})`);
+  check(inBox[0]?.red === '경영학', `글상자 대제목도 자동 빨강 (${inBox[0]?.red})`);
+  check(boxMenu && inBox[2]?.t === 'p≤ a→b', `글상자에서도 = 기호 메뉴 · 화살표 변환 (${inBox[2]?.t})`);
+  const lastBox = inBox[inBox.length - 1];
+  check(lastBox?.k === 'branch' && lastBox?.t === '하위', `글상자에서도 빈 줄 Tab → 꺾쇠 자식 줄 (${JSON.stringify(lastBox)})`);
+  await k.press('Escape');
+  await sleep(150);
+  check((await page.$$eval('.tbox:not(.tedit) .a-red', (e) => e.length)) >= 2, '글상자를 나와도 그대로(정적 글 없이 같은 엔진이 그림)');
+  await page.keyboard.down('Alt');
+  await page.keyboard.press('Digit3');
+  await page.keyboard.up('Alt');
+  await page.waitForSelector('.pages.a4 .psheet');
+  await sleep(150);
+  check((await page.$$eval('.pages .tbox .a-red', (e) => e.length)) >= 2, 'A4 보기 · 인쇄에도 글상자 자동 색 · 가지선 그대로');
+  await page.keyboard.down('Alt');
+  await page.keyboard.press('Digit1');
+  await page.keyboard.up('Alt');
+  await sleep(150);
+
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();
 } catch (e) {

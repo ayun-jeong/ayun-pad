@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from 'react';
-import { createPortal } from 'react-dom';
 import type { EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { defaultDeleteFilter, defaultProtectedNodes, prosemirrorToYXmlFragment, ySyncPluginKey } from 'y-prosemirror';
@@ -12,8 +11,9 @@ import type { RuleSettings } from '../editor/inputRules';
 import { fitPitch, halfLabel, HALF_W, DEFAULT_TYPO, type Typo } from '../editor/layout';
 import { fontStack, schema } from '../editor/schema';
 import type { AppAction } from '../editor/shortcuts';
-import { chooseMath, MATH_MENUS, mathKey, type MathMenuState } from '../editor/mathMenu';
-import { runSlash, slashKey, type SlashState } from '../editor/slash';
+import { mathKey, type MathMenuState } from '../editor/mathMenu';
+import { slashKey, type SlashState } from '../editor/slash';
+import { MathMenu, SlashMenu } from './Menus';
 import { ensureFont } from '../store/fontSync';
 import { openNote, readTypo, type NoteDoc } from '../store/noteDoc';
 import { hub } from '../store/sync';
@@ -245,65 +245,5 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
       {slash && live && hostRef.current && <SlashMenu st={slash} view={live.view} host={hostRef.current} />}
       {math && live && <MathMenu st={math} view={live.view} />}
     </div>
-  );
-}
-
-// 기호 퀵 메뉴(= + -): 커서 바로 위에. 그냥 계속 치면 닫히고 친 기호가 남는다.
-function MathMenu({ st, view }: { st: MathMenuState; view: EditorView }) {
-  let at: { left: number; top: number; bottom: number };
-  try {
-    at = view.coordsAtPos(st.pos + 1);
-  } catch {
-    return null;
-  }
-  const items = MATH_MENUS[st.ch] ?? [];
-  const h = 36;
-  const w = items.length * 44 + 90;
-  const above = at.top - h - 6 > 4;
-  const style: CSSProperties = { left: Math.max(8, Math.min(at.left - 16, window.innerWidth - w - 8)), top: above ? at.top - h - 6 : at.bottom + 6 };
-  return createPortal(
-    <div className={`mathmenu${st.engaged ? ' on' : ''}`} style={style} role="listbox" aria-label="기호 고르기" onPointerDown={(e) => e.preventDefault()}>
-      {items.map((it, i) => (
-        <button key={it.label} type="button" role="option" aria-selected={i === st.index} className={i === st.index ? 'cur' : ''} title={it.title} onClick={() => chooseMath(view, i)}>
-          {it.node === 'frac' ? (
-            <span className="mm-frac" aria-label="분수">
-              <i>a</i>
-              <i>b</i>
-            </span>
-          ) : it.node === 'sqrt' ? (
-            <span aria-label="루트">
-              √<span className="mm-sq">x</span>
-            </span>
-          ) : (
-            it.label
-          )}
-          {st.engaged && <kbd>{i + 1}</kbd>}
-        </button>
-      ))}
-      <span className="mm-hint">{st.engaged ? '← → · 숫자 · Enter' : 'Tab 고르기 · ↑'}</span>
-    </div>,
-    document.body,
-  );
-}
-
-function SlashMenu({ st, view, host }: { st: SlashState; view: EditorView; host: EditorHooks }) {
-  let at: { left: number; bottom: number; top: number };
-  try {
-    at = view.coordsAtPos(st.from);
-  } catch {
-    return null;
-  }
-  const below = at.bottom + 6 + 260 < window.innerHeight;
-  const style: CSSProperties = below ? { left: at.left, top: at.bottom + 6 } : { left: at.left, bottom: window.innerHeight - at.top + 6 };
-  return createPortal(
-    <div className="slash" style={style} role="listbox" aria-label="넣기" onPointerDown={(e) => e.preventDefault()}>
-      {st.items.map((it, i) => (
-        <button key={it.name} type="button" role="option" aria-selected={i === st.index} className={i === st.index ? 'on' : ''} onClick={() => runSlash(view, host, it)}>
-          <b>/{it.name}</b>
-          <span>{it.hint}</span>
-        </button>
-      ))}
-    </div>,
-    document.body,
   );
 }

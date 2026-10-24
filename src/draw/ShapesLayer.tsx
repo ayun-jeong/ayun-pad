@@ -5,7 +5,7 @@ import { newId } from '../editor/ids';
 import type { RuleSettings } from '../editor/inputRules';
 import { PEN_NAME, type PenKey } from '../editor/model';
 import { isMac, keyId, type ShortcutHost } from '../editor/shortcuts';
-import { emptyTextDoc, plainText, TextBoxEditor, TextBoxView } from './TextBox';
+import { emptyTextDoc, plainText, TextBox } from './TextBox';
 import {
   anchorAt,
   arrowHead,
@@ -146,6 +146,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   const ix = useRef<Ix>({ sel: null, drawing: null, cursor: null, press: null, box: null, drag: null, draft: null, last: null }).current;
   const textH = useRef(new Map<string, number>());
   const [editing, setEditing] = useState<string | null>(null);
+  const autoFocusId = useRef<string | null>(null);
   const drawRef = useRef(draw);
   drawRef.current = draw;
 
@@ -249,8 +250,12 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     const s: Shape = { id: newId(), t: 'text', a: anchorAt({ x: p.x, y: p.y - pitch / 2 }, lines), bw: Math.min(30, Math.max(8, W - p.x)), text: '', doc: emptyTextDoc(), c: 'k', w: drawRef.current?.w ?? DEFAULT_W, z: nextZ() };
     put(s);
     ix.sel = s.id;
+    autoFocusId.current = s.id;
     setEditing(s.id);
   };
+
+  // 글상자 편집기로 커서(그리기 중 두 번 누르기 · Enter)
+  const focusBox = (id: string) => requestAnimationFrame(() => src.querySelector<HTMLElement>(`.tbox[data-sid="${id}"] .tb-edit`)?.focus());
 
   // 글상자 옮기기(손잡이) · 폭 바꾸기(오른쪽 끝). 글쓰기 화면에서도 된다.
   const dragBox = (mode: 'move' | 'width', id: string, e: React.PointerEvent) => {
@@ -383,7 +388,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     }
     if (dbl && target.t === 'text') {
       ix.sel = target.id;
-      setEditing(target.id);
+      focusBox(target.id);
       return repaint();
     }
     ix.sel = target.id;
@@ -521,7 +526,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       else if (id === 'mod+shift+KeyZ' || id === 'mod+KeyY') um?.redo();
       else if (code === 'Enter' || code === 'NumpadEnter') {
         if (ix.drawing) finishPath();
-        else if (sel?.t === 'text') setEditing(sel.id);
+        else if (sel?.t === 'text') focusBox(sel.id);
       } else if (code === 'Escape') {
         if (ix.drawing || ix.box) finishOrCancel();
         else if (ix.sel) ix.sel = null;
@@ -541,12 +546,11 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     return () => window.removeEventListener('keydown', onKey, true);
   });
 
-  const doneText = () => {
-    const id = editing;
-    setEditing(null);
-    const s = id ? shapes.get(id) : undefined;
+  // 글상자에서 커서가 빠지면: 빈 글상자는 지운다
+  const doneText = (id: string) => {
+    setEditing((cur) => (cur === id ? null : cur));
+    const s = shapes.get(id);
     if (s?.t === 'text' && !s.text.trim()) write(() => shapes.delete(s.id));
-    if (!drawRef.current) return;
     repaint();
   };
 
@@ -583,47 +587,33 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       </svg>
       <div className="tboxes">
         {resolved.map((r) =>
-          r.t === 'text' && editing !== r.id ? (
-            <TextBoxView
+          r.t === 'text' ? (
+            <TextBox
               key={r.id}
               r={r}
-              onEdit={
-                draw
-                  ? undefined
-                  : (e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      ix.sel = r.id;
-                      setEditing(r.id);
-                    }
-              }
+              um={um}
+              settings={settings}
+              host={host}
+              active={editing === r.id}
+              autoFocus={autoFocusId.current === r.id}
+              onSave={(doc) => {
+                const s = shapes.get(r.id);
+                if (s?.t === 'text') putTyping({ ...s, doc: doc.toJSON(), text: plainText(doc) });
+              }}
+              onFocus={() => {
+                if (autoFocusId.current === r.id) autoFocusId.current = null;
+                ix.sel = r.id;
+                setEditing(r.id);
+              }}
+              onBlur={() => doneText(r.id)}
+              onDrag={(mode, e) => dragBox(mode, r.id, e)}
+              onDelete={() => {
+                write(() => shapes.delete(r.id));
+                setEditing(null);
+              }}
             />
           ) : null,
         )}
-        {editing &&
-          (() => {
-            const r = byId(editing);
-            if (!r || r.t !== 'text') return null;
-            return (
-              <TextBoxEditor
-                key={editing}
-                r={r}
-                um={um}
-                settings={settings}
-                host={host}
-                onSave={(doc) => {
-                  const s = shapes.get(r.id);
-                  if (s?.t === 'text') putTyping({ ...s, doc: doc.toJSON(), text: plainText(doc) });
-                }}
-                onDone={doneText}
-                onDrag={(mode, e) => dragBox(mode, r.id, e)}
-                onDelete={() => {
-                  write(() => shapes.delete(r.id));
-                  setEditing(null);
-                }}
-              />
-            );
-          })()}
       </div>
       {draw &&
         !draw.quick &&
