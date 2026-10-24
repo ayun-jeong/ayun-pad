@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { TextSelection, type EditorState } from 'prosemirror-state';
+import { NodeSelection, Selection, TextSelection, type EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { undo } from 'y-prosemirror';
 import type * as Y from 'yjs';
 import { DEFAULT_DRAW, type DrawState } from './draw/ShapesLayer';
 import type { Tool } from './draw/model';
-import { fontCmd, hlCmd, indentCmd, penCmd, toggleBranchCmd, trackCmd } from './editor/commands';
+import { circleCmd, fontCmd, hlCmd, indentCmd, penCmd, toggleBranchCmd, trackCmd } from './editor/commands';
+import { lineText } from './editor/decorations';
 import { fitPitch, type Typo } from './editor/layout';
 import { colorOf, isPenKey, PEN_NAME } from './editor/model';
 import { penKey } from './editor/pen';
 import { keyId, type AppAction } from './editor/shortcuts';
 import { putFontFile, registerFont } from './store/fontFiles';
 import { ensureFont, uploadFont } from './store/fontSync';
-import { addFont, dropSample, isUntouchedSample, notesOf, openLibrary, sortedSubjects, updateNote } from './store/library';
+import { download, exportBackup, importBackup } from './store/backup';
+import { addFont, addNote, dropSample, isUntouchedSample, notesOf, openLibrary, sortedSubjects, updateNote } from './store/library';
 import { openNote, readTypo, writeTypo, type NoteDoc } from './store/noteDoc';
 import { seedIfEmpty } from './store/seed';
 import { consumeLoginLink, supabase } from './store/supabase';
@@ -20,8 +22,10 @@ import { hub, type SyncStatus } from './store/sync';
 import { purgeOld } from './store/trash';
 import { Account, statusText } from './ui/Account';
 import { EditorPane, PX_PER_MM } from './ui/EditorPane';
+import { FindPanel } from './ui/FindPanel';
 import { Help } from './ui/Help';
 import { buildPrintSheets, PagesView, type ViewMode } from './ui/PagesView';
+import { SearchPalette, type JumpTarget } from './ui/SearchPalette';
 import { Sidebar } from './ui/Sidebar';
 import { TypePanel } from './ui/TypePanel';
 import { Versions } from './ui/Versions';
@@ -71,6 +75,12 @@ export function App() {
   const [source, setSource] = useState<HTMLElement | null>(null);
   const [sync, setSync] = useState<SyncStatus>(() => hub.status());
   const [draw, setDrawState] = useState<DrawState | null>(null);
+  const [find, setFind] = useState<{ initial: string } | null>(null);
+  const [edState, setEdState] = useState<EditorState | null>(null);
+  const [search, setSearch] = useState<{ live: { noteId: string; doc: import('prosemirror-model').Node } | null } | null>(null);
+  const findRef = useRef(false);
+  findRef.current = !!find;
+  const pendingJump = useRef<{ noteId: string; target: JumpTarget } | null>(null);
   const drawPrefs = useRef<DrawState>(DEFAULT_DRAW);
   const srcRef = useRef<HTMLElement | null>(null);
   const umRef = useRef<Y.UndoManager | null>(null);
@@ -233,9 +243,11 @@ export function App() {
         case 'print':
           window.print();
           break;
-        case 'search':
-          toast('전체 검색은 5단계에서 만듭니다');
+        case 'search': {
+          const v = viewRef.current;
+          setSearch({ live: v && noteRef.current ? { noteId: noteRef.current, doc: v.state.doc } : null });
           break;
+        }
         case 'save':
           hub.resyncAll();
           toast(hub.session ? '서버와 다시 맞췄어요' : '입력할 때마다 이 기기에 저장되고 있어요');
@@ -278,9 +290,21 @@ export function App() {
         case 'draw-ellipse':
           startDraw('ellipse');
           break;
-        case 'find':
-          toast('찾기 · 일괄 강조는 5단계에서 만듭니다');
+        case 'find': {
+          if (findRef.current) {
+            window.dispatchEvent(new Event('ayunpad-find-again'));
+            break;
+          }
+          const v = viewRef.current;
+          if (!v) break;
+          setMode('edit');
+          setDraw(null);
+          const { from, to, empty } = v.state.selection;
+          const picked = empty ? '' : v.state.doc.textBetween(from, to, ' ');
+          setEdState(v.state);
+          setFind({ initial: picked.length <= 40 && !picked.includes('\n') ? picked : '' });
           break;
+        }
         case 'pitch-down':
         case 'pitch-up': {
           const d = docRef.current;
@@ -311,6 +335,11 @@ export function App() {
         setHelp(false);
         setAccount(false);
         setVersions(false);
+        setSearch(null);
+        if (findRef.current) {
+          setFind(null);
+          viewRef.current?.focus();
+        }
         if (modeRef.current !== 'edit') act('view-edit');
         return;
       }
@@ -374,7 +403,93 @@ export function App() {
   const onState = useCallback((state: EditorState) => {
     setPen(penKey.getState(state)?.pen ?? null);
     setHasSel(!state.selection.empty);
+    if (findRef.current) setEdState(state);
   }, []);
+
+  // 검색에서 고른 줄로: 줄 id로 찾고(없으면 블록 번호), 찾은 말을 골라 둔 채 화면을 옮긴다
+  const jumpTo = useCallback((v: EditorView, t: JumpTarget) => {
+    const doc = v.state.doc;
+    let pos = -1;
+    if (t.lineId)
+      doc.descendants((n, p) => {
+        if (pos >= 0) return false;
+        if (n.attrs.id === t.lineId) {
+          pos = p;
+          return false;
+        }
+        return !n.isTextblock;
+      });
+    if (pos < 0 && t.idx < doc.childCount) {
+      pos = 0;
+      for (let k = 0; k < t.idx; k++) pos += doc.child(k).nodeSize;
+    }
+    if (pos < 0) return;
+    const node = doc.nodeAt(pos);
+    if (!node) return;
+    let sel: Selection;
+    if (node.isTextblock) {
+      const i = lineText(node).toLowerCase().indexOf(t.q.toLowerCase());
+      sel = i >= 0 && t.q ? TextSelection.create(doc, pos + 1 + i, pos + 1 + i + t.q.length) : TextSelection.create(doc, pos + 1);
+    } else if (node.isAtom) sel = NodeSelection.create(doc, pos);
+    else sel = Selection.near(doc.resolve(pos + 1));
+    v.dispatch(v.state.tr.setSelection(sel).scrollIntoView());
+    v.focus();
+  }, []);
+
+  const openFromSearch = useCallback(
+    (id: string, target?: JumpTarget) => {
+      setSearch(null);
+      setMode('edit');
+      if (!target) {
+        setNoteId(id);
+        requestAnimationFrame(() => viewRef.current?.focus());
+        return;
+      }
+      if (id === noteRef.current && viewRef.current) jumpTo(viewRef.current, target);
+      else {
+        pendingJump.current = { noteId: id, target };
+        setNoteId(id);
+      }
+    },
+    [jumpTo],
+  );
+
+  const newFromSearch = useCallback(
+    (title: string) => {
+      setSearch(null);
+      const cur = noteRef.current ? lib.notes.get(noteRef.current) : undefined;
+      const subjectId = cur?.subjectId ?? sortedSubjects(lib)[0]?.id;
+      if (!subjectId) return;
+      const n = addNote(lib, subjectId, title || '새 노트');
+      setMode('edit');
+      setNoteId(n.id);
+    },
+    [lib],
+  );
+
+  const onExport = useCallback(async () => {
+    toast('백업 파일을 만드는 중…');
+    const { blob, notes } = await exportBackup(lib);
+    const d = new Date();
+    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    download(blob, `ayunpad-backup-${stamp}.json`);
+    toast(`노트 ${notes}개를 백업 파일로 저장했어요`);
+  }, [lib, toast]);
+
+  const onImport = useCallback(
+    async (file: File) => {
+      try {
+        const text = await file.text();
+        // 손대지 않은 견본만 있는 기기면 견본은 치운다(가져온 노트와 견본이 두 벌 되지 않게)
+        if (isUntouchedSample(lib) && text.includes('"app":"ayun-pad"')) dropSample(lib);
+        const n = await importBackup(lib, text);
+        toast(`백업에서 노트 ${n}개를 합쳤어요`);
+      } catch (e) {
+        toast(`가져오지 못했어요: ${(e as Error).message}`);
+      }
+    },
+    [lib, toast],
+  );
 
   const onEdit = useCallback(() => {
     snap.current.dirty = true;
@@ -395,6 +510,11 @@ export function App() {
       void hub.snapshot(`note:${prev.id}`, prev.ydoc, 'close');
     }
     if (doc) snap.current = { dirty: false, last: Date.now() };
+    const pj = pendingJump.current;
+    if (doc && view && pj && pj.noteId === doc.id) {
+      pendingJump.current = null;
+      requestAnimationFrame(() => !view.isDestroyed && jumpTo(view, pj.target));
+    }
     unobserve.current?.();
     unobserve.current = null;
     docRef.current = doc;
@@ -409,7 +529,7 @@ export function App() {
     syncTypo();
     doc.meta.observe(syncTypo);
     unobserve.current = () => doc.meta.unobserve(syncTypo);
-  }, []);
+  }, [jumpTo]);
 
   const onUpload = async (file: File) => {
     const name = file.name.replace(/\.(ttf|otf|woff2?)$/i, '');
@@ -502,6 +622,8 @@ export function App() {
           setNoteId(id);
         }}
         onClose={() => setSidebar(false)}
+        onExport={() => void onExport()}
+        onImport={(f) => void onImport(f)}
       />
 
       <main className="desk">
@@ -555,6 +677,22 @@ export function App() {
         <Versions docId={`note:${docRef.current.id}`} ydoc={docRef.current.ydoc} view={viewRef.current} toast={toast} onClose={() => setVersions(false)} />
       )}
       {help && <Help onClose={() => setHelp(false)} />}
+      {find && viewRef.current && edState && (
+        <FindPanel
+          view={viewRef.current}
+          state={edState}
+          um={umRef.current}
+          src={srcRef.current}
+          usable={typo ? fitPitch(typo).usable : 291}
+          initial={find.initial}
+          toast={toast}
+          onClose={() => {
+            setFind(null);
+            viewRef.current?.focus();
+          }}
+        />
+      )}
+      {search && <SearchPalette lib={lib} live={search.live} onOpen={openFromSearch} onNew={newFromSearch} onClose={() => setSearch(null)} />}
 
       <div className="toasts" aria-live="polite">
         {toasts.map((t) => (
@@ -579,7 +717,27 @@ export function App() {
 
       <div className="print-root" ref={printRef} aria-hidden="true" />
 
-      {mode === 'edit' && !draw && (
+      {mode === 'edit' && !draw && hasSel && (
+        <nav className="touchbar selbar" aria-label="고른 글자 꾸미기">
+          {(['r', 'b', 'k'] as const).map((c) => (
+            <button key={c} type="button" onPointerDown={keepFocus} onClick={() => withView((v) => penCmd(c)(v.state, v.dispatch, v))}>
+              <span style={{ color: `var(--pen-${c})` }}>●</span> {PEN_NAME[c]}
+            </button>
+          ))}
+          {(['y', 'r', 'b'] as const).map((c) => (
+            <button key={`h${c}`} type="button" onPointerDown={keepFocus} onClick={() => withView((v) => hlCmd(c)(v.state, v.dispatch, v))}>
+              <span className={`swatch hl-sw hl-${c}`} /> 형광 {PEN_NAME[c]}
+            </button>
+          ))}
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => circleCmd(v.state, v.dispatch, v))}>
+            ◯ 동그라미
+          </button>
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => penCmd(null)(v.state, v.dispatch, v))}>
+            색 지우기
+          </button>
+        </nav>
+      )}
+      {mode === 'edit' && !draw && !hasSel && (
         <nav className="touchbar" aria-label="편집 도구">
           <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => indentCmd(-1)(v.state, v.dispatch, v))}>
             ⇤ 내어쓰기

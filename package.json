@@ -10,7 +10,8 @@
     "test": "vitest run",
     "e2e": "node scripts/e2e.mjs",
     "e2e:draw": "node scripts/e2e-draw.mjs",
-    "e2e:sync": "node scripts/e2e-sync.mjs"
+    "e2e:sync": "node scripts/e2e-sync.mjs",
+    "e2e:find": "node scripts/e2e-find.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.3",

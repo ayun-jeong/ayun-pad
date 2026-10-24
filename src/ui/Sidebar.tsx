@@ -8,10 +8,12 @@ interface Props {
   open: boolean;
   onOpen(id: string): void;
   onClose(): void;
+  onExport(): void;
+  onImport(file: File): void;
 }
 
 // 과목별 노트 목록. 이름은 두 번 눌러 바꾼다.
-export function Sidebar({ lib, noteId, open, onOpen, onClose }: Props) {
+export function Sidebar({ lib, noteId, open, onOpen, onClose, onExport, onImport }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
   const subjects = sortedSubjects(lib);
@@ -177,6 +179,24 @@ export function Sidebar({ lib, noteId, open, onOpen, onClose }: Props) {
       )}
       <div className="side-foot">
         <span>노트는 이 기기에 먼저 저장되고, 로그인하면 다른 기기와 동기화됩니다.</span>
+        <span className="backup">
+          <button type="button" className="mini" onClick={onExport} title="모든 노트를 JSON 파일 하나로 저장">
+            백업 내보내기
+          </button>
+          <label className="mini" title="백업 파일을 지금 노트와 합칩니다(덮어쓰지 않음)">
+            백업 가져오기
+            <input
+              type="file"
+              accept="application/json,.json"
+              hidden
+              onChange={(e) => {
+                const f = e.currentTarget.files?.[0];
+                e.currentTarget.value = '';
+                if (f) onImport(f);
+              }}
+            />
+          </label>
+        </span>
         <a href="lab/keys.html">단축키 시험</a>
         <a href="lab/print.html">인쇄 시험</a>
       </div>

@@ -9,6 +9,7 @@ import type * as Y from 'yjs';
 import { clipboardTextParser, clipboardTextSerializer } from './clipboard';
 import { enterCmd, insertBr, unbranchAtStart } from './commands';
 import { autoPlugin } from './decorations';
+import { findPlugin } from './find';
 import { idPlugin } from './ids';
 import { rulesPlugin } from './inputRules';
 import { penPlugin } from './pen';
@@ -50,6 +51,7 @@ export function createEditor(mount: HTMLElement, fragment: Y.XmlFragment, hooks:
       penPlugin(),
       idPlugin(),
       trailingLinePlugin(),
+      findPlugin(),
     ],
   });
   const view: EditorView = new EditorView(mount, {

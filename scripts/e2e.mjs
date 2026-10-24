@@ -259,7 +259,7 @@ try {
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();
 } catch (e) {
-  console.error(e);
+  console.log(`FAIL 예외: ${e?.message ?? e}`);
   fails.push(String(e));
 } finally {
   server.kill();
