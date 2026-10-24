@@ -1,11 +1,16 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import type { EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
-import { createEditor } from '../editor/createEditor';
+import { defaultDeleteFilter, defaultProtectedNodes, prosemirrorToYXmlFragment, ySyncPluginKey } from 'y-prosemirror';
+import * as Y from 'yjs';
+import { SHAPES } from '../draw/model';
+import { ShapesLayer, type DrawState } from '../draw/ShapesLayer';
+import { createEditor, type EditorHooks } from '../editor/createEditor';
 import { fitPitch, halfLabel, HALF_W, DEFAULT_TYPO, type Typo } from '../editor/layout';
-import { prosemirrorToYXmlFragment } from 'y-prosemirror';
 import { fontStack, schema } from '../editor/schema';
 import type { AppAction } from '../editor/shortcuts';
+import { runSlash, slashKey, type SlashState } from '../editor/slash';
 import { ensureFont } from '../store/fontSync';
 import { openNote, readTypo, type NoteDoc } from '../store/noteDoc';
 import { hub } from '../store/sync';
@@ -15,25 +20,73 @@ export const PX_PER_MM = 96 / 25.4;
 interface Props {
   noteId: string;
   zoom: number;
+  draw: DrawState | null;
+  setDraw(patch: Partial<DrawState> | null): void;
   toast(msg: string): void;
   app(action: AppAction): void;
   onState(state: EditorState): void;
   onEdit(): void;
-  onDoc(doc: NoteDoc | null, view: EditorView | null): void;
+  onDoc(doc: NoteDoc | null, view: EditorView | null, src: HTMLElement | null, um: Y.UndoManager | null): void;
+}
+
+interface Live {
+  doc: NoteDoc;
+  view: EditorView;
+  um: Y.UndoManager;
+}
+
+// 수직선 · 그래프가 반쪽 경계(접는 선 · 장 넘김)에 걸리면 다음 반쪽 맨 위로 민다. 줄 높이의 배수만큼 밀어서 줄 칸은 그대로 맞는다.
+// 표는 행 단위로 나뉘어도 읽을 수 있어서 밀지 않는다.
+function pushWidgets(editor: HTMLElement, usablePx: number) {
+  for (const el of Array.from(editor.children) as HTMLElement[]) {
+    if (!el.classList.contains('wg')) continue;
+    const cur = parseFloat(el.style.marginTop) || 0;
+    const top = el.offsetTop - cur;
+    const h = el.offsetHeight;
+    const within = top - Math.floor(top / usablePx + 1e-6) * usablePx;
+    const need = h < usablePx - 0.5 && within + h > usablePx + 0.5 ? usablePx - within : 0;
+    if (Math.abs(need - cur) > 0.5) el.style.marginTop = need ? `${need}px` : '';
+  }
 }
 
 // 노트 하나를 105mm 칼럼에 연다. 반쪽이 끝나는 곳마다 점선과 쪽 번호(1-1, 1-2 …)를 그린다.
-export function EditorPane({ noteId, zoom, toast, app, onState, onEdit, onDoc }: Props) {
+// 칼럼(.sheet-src) = 편집 칸 + 그림 층. 반쪽 보기 · A4 보기 · 인쇄는 이 칼럼을 그대로 복제한다.
+export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, onEdit, onDoc }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
+  const srcRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
   const [typo, setTypo] = useState<Typo>(DEFAULT_TYPO);
   const [paperH, setPaperH] = useState(0);
-  const [editorH, setEditorH] = useState(0);
+  const [srcH, setSrcH] = useState(0);
+  const [live, setLive] = useState<Live | null>(null);
+  const [tick, bumpTick] = useReducer((x: number) => x + 1, 0);
+  const [extent, setExtent] = useState(0);
+  const [slash, setSlash] = useState<SlashState | null>(null);
   const cb = useRef({ toast, app, onState, onEdit, onDoc });
   cb.current = { toast, app, onState, onEdit, onDoc };
+  const typoRef = useRef(typo);
+  typoRef.current = typo;
+  const hostRef = useRef<EditorHooks | null>(null);
+  const frame = useRef(0);
+  const liveRef = useRef<Live | null>(null);
+  liveRef.current = live;
+  const drawOn = useRef(false);
+  drawOn.current = !!draw;
+
+  const relayout = useCallback(() => {
+    if (frame.current) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0;
+      const ed = mountRef.current?.querySelector<HTMLElement>('.editor');
+      if (ed) pushWidgets(ed, fitPitch(typoRef.current).usable * PX_PER_MM);
+      // 그림 층은 그림이 있을 때만 다시 그린다(글만 쓰는 동안은 가볍게)
+      if (liveRef.current?.doc.shapes.size || drawOn.current) bumpTick();
+    });
+  }, []);
 
   useEffect(() => {
     let view: EditorView | null = null;
+    let um: Y.UndoManager | null = null;
     let cancelled = false;
     const doc = openNote(noteId);
     const onMeta = () => setTypo(readTypo(doc));
@@ -51,25 +104,39 @@ export function EditorPane({ noteId, zoom, toast, app, onState, onEdit, onDoc }:
       setTypo(readTypo(doc));
       doc.meta.observe(onMeta);
       doc.ydoc.on('update', onUpdate);
-      view = createEditor(mountRef.current, doc.fragment, {
+      // 글(fragment)과 그림(shapes)을 한 되돌리기 줄에. 다른 기기에서 온 변경은 되돌리지 않는다.
+      um = new Y.UndoManager([doc.fragment, doc.shapes], {
+        trackedOrigins: new Set<unknown>([ySyncPluginKey, SHAPES]),
+        deleteFilter: (item) => defaultDeleteFilter(item, defaultProtectedNodes),
+      });
+      const hooks: EditorHooks = {
         toast: (m) => cb.current.toast(m),
         app: (a) => cb.current.app(a),
-        onChange: (state) => cb.current.onState(state),
-      });
-      cb.current.onDoc(doc, view);
+        onChange: (state) => {
+          cb.current.onState(state);
+          const st = slashKey.getState(state);
+          setSlash(st?.active ? st : null);
+          relayout();
+        },
+      };
+      hostRef.current = hooks;
+      view = createEditor(mountRef.current, doc.fragment, hooks, um);
+      setLive({ doc, view, um });
+      cb.current.onDoc(doc, view, srcRef.current, um);
       hub.attach(`note:${noteId}`, doc.ydoc);
       view.focus();
     });
     return () => {
       cancelled = true;
       hub.detach(`note:${noteId}`);
-      cb.current.onDoc(null, null);
+      cb.current.onDoc(null, null, null, null);
+      setLive(null);
       doc.meta.unobserve(onMeta);
       doc.ydoc.off('update', onUpdate);
-      view?.destroy();
+      view?.destroy(); // 되돌리기 관리자(um)도 함께 정리된다(y-prosemirror)
       doc.destroy();
     };
-  }, [noteId]);
+  }, [noteId, relayout]);
 
   useEffect(() => {
     if (typo.font.startsWith('u-')) void ensureFont(typo.font);
@@ -77,20 +144,25 @@ export function EditorPane({ noteId, zoom, toast, app, onState, onEdit, onDoc }:
 
   useLayoutEffect(() => {
     const paper = paperRef.current;
-    const mount = mountRef.current;
-    if (!paper || !mount) return;
+    const src = srcRef.current;
+    if (!paper || !src) return;
     const ro = new ResizeObserver(() => {
       setPaperH(paper.offsetHeight);
-      setEditorH(mount.offsetHeight);
+      setSrcH(src.offsetHeight);
+      relayout();
     });
     ro.observe(paper);
-    ro.observe(mount);
+    ro.observe(src);
     return () => ro.disconnect();
-  }, []);
+  }, [relayout]);
+
+  // 글자 모양이 바뀌면 줄 위치가 바뀐다 → 위젯 밀기 · 그림 위치 다시
+  useLayoutEffect(() => relayout(), [typo, relayout]);
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
   const fit = fitPitch(typo);
   const halfPx = fit.usable * PX_PER_MM;
-  const halves = Math.max(1, Math.ceil((editorH - 0.5) / halfPx));
+  const halves = Math.max(1, Math.ceil((srcH - 0.5) / halfPx));
   const vars = {
     '--font': fontStack(typo.font),
     '--fs': `${typo.fontPt}pt`,
@@ -100,6 +172,7 @@ export function EditorPane({ noteId, zoom, toast, app, onState, onEdit, onDoc }:
     padding: `${typo.mTop}mm ${typo.mInner}mm ${typo.mTop}mm ${typo.mOuter}mm`,
   } as CSSProperties;
   const widthPx = HALF_W * PX_PER_MM;
+  const onExtent = useCallback((b: number) => setExtent(b), []);
 
   return (
     <div className="zoom-outer" style={{ width: widthPx * zoom, height: Math.max(paperH, halfPx) * zoom }}>
@@ -114,10 +187,49 @@ export function EditorPane({ noteId, zoom, toast, app, onState, onEdit, onDoc }:
                 <span className="guide-label">{halfLabel(k + 1)}</span>
               </div>
             ))}
-            <div ref={mountRef} style={{ minHeight: `${fit.usable}mm` }} />
+            <div className="sheet-src" ref={srcRef} style={{ minHeight: `${Math.max(fit.usable, extent + 1)}mm` }}>
+              <div ref={mountRef} />
+              {live && srcRef.current && (
+                <ShapesLayer
+                  ydoc={live.doc.ydoc}
+                  shapes={live.doc.shapes}
+                  um={live.um}
+                  src={srcRef.current}
+                  editor={live.view.dom}
+                  pitch={fit.pitch}
+                  tick={tick}
+                  draw={draw}
+                  setDraw={setDraw}
+                  onExtent={onExtent}
+                />
+              )}
+            </div>
           </div>
         </div>
       </div>
+      {slash && live && hostRef.current && <SlashMenu st={slash} view={live.view} host={hostRef.current} />}
     </div>
+  );
+}
+
+function SlashMenu({ st, view, host }: { st: SlashState; view: EditorView; host: EditorHooks }) {
+  let at: { left: number; bottom: number; top: number };
+  try {
+    at = view.coordsAtPos(st.from);
+  } catch {
+    return null;
+  }
+  const below = at.bottom + 6 + 260 < window.innerHeight;
+  const style: CSSProperties = below ? { left: at.left, top: at.bottom + 6 } : { left: at.left, bottom: window.innerHeight - at.top + 6 };
+  return createPortal(
+    <div className="slash" style={style} role="listbox" aria-label="넣기" onPointerDown={(e) => e.preventDefault()}>
+      {st.items.map((it, i) => (
+        <button key={it.name} type="button" role="option" aria-selected={i === st.index} className={i === st.index ? 'on' : ''} onClick={() => runSlash(view, host, it)}>
+          <b>/{it.name}</b>
+          <span>{it.hint}</span>
+        </button>
+      ))}
+    </div>,
+    document.body,
   );
 }

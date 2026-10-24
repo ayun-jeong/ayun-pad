@@ -1,13 +1,15 @@
 import { IndexeddbPersistence } from 'y-indexeddb';
 import * as Y from 'yjs';
+import { shapesOf, type Shape } from '../draw/model';
 import { normalizeTypo, type Typo } from '../editor/layout';
 
-// 노트 하나 = Yjs 문서 하나. 'content'는 줄 목록, 'meta'는 글자 모양 설정.
+// 노트 하나 = Yjs 문서 하나. 'content'는 줄 목록, 'meta'는 글자 모양 설정, 'shapes'는 그림.
 export interface NoteDoc {
   id: string;
   ydoc: Y.Doc;
   fragment: Y.XmlFragment;
   meta: Y.Map<unknown>;
+  shapes: Y.Map<Shape>;
   ready: Promise<void>;
   destroy(): void;
 }
@@ -20,6 +22,7 @@ export function openNote(id: string): NoteDoc {
     ydoc,
     fragment: ydoc.getXmlFragment('content'),
     meta: ydoc.getMap('meta'),
+    shapes: shapesOf(ydoc),
     ready: persist.whenSynced.then(() => undefined),
     destroy() {
       void persist.destroy();

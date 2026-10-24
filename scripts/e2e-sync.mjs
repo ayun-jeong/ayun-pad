@@ -114,6 +114,24 @@ try {
   const mergedA = (await waitText(A, '오프라인B', 8000)) && (await waitText(A, '온라인A', 8000));
   check(mergedA && mergedB, `다시 연결되면 양쪽 수정이 둘 다 남음 (A: ${await editorText(A)} / B: ${await editorText(B)})`);
 
+  // 그림도 같은 문서로 실시간: A가 화살표를 그리면 B에 나타난다
+  await A.keyboard.down('Alt');
+  await A.keyboard.press('KeyD');
+  await A.keyboard.up('Alt');
+  await A.waitForSelector('.drawbar');
+  const box = await A.$eval('.shapes-layer', (e) => {
+    const r = e.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, mmW: e.offsetWidth / (96 / 25.4) };
+  });
+  const px = (mm) => box.x + (mm / box.mmW) * box.w;
+  await A.mouse.click(px(10), box.y + 30);
+  await sleep(450);
+  await A.mouse.click(px(60), box.y + 30, { count: 2 });
+  await A.keyboard.press('Escape');
+  await A.keyboard.press('Escape');
+  const drawnB = await B.waitForSelector('.shapes-svg g[data-sid] polygon', { timeout: 8000 }).then(() => true, () => false);
+  check(drawnB, 'A가 그린 화살표가 B에 실시간으로');
+
   // 버전 기록: 지금 저장 → 목록에 생김
   await A.click('.tbtn.sync');
   await A.waitForSelector('.panel');

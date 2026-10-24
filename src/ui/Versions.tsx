@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { EditorView } from 'prosemirror-view';
 import { yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror';
 import * as Y from 'yjs';
+import { SHAPES, shapesOf, type Shape } from '../draw/model';
 import { lineText } from '../editor/decorations';
 import type { Kind } from '../editor/model';
 import { schema } from '../editor/schema';
@@ -64,6 +65,16 @@ export function Versions({ docId, ydoc, view, toast, onClose }: Props) {
     await hub.snapshot(docId, ydoc, 'before-restore');
     const node = versionDoc(preview.state);
     view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, node.content));
+    // 그림도 그 버전으로(글과 같은 되돌리기 한 번에 묶인다)
+    const old = new Y.Doc();
+    Y.applyUpdate(old, fromB64(preview.state));
+    const was = shapesOf(old).toJSON() as Record<string, Shape>;
+    old.destroy();
+    const now = shapesOf(ydoc);
+    ydoc.transact(() => {
+      for (const k of [...now.keys()]) if (!(k in was)) now.delete(k);
+      for (const [k, v] of Object.entries(was)) now.set(k, v);
+    }, SHAPES);
     view.focus();
     toast('이 버전으로 되돌렸어요. ⌘Z로 취소할 수 있습니다');
     onClose();

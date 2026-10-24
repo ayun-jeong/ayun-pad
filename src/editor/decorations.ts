@@ -37,22 +37,42 @@ function blocked(node: Node): { pen: Span[]; hl: Span[] } {
   return { pen, hl };
 }
 
-export function lineInfos(doc: Node): LineInfo[] {
+// 블록 하나의 트리 정보. 위젯(표 · 수직선 · 그래프)은 '자식 없는 보통 줄'로 세서 위 가지선이 위젯 옆으로 이어지게 한다.
+export function infoOf(n: Node): LineInfo {
+  return { depth: (n.attrs.depth as number) ?? 1, kind: n.type.name === 'line' ? (n.attrs.kind as Kind) : 'plain' };
+}
+
+// 줄을 담는 그릇(문서 또는 표 칸) 하나의 블록 목록
+export function lineInfos(container: Node): LineInfo[] {
   const out: LineInfo[] = [];
-  doc.forEach((n) => out.push({ depth: n.attrs.depth, kind: n.attrs.kind as Kind }));
+  container.forEach((n) => out.push(infoOf(n)));
   return out;
 }
 
-export function buildDecorations(doc: Node): DecorationSet {
-  const infos = lineInfos(doc);
-  const tree = computeTree(infos);
-  const decos: Decoration[] = [];
+const isCell = (n: Node) => n.type.spec.tableRole === 'cell' || n.type.spec.tableRole === 'header_cell';
+
+// 그릇 하나에 가지선 · 자동 볼펜 · 자동 형광펜을 단다. base = 그릇 안쪽이 시작하는 문서 위치.
+// 표 칸도 그릇이라 칸 안에서 '- '로 만든 꺾쇠 줄도 똑같이 칠해진다.
+function decorate(container: Node, base: number, decos: Decoration[]) {
+  const tree = computeTree(lineInfos(container));
   let i = 0;
-  doc.forEach((node, pos) => {
+  container.forEach((node, offset) => {
+    const pos = base + offset;
     const row = tree[i];
+    const bg = treeBackground(row.cells);
+    if (node.type.name !== 'line') {
+      decos.push(Decoration.node(pos, pos + node.nodeSize, { style: bg ? `background:${bg}` : '', class: 'blk', 'data-depth': String(node.attrs.depth ?? 1) }));
+      if (node.type.name === 'table')
+        node.descendants((child, p) => {
+          if (!isCell(child)) return true;
+          decorate(child, pos + 1 + p + 1, decos);
+          return false;
+        });
+      i++;
+      return;
+    }
     const kind = node.attrs.kind as Kind;
     const isTitle = kind !== 'branch' && row.hasBranchChild;
-    const bg = treeBackground(row.cells);
     decos.push(Decoration.node(pos, pos + node.nodeSize, { style: bg ? `background:${bg}` : '', class: isTitle ? 'ln title' : 'ln' }));
     const text = lineText(node);
     const st = autoStyle(text, kind, isTitle);
@@ -67,20 +87,28 @@ export function buildDecorations(doc: Node): DecorationSet {
     }
     i++;
   });
+}
+
+export function buildDecorations(doc: Node): DecorationSet {
+  const decos: Decoration[] = [];
+  decorate(doc, 0, decos);
   return DecorationSet.create(doc, decos);
 }
 
-// 이 줄의 자동 주제어 범위(형광펜을 선택 없이 칠할 때 쓴다). 문서 위치로 돌려준다.
-export function headRange(state: EditorState, lineIndex: number): { from: number; to: number } {
-  const doc = state.doc;
-  const tree = computeTree(lineInfos(doc));
-  let pos = 0;
-  for (let k = 0; k < lineIndex; k++) pos += doc.child(k).nodeSize;
-  const node = doc.child(lineIndex);
+// 커서가 있는 줄의 자동 주제어 범위(형광펜을 선택 없이 칠할 때 쓴다). 문서 위치로 돌려준다.
+export function headRange(state: EditorState): { from: number; to: number } {
+  const $f = state.selection.$from;
+  if ($f.parent.type.name !== 'line') return { from: $f.pos, to: $f.pos };
+  const cd = $f.depth - 1;
+  const container = $f.node(cd);
+  const idx = $f.index(cd);
+  const tree = computeTree(lineInfos(container));
+  const node = $f.parent;
   const kind = node.attrs.kind as Kind;
-  const st = autoStyle(lineText(node), kind, kind !== 'branch' && tree[lineIndex].hasBranchChild);
+  const st = autoStyle(lineText(node), kind, kind !== 'branch' && tree[idx].hasBranchChild);
   const span = st.hl ?? { from: 0, to: node.content.size };
-  return { from: pos + 1 + span.from, to: pos + 1 + span.to };
+  const start = $f.start();
+  return { from: start + span.from, to: start + span.to };
 }
 
 interface AutoState {

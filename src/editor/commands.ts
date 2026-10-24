@@ -1,36 +1,58 @@
-import type { Mark, MarkType, Node } from 'prosemirror-model';
+import type { Mark, MarkType, Node, ResolvedPos } from 'prosemirror-model';
 import { TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
-import { headRange, lineInfos } from './decorations';
+import { headRange, infoOf, lineInfos } from './decorations';
 import { clamp } from './layout';
+import type { LineInfo } from './model';
 import { penKey } from './pen';
 import { branchDepth, emptyEnter, planIndent, planMove } from './rules';
 import { schema } from './schema';
 
-function linePositions(doc: Node): number[] {
+// 줄을 담는 그릇(문서 또는 표 칸)과 그 안에서 커서 줄의 번호
+interface Ctx {
+  container: Node;
+  depth: number;
+  start: number;
+  index: number;
+}
+
+export function ctxOf($pos: ResolvedPos): Ctx | null {
+  if ($pos.parent.type !== schema.nodes.line) return null;
+  const d = $pos.depth - 1;
+  return { container: $pos.node(d), depth: d, start: $pos.start(d), index: $pos.index(d) };
+}
+
+function positions(c: Ctx): number[] {
   const out: number[] = [];
-  doc.forEach((_n, pos) => out.push(pos));
+  c.container.forEach((_n, off) => out.push(c.start + off));
   return out;
 }
 
-// 선택이 다음 줄 맨 앞에서 끝나면 그 줄은 빼고 센다.
-function selectedLines(state: EditorState): [number, number] {
+// 선택이 다음 줄 맨 앞에서 끝나면 그 줄은 빼고 센다. 다른 그릇(표 칸)까지 걸친 선택은 첫 줄만.
+function selectedLines(state: EditorState): { c: Ctx; a: number; b: number } | null {
   const { $from, $to } = state.selection;
-  const a = $from.index(0);
-  let b = $to.index(0);
-  if (b > a && $to.parentOffset === 0) b--;
-  return [a, b];
+  const c = ctxOf($from);
+  if (!c) return null;
+  const a = c.index;
+  let b = a;
+  if ($to.depth > c.depth && $to.start(c.depth) === c.start) {
+    b = $to.index(c.depth);
+    if (b > a && $to.parentOffset === 0) b--;
+  }
+  return { c, a, b };
 }
 
 // Tab / ⇧Tab: 고른 줄과 그 자식 줄의 깊이를 한 단계씩. 못 바꿔도 Tab은 삼킨다(포커스가 다른 곳으로 가지 않게).
 export function indentCmd(delta: 1 | -1): Command {
   return (state, dispatch) => {
-    const [a, b] = selectedLines(state);
-    const plan = planIndent(lineInfos(state.doc), a, b, delta);
+    const sel = selectedLines(state);
+    if (!sel) return true;
+    const { c, a, b } = sel;
+    const plan = planIndent(lineInfos(c.container), a, b, delta);
     if (!plan || !dispatch) return true;
-    const pos = linePositions(state.doc);
+    const pos = positions(c);
     const tr = state.tr;
     for (let i = plan.from; i <= plan.to; i++) {
-      tr.setNodeMarkup(pos[i], undefined, { ...state.doc.child(i).attrs, depth: plan.depths[i - plan.from] });
+      tr.setNodeMarkup(pos[i], undefined, { ...c.container.child(i).attrs, depth: plan.depths[i - plan.from] });
     }
     dispatch(tr.scrollIntoView());
     return true;
@@ -40,14 +62,15 @@ export function indentCmd(delta: 1 | -1): Command {
 // ⌘⇧↑/↓: 커서가 있는 줄을 자식째 형제와 자리 바꾸기
 export function moveCmd(dir: -1 | 1): Command {
   return (state, dispatch) => {
-    const doc = state.doc;
-    const plan = planMove(lineInfos(doc), state.selection.$head.index(0), dir);
+    const c = ctxOf(state.selection.$head);
+    if (!c) return true;
+    const plan = planMove(lineInfos(c.container), c.index, dir);
     if (!plan || !dispatch) return true;
-    const pos = linePositions(doc);
-    const at = (k: number) => (k < doc.childCount ? pos[k] : doc.content.size);
+    const pos = positions(c);
+    const at = (k: number) => (k < c.container.childCount ? pos[k] : c.start + c.container.content.size);
     const from = at(plan.start);
     const to = at(plan.end + 1);
-    const block = doc.slice(from, to).content;
+    const block = state.doc.slice(from, to).content;
     const offset = state.selection.head - from;
     const insertAt = at(plan.insertBefore);
     const tr = state.tr;
@@ -65,11 +88,14 @@ export function moveCmd(dir: -1 | 1): Command {
   };
 }
 
+// 줄 맨 앞에서 Enter를 누르면 줄을 나누지 않고 위에 빈 줄을 끼운다. 그래야 글이 원래 줄(id)에 남아 그 줄에 붙은 그림이 같이 내려간다.
 function splitLine(tr: Transaction): Transaction {
   const $p = tr.selection.$from;
   const line = $p.parent;
   if (line.type !== schema.nodes.line) return tr;
-  tr.split($p.pos, 1, [{ type: schema.nodes.line, attrs: { depth: line.attrs.depth, kind: line.attrs.kind } }]);
+  const attrs = { depth: line.attrs.depth, kind: line.attrs.kind };
+  if ($p.parentOffset === 0 && line.content.size > 0) tr.insert($p.before(), schema.nodes.line.create(attrs));
+  else tr.split($p.pos, 1, [{ type: schema.nodes.line, attrs }]);
   return tr.scrollIntoView();
 }
 
@@ -77,10 +103,11 @@ function splitLine(tr: Transaction): Transaction {
 export const enterCmd: Command = (state, dispatch) => {
   const sel = state.selection;
   const $f = sel.$from;
-  if (sel.empty && $f.parent.type === schema.nodes.line && $f.parent.content.size === 0) {
-    const next = emptyEnter(lineInfos(state.doc), $f.index(0));
+  const c = ctxOf($f);
+  if (sel.empty && c && $f.parent.content.size === 0) {
+    const next = emptyEnter(lineInfos(c.container), c.index);
     if (next) {
-      dispatch?.(state.tr.setNodeMarkup($f.before(1), undefined, { ...$f.parent.attrs, ...next }));
+      dispatch?.(state.tr.setNodeMarkup($f.before(), undefined, { ...$f.parent.attrs, ...next }));
       return true;
     }
   }
@@ -95,8 +122,8 @@ export const enterCmd: Command = (state, dispatch) => {
 // 꺾쇠 바로 뒤에서 ⌫: 꺾쇠를 풀어 보통 줄로
 export const unbranchAtStart: Command = (state, dispatch) => {
   const { $from, empty } = state.selection;
-  if (!empty || $from.parentOffset !== 0 || $from.parent.attrs.kind !== 'branch') return false;
-  dispatch?.(state.tr.setNodeMarkup($from.before(1), undefined, { ...$from.parent.attrs, kind: 'plain' }));
+  if (!empty || $from.parentOffset !== 0 || $from.parent.type !== schema.nodes.line || $from.parent.attrs.kind !== 'branch') return false;
+  dispatch?.(state.tr.setNodeMarkup($from.before(), undefined, { ...$from.parent.attrs, kind: 'plain' }));
   return true;
 };
 
@@ -142,7 +169,7 @@ export function penCmd(c: string | null, report?: (pen: string | null, onSelecti
 export function hlCmd(c: string | 'none' | null): Command {
   return (state, dispatch) => {
     const sel = state.selection;
-    const range = sel.empty ? headRange(state, sel.$from.index(0)) : { from: sel.from, to: sel.to };
+    const range = sel.empty ? headRange(state) : { from: sel.from, to: sel.to };
     if (range.from >= range.to) return true;
     if (dispatch) {
       const tr = state.tr;
@@ -183,8 +210,8 @@ export function trackCmd(delta: number, report?: (v: number) => void): Command {
     let { from, to } = state.selection;
     if (state.selection.empty) {
       const $f = state.selection.$from;
-      from = $f.start(1);
-      to = $f.end(1);
+      from = $f.start();
+      to = $f.end();
     }
     if (from >= to) return true;
     const tr = state.tr;
@@ -210,17 +237,20 @@ export function trackCmd(delta: number, report?: (v: number) => void): Command {
 export const toggleBranchCmd: Command = (state, dispatch) => {
   const $f = state.selection.$from;
   const line = $f.parent;
-  if (line.type !== schema.nodes.line) return false;
+  const c = ctxOf($f);
+  if (!c) return false;
   if (line.attrs.kind === 'branch') {
-    dispatch?.(state.tr.setNodeMarkup($f.before(1), undefined, { ...line.attrs, kind: 'plain' }));
+    dispatch?.(state.tr.setNodeMarkup($f.before(), undefined, { ...line.attrs, kind: 'plain' }));
     return true;
   }
-  const i = $f.index(0);
-  const prevNode = i > 0 ? state.doc.child(i - 1) : null;
-  const prev = prevNode ? { depth: prevNode.attrs.depth as number, kind: prevNode.attrs.kind as 'plain' | 'branch' } : null;
-  dispatch?.(state.tr.setNodeMarkup($f.before(1), undefined, { ...line.attrs, depth: branchDepth(line.attrs.depth as number, prev), kind: 'branch' }));
+  dispatch?.(state.tr.setNodeMarkup($f.before(), undefined, { ...line.attrs, depth: branchDepth(line.attrs.depth as number, prevInfo(c)), kind: 'branch' }));
   return true;
 };
+
+// 같은 그릇에서 바로 위 블록의 깊이 · 종류('-' + 스페이스 규칙에 쓴다)
+export function prevInfo(c: Ctx): LineInfo | null {
+  return c.index > 0 ? infoOf(c.container.child(c.index - 1)) : null;
+}
 
 // 글자 모양 판에서 '선택한 글자에만' 글꼴 바꾸기
 export function fontCmd(f: string | null): Command {

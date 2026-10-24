@@ -1,4 +1,5 @@
 import { Plugin, type Command } from 'prosemirror-state';
+import { addRowAfter, goToNextCell, isInTable } from 'prosemirror-tables';
 import type { EditorView } from 'prosemirror-view';
 import { circleCmd, hlCmd, indentCmd, moveCmd, penCmd, trackCmd } from './commands';
 import { PEN_NAME, isPenKey } from './model';
@@ -17,7 +18,13 @@ export type AppAction =
   | 'pitch-down'
   | 'pitch-up'
   | 'pen-picker'
-  | 'hl-picker';
+  | 'hl-picker'
+  | 'find'
+  | 'draw-text'
+  | 'draw-arrow'
+  | 'draw-line'
+  | 'draw-rect'
+  | 'draw-ellipse';
 
 export interface ShortcutHost {
   toast(msg: string): void;
@@ -40,6 +47,22 @@ export function keyId(e: KeyboardEvent): string {
 }
 
 type Run = (view: EditorView, host: ShortcutHost) => void;
+
+function cellTab(view: EditorView, dir: 1 | -1) {
+  if (goToNextCell(dir)(view.state, view.dispatch)) return;
+  if (dir > 0 && addRowAfter(view.state, view.dispatch)) goToNextCell(1)(view.state, view.dispatch);
+}
+
+// 한글 조합 중에 누른 키는 조합이 끝난 뒤에 실행한다(조합 중엔 ProseMirror가 키를 처리하지 않고,
+// 그냥 두면 Tab이 포커스를 옮기거나 ⌥R이 ®를 친다). 미룰 필요가 없으면 false.
+// 사파리는 조합을 먼저 끝내고(compositionend) keyCode 229로 키를 보내서, 그때는 잠깐 뒤에 바로 실행한다.
+export function afterComposition(view: EditorView, e: KeyboardEvent, fn: () => void): boolean {
+  if (!(e.isComposing || e.keyCode === 229 || view.composing)) return false;
+  const run = () => setTimeout(() => !view.isDestroyed && fn(), 30);
+  if (e.isComposing || view.composing) view.dom.addEventListener('compositionend', run, { once: true });
+  else run();
+  return true;
+}
 
 const exec = (cmd: Command): Run => (view) => {
   cmd(view.state, view.dispatch, view);
@@ -89,8 +112,11 @@ export function buildShortcuts(): Map<string, Run> {
   });
   map.set('alt+shift+KeyC', (_v, h) => h.app('hl-picker'));
 
-  map.set('Tab', exec(indentCmd(1)));
-  map.set('shift+Tab', exec(indentCmd(-1)));
+  // 표 칸에서는 Tab이 다음 칸(마지막 칸이면 행 추가), 들여쓰기는 ⌘] ⌘[
+  map.set('Tab', (v, h) => (isInTable(v.state) ? cellTab(v, 1) : exec(indentCmd(1))(v, h)));
+  map.set('shift+Tab', (v, h) => (isInTable(v.state) ? cellTab(v, -1) : exec(indentCmd(-1))(v, h)));
+  map.set('mod+BracketRight', exec(indentCmd(1)));
+  map.set('mod+BracketLeft', exec(indentCmd(-1)));
   map.set('mod+shift+ArrowUp', exec(moveCmd(-1)));
   map.set('mod+shift+ArrowDown', exec(moveCmd(1)));
 
@@ -106,46 +132,28 @@ export function buildShortcuts(): Map<string, Run> {
   map.set('alt+Digit3', (_v, h) => h.app('view-a4'));
   map.set('mod+KeyP', (_v, h) => h.app('print'));
   map.set('mod+KeyK', (_v, h) => h.app('search'));
+  map.set('mod+KeyF', (_v, h) => h.app('find'));
   map.set('mod+Backslash', (_v, h) => h.app('sidebar'));
   map.set('mod+KeyS', (_v, h) => h.app('save'));
   map.set('mod+Slash', (_v, h) => h.app('help'));
   return map;
 }
 
-// 편집 칸에서 키를 가장 먼저 받는다. 한글 조합 중에 누른 키는 기억해 뒀다가 조합이 끝난 뒤 실행한다
-// (조합 중엔 ProseMirror가 키를 처리하지 않아서, 그냥 두면 Tab이 포커스를 옮기거나 ⌥R이 ®를 친다).
+// 편집 칸에서 키를 가장 먼저 받는다. 위젯(수직선 · 그래프) 안 글칸에서 누른 키는 건드리지 않는다.
 export function shortcutPlugin(host: ShortcutHost): Plugin {
   const map = buildShortcuts();
   return new Plugin({
     view(view) {
-      let pending: Run | null = null;
       const onKey = (e: KeyboardEvent) => {
+        if ((e.target as HTMLElement | null)?.closest?.('.wg')) return;
         const run = map.get(keyId(e));
         if (!run) return;
         e.preventDefault();
         e.stopPropagation();
-        if (e.isComposing || e.keyCode === 229 || view.composing) {
-          pending = run;
-          return;
-        }
-        run(view, host);
-      };
-      const onCompositionEnd = () => {
-        if (!pending) return;
-        const run = pending;
-        pending = null;
-        setTimeout(() => {
-          if (!view.isDestroyed) run(view, host);
-        }, 30);
+        if (!afterComposition(view, e, () => run(view, host))) run(view, host);
       };
       view.dom.addEventListener('keydown', onKey, true);
-      view.dom.addEventListener('compositionend', onCompositionEnd);
-      return {
-        destroy() {
-          view.dom.removeEventListener('keydown', onKey, true);
-          view.dom.removeEventListener('compositionend', onCompositionEnd);
-        },
-      };
+      return { destroy: () => view.dom.removeEventListener('keydown', onKey, true) };
     },
   });
 }

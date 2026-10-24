@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { TextSelection, type EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { undo } from 'y-prosemirror';
+import type * as Y from 'yjs';
+import { DEFAULT_DRAW, type DrawState } from './draw/ShapesLayer';
+import type { Tool } from './draw/model';
 import { fontCmd, hlCmd, indentCmd, penCmd, toggleBranchCmd, trackCmd } from './editor/commands';
 import { fitPitch, type Typo } from './editor/layout';
 import { colorOf, isPenKey, PEN_NAME } from './editor/model';
@@ -67,6 +70,10 @@ export function App() {
   const [mode, setMode] = useState<ViewMode>('edit');
   const [source, setSource] = useState<HTMLElement | null>(null);
   const [sync, setSync] = useState<SyncStatus>(() => hub.status());
+  const [draw, setDrawState] = useState<DrawState | null>(null);
+  const drawPrefs = useRef<DrawState>(DEFAULT_DRAW);
+  const srcRef = useRef<HTMLElement | null>(null);
+  const umRef = useRef<Y.UndoManager | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
   const typoRef = useRef<Typo | null>(null);
   typoRef.current = typo;
@@ -77,6 +84,8 @@ export function App() {
   const touched = useRef(0);
   const modeRef = useRef<ViewMode>('edit');
   modeRef.current = mode;
+  const drawRef = useRef<DrawState | null>(null);
+  drawRef.current = draw;
   const snap = useRef({ dirty: false, last: Date.now() });
   const persisted = useRef(false);
   const picker = useRef<HTMLInputElement>(null);
@@ -88,6 +97,24 @@ export function App() {
     setToasts((t) => [...t.slice(-2), { id, msg }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 2200);
   }, []);
+
+  // 그리기 상태. 색 · 굵기 · 직각 · 고정은 다음에 그리기를 켤 때도 그대로.
+  const setDraw = useCallback((patch: Partial<DrawState> | null) => {
+    setDrawState((cur) => {
+      if (!patch) return null;
+      const next = { ...(cur ?? drawPrefs.current), ...patch };
+      drawPrefs.current = next;
+      return next;
+    });
+  }, []);
+
+  const startDraw = useCallback(
+    (tool: Tool) => {
+      setMode('edit');
+      setDraw({ tool });
+    },
+    [setDraw],
+  );
 
   // 시작: 목록 열기 → (처음이면) 견본 → 로그인 확인 → 동기화
   useEffect(() => {
@@ -219,12 +246,40 @@ export function App() {
           break;
         case 'view-half':
         case 'view-a4':
-          if (!viewRef.current) break;
-          setSource(viewRef.current.dom);
+          if (!srcRef.current) break;
+          setDraw(null);
+          setSource(srcRef.current);
           setMode(a === 'view-half' ? 'half' : 'a4');
           break;
         case 'draw':
-          toast('그리기는 4단계에서 만듭니다');
+          if (modeRef.current !== 'edit') setMode('edit');
+          setDrawState((cur) => {
+            if (cur) {
+              requestAnimationFrame(() => viewRef.current?.focus());
+              return null;
+            }
+            return { ...drawPrefs.current, tool: drawPrefs.current.tool === 'select' ? 'arrow' : drawPrefs.current.tool };
+          });
+          break;
+        case 'draw-text':
+          startDraw('text');
+          toast('글상자를 넣을 곳을 누르세요');
+          break;
+        case 'draw-arrow':
+          startDraw('arrow');
+          toast('시작점을 누르고, 꺾을 곳마다 누르고, 끝점에서 두 번 누르세요');
+          break;
+        case 'draw-line':
+          startDraw('line');
+          break;
+        case 'draw-rect':
+          startDraw('rect');
+          break;
+        case 'draw-ellipse':
+          startDraw('ellipse');
+          break;
+        case 'find':
+          toast('찾기 · 일괄 강조는 5단계에서 만듭니다');
           break;
         case 'pitch-down':
         case 'pitch-up': {
@@ -243,7 +298,7 @@ export function App() {
           break;
       }
     },
-    [toast],
+    [toast, setDraw, startDraw],
   );
 
   // 편집 칸 밖에 있을 때도 되는 키
@@ -251,6 +306,7 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       const id = keyId(e);
       if (id === 'Escape') {
+        if (drawRef.current) return; // 그리기 중 Esc는 그림 층이 받는다
         setPanel(false);
         setHelp(false);
         setAccount(false);
@@ -268,6 +324,8 @@ export function App() {
         'alt+Digit1': 'view-edit',
         'alt+Digit2': 'view-half',
         'alt+Digit3': 'view-a4',
+        'alt+KeyD': 'draw',
+        'mod+KeyF': 'find',
       };
       const a = map[id];
       if (!a) return;
@@ -281,9 +339,9 @@ export function App() {
   // 인쇄: 브라우저가 인쇄를 시작하는 순간(⌘P든 메뉴든) A4 장을 만들어 넣고, 끝나면 비운다.
   useEffect(() => {
     const before = () => {
-      const v = viewRef.current;
+      const src = srcRef.current;
       const t = typoRef.current;
-      if (v && t && printRef.current) buildPrintSheets(printRef.current, v.dom, t);
+      if (src && t && printRef.current) buildPrintSheets(printRef.current, src, t);
     };
     const after = () => printRef.current?.replaceChildren();
     window.addEventListener('beforeprint', before);
@@ -296,7 +354,7 @@ export function App() {
 
   // 시험용 손잡이(scripts/e2e*.mjs가 쓴다)
   useEffect(() => {
-    (window as unknown as { __ayunpad: object }).__ayunpad = { view: () => viewRef.current, hub };
+    (window as unknown as { __ayunpad: object }).__ayunpad = { view: () => viewRef.current, hub, doc: () => docRef.current };
   }, []);
 
   // 보기 화면에서 줄을 누르면 편집 화면의 그 줄 맨 앞으로
@@ -330,7 +388,7 @@ export function App() {
     if (noteRef.current) updateNote(lib, noteRef.current, { updatedAt: now });
   }, [lib]);
 
-  const onDoc = useCallback((doc: NoteDoc | null, view: EditorView | null) => {
+  const onDoc = useCallback((doc: NoteDoc | null, view: EditorView | null, src: HTMLElement | null, um: Y.UndoManager | null) => {
     const prev = docRef.current;
     if (!doc && prev && snap.current.dirty) {
       snap.current.dirty = false;
@@ -341,6 +399,8 @@ export function App() {
     unobserve.current = null;
     docRef.current = doc;
     viewRef.current = view;
+    srcRef.current = src;
+    umRef.current = um;
     if (!doc) {
       setTypo(null);
       return;
@@ -410,6 +470,9 @@ export function App() {
             A4
           </button>
         </div>
+        <button type="button" className={`tbtn${draw ? ' on' : ''}`} onClick={() => act('draw')} title="그리기: 화살표 · 선 · 네모 · 원 · 글상자 (⌥D)">
+          ✎<span className="wide-only"> 그리기</span>
+        </button>
         <button type="button" className="tbtn" onClick={() => act('print')} title="A4 2단 인쇄 · PDF 저장 (⌘P)">
           인쇄
         </button>
@@ -445,7 +508,18 @@ export function App() {
         {ready && noteId ? (
           <>
             <div hidden={mode !== 'edit'}>
-              <EditorPane key={noteId} noteId={noteId} zoom={zoom} toast={toast} app={act} onState={onState} onEdit={onEdit} onDoc={onDoc} />
+              <EditorPane
+                key={noteId}
+                noteId={noteId}
+                zoom={zoom}
+                draw={mode === 'edit' ? draw : null}
+                setDraw={setDraw}
+                toast={toast}
+                app={act}
+                onState={onState}
+                onEdit={onEdit}
+                onDoc={onDoc}
+              />
             </div>
             {mode !== 'edit' && source && typo && <PagesView mode={mode} source={source} typo={typo} zoom={zoom} onPick={pickLine} />}
           </>
@@ -505,7 +579,7 @@ export function App() {
 
       <div className="print-root" ref={printRef} aria-hidden="true" />
 
-      {mode === 'edit' && (
+      {mode === 'edit' && !draw && (
         <nav className="touchbar" aria-label="편집 도구">
           <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => indentCmd(-1)(v.state, v.dispatch, v))}>
             ⇤ 내어쓰기
@@ -527,6 +601,9 @@ export function App() {
           </button>
           <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => void undo(v.state))}>
             ↶ 되돌리기
+          </button>
+          <button type="button" onPointerDown={keepFocus} onClick={() => act('draw')}>
+            ✎ 그리기
           </button>
         </nav>
       )}
