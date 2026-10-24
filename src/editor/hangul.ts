@@ -15,6 +15,15 @@ export function choOf(ch: string): string {
 
 export const isCho = (ch: string) => ch.length === 1 && CHO.includes(ch);
 
+// 글자마다 초성으로 바꾼 글(길이가 같다). 초성만 친 검색은 이 글에서 indexOf 한 번으로 찾는다.
+export function choString(s: string): string {
+  let out = '';
+  for (const ch of s) out += choOf(ch);
+  return out;
+}
+
+export const allCho = (q: string) => [...q].every((c) => isCho(c) || c === ' ');
+
 // 찾는 글자 q 하나가 글자 t 하나와 맞나. last = 찾는 말의 마지막 글자(아직 치는 중일 수 있음)
 function charMatch(q: string, t: string, last: boolean): boolean {
   if (q === t) return true;

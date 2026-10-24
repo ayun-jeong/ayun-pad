@@ -98,7 +98,7 @@ export function SearchPalette({ lib, commands, live, onOpen, onNew, onClose }: P
       const ni = index.get(n.id);
       if (!ni) continue;
       for (const l of ni.lines) {
-        const m = findIn(l.text, query);
+        const m = findIn(l, query);
         if (!m) continue;
         const a = Math.max(0, m.at - 14);
         out.push({

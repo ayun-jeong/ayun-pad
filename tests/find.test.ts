@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { searchDoc, pathOf } from '../src/editor/find';
 import { schema } from '../src/editor/schema';
-import { findIn, indexDoc } from '../src/store/searchIndex';
+import { findIn, indexDoc, prep } from '../src/store/searchIndex';
 
 const line = (depth: number, kind: 'plain' | 'branch', text: string) => schema.node('line', { depth, kind }, text ? [schema.text(text)] : []);
 const doc = schema.node('doc', null, [
@@ -39,16 +39,19 @@ describe('⌘K 전체 검색', () => {
     expect(findIn('Marketing', 'KET')).toEqual({ at: 3, len: 3 });
     expect(findIn('경영학', '회계')).toBeNull();
   });
-  it('노트 100개(줄 300개씩)에서 0.1초 안에', () => {
+  it('노트 100개(줄 300개씩)에서 0.1초 안에 — 초성 · 치는 중 글자 · 그대로', () => {
     const words = ['마케팅', '인사관리', '재무관리', '생산관리', '회계원리', '경영전략', '조직행동', '경제학'];
+    // 색인은 앱이 미리 만들어 둔다(4초 뒤 · 노트를 고칠 때만 다시)
     const notes = Array.from({ length: 100 }, (_, n) =>
-      Array.from({ length: 300 }, (_, i) => `${words[(n + i) % words.length]} ${i}: 설명 문장이 이 정도 길이로 들어간다 ${n}`),
+      Array.from({ length: 300 }, (_, i) => prep(`${words[(n + i) % words.length]} ${i}: 설명 문장이 이 정도 길이로 들어간다 ${n}`)),
     );
-    const t0 = performance.now();
-    let found = 0;
-    for (const lines of notes) for (const l of lines) if (findIn(l, 'ㅈㅁㄱㄹ')) found++;
-    const ms = performance.now() - t0;
-    expect(found).toBeGreaterThan(0);
-    expect(ms).toBeLessThan(100);
+    for (const q of ['ㅈㅁㄱㄹ', '재무과', '재무관ㄹ', '설명 문장']) {
+      const t0 = performance.now();
+      let found = 0;
+      for (const lines of notes) for (const l of lines) if (findIn(l, q)) found++;
+      const ms = performance.now() - t0;
+      expect(found).toBeGreaterThan(0);
+      expect(ms).toBeLessThan(100);
+    }
   });
 });
