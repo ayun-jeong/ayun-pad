@@ -736,7 +736,9 @@ try {
   await k.type('빈 곳 글상자');
   await k.press('Escape');
   await sleep(100);
-  await page.$$eval('.top .tbtn', (bs) => bs.find((b) => b.textContent.includes('글상자'))?.click());
+  await page.$$eval('.top .tbtn', (bs) => bs.find((b) => b.textContent.includes('넣기'))?.click());
+  await page.waitForSelector('.panel.insert');
+  await page.$$eval('.panel.insert button', (bs) => bs.find((b) => b.textContent.trim() === '글상자')?.click());
   await sleep(80);
   await page.mouse.click(...at4(30, 70));
   await page.waitForSelector('.tbox.tedit .tb-edit', { timeout: 3000 }).catch(() => {});
@@ -744,7 +746,7 @@ try {
   await k.press('Escape');
   await sleep(120);
   const texts = await page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).filter((x) => x.t === 'text').map((x) => x.text));
-  check(texts.includes('빈 곳 글상자') && texts.includes('단추 글상자'), `위쪽 T 글상자 단추로도 (${texts.join(' | ')})`);
+  check(texts.includes('빈 곳 글상자') && texts.includes('단추 글상자'), `＋ 넣기의 글상자로도 (${texts.join(' | ')})`);
 
   // 19) 스마트 보조선 · 자석 스냅, 영역 고르기 · 여러 개 한꺼번에(옮기기 · 색 · 지우기 · 복사), 글상자 일괄 서식, 위젯 고르기
   await page.click('.addnote');

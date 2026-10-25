@@ -24,6 +24,7 @@ import { purgeOld } from './store/trash';
 import { Account, statusText } from './ui/Account';
 import { EditorPane, GUTTER_MM, PX_PER_MM } from './ui/EditorPane';
 import { EmphasisPanel } from './ui/EmphasisPanel';
+import { MoreMenu } from './ui/MoreMenu';
 import { FindPanel } from './ui/FindPanel';
 import { Help } from './ui/Help';
 import { buildPrintSheets, PagesView, type ViewMode } from './ui/PagesView';
@@ -69,6 +70,8 @@ export function App() {
   const [sidebar, setSidebar] = useState(() => window.innerWidth > 900);
   const [panel, setPanel] = useState(false);
   const [help, setHelp] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const closeMenu = useCallback(() => setMenu(false), []);
   const [account, setAccount] = useState(false);
   const [versions, setVersions] = useState(false);
   const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([]);
@@ -657,27 +660,28 @@ export function App() {
         <button type="button" className="tbtn" onClick={() => setSidebar((s) => !s)} aria-label="과목 목록 열고 닫기">
           ☰
         </button>
-        <span className="brand">ayun pad</span>
         <div className="crumb">
           <span className="subj">{subject?.name}</span>
           <span className="subj">›</span>
           <input aria-label="노트 이름" value={note?.title ?? ''} onChange={(e) => note && updateNote(lib, note.id, { title: e.currentTarget.value })} />
         </div>
-        <span className="tbtn pen-now" title="지금 든 펜. ⌥A를 누르면 자동 펜으로 돌아갑니다">
-          <i className={`pen-dot${pen ? '' : ' pen-auto'}`} style={pen ? { background: colorOf(pen) } : undefined} />
-          <span className="wide-only">{penText}</span>
-        </span>
+        {pen && (
+          <button type="button" className="tbtn pen-now" onClick={() => withView((v) => penCmd(null)(v.state, v.dispatch, v))} title="지금 든 펜 · 누르면 자동 펜으로 (⌥A)">
+            <i className="pen-dot" style={{ background: colorOf(pen) }} />
+            <span className="wide-only">{penText}</span>
+          </button>
+        )}
         <button
           type="button"
           className={`tbtn sync ${sync.state}`}
           title={statusText(sync)}
+          aria-label={statusText(sync)}
           onClick={() => {
             setPanel(false);
             setAccount((x) => !x);
           }}
         >
           <i className="sync-dot" />
-          <span className="wide-only">{sync.state === 'local' ? '로그인 · 이 기기에만 저장' : statusText(sync)}</span>
         </button>
         <div className="seg modes" role="group" aria-label="보기">
           <button type="button" className={mode === 'edit' ? 'on' : ''} onClick={() => act('view-edit')} title="편집 (⌥1)">
@@ -690,46 +694,36 @@ export function App() {
             A4
           </button>
         </div>
-        <button type="button" className="tbtn" onClick={() => act('search')} title="전체 검색 · 찾기 · 인쇄 등 모든 명령 (⌘K)" aria-label="검색">
-          ⌕<span className="wide-only"> 검색</span>
-        </button>
-        <button
-          type="button"
-          className={`tbtn hide-narrow${emph ? ' on' : ''}`}
-          onClick={() => (emph ? setEmph(false) : act('emph'))}
-          title="강조 모아 보기: 동그라미 · 밑줄 · 형광펜 · 글자색을 하나씩 · 한꺼번에 지우기 (넣기는 ⌘F 찾기에서)"
-        >
-          ◎<span className="wide-only"> 강조</span>
+        <button type="button" className={`tbtn tb-draw${draw ? ' on' : ''}`} onClick={() => act('draw')} title="그리기: 화살표 · 선 · 네모 · 원 · 글상자, 끌어서 여러 개 고르기 (⌥D)">
+          ✎<span className="wide-only"> 그리기</span>
         </button>
         <button type="button" className={`tbtn${insert ? ' on' : ''}`} onClick={() => act('insert')} title="표 · 수직선 · 연표 · 그래프 · 분수 · 글상자 · 도형 넣기 (본문에서 / 도 됨)">
           ＋<span className="wide-only"> 넣기</span>
         </button>
-        <button type="button" className="tbtn hide-narrow" onClick={() => act('draw-text')} title="글상자: 누르고 종이를 누르면 그 자리에(빈 곳 두 번 누르기 · ⌥+클릭으로도)">
-          <b style={{ fontFamily: 'serif' }}>T</b>
-          <span className="wide-only"> 글상자</span>
+        <button type="button" className="tbtn" onClick={() => act('search')} title="검색 · 모든 명령 (⌘K)" aria-label="검색">
+          ⌕<span className="wide-only"> 검색</span>
         </button>
-        <button type="button" className={`tbtn hide-narrow${draw ? ' on' : ''}`} onClick={() => act('draw')} title="그리기: 화살표 · 선 · 네모 · 원 · 글상자 (⌥D)">
-          ✎<span className="wide-only"> 그리기</span>
-        </button>
-        <button type="button" className="tbtn hide-narrow" onClick={() => act('print')} title="A4 2단 인쇄 · PDF 저장 (⌘P)">
-          인쇄
-        </button>
-        <div className="seg zoomseg" role="group" aria-label="화면 배율">
-          <button type="button" onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))} aria-label="작게">
-            −
-          </button>
-          <span>{Math.round(zoom * 100)}%</span>
-          <button type="button" onClick={() => setZoom((z) => Math.min(3, Math.round((z + 0.1) * 10) / 10))} aria-label="크게">
-            +
-          </button>
-        </div>
-        <button type="button" className={`tbtn${panel ? ' on' : ''}`} onClick={() => act('type')}>
-          Aa<span className="wide-only"> 글자 모양</span>
-        </button>
-        <button type="button" className="tbtn hide-narrow" onClick={() => setHelp(true)} aria-label="단축키 도움말">
-          ?
+        <button type="button" className={`tbtn more-btn${menu ? ' on' : ''}`} onClick={() => setMenu((x) => !x)} aria-label="더 보기" aria-expanded={menu} title="찾기 · 강조 · 글자 모양 · 배율 · 인쇄 · 로그인 · 백업 · 도움말">
+          ⋯
         </button>
       </header>
+      {menu && (
+        <MoreMenu
+          mode={mode}
+          zoom={zoom}
+          syncText={sync.state === 'local' ? '로그인 · 동기화' : statusText(sync)}
+          act={act}
+          onZoom={(d) => setZoom((z) => Math.min(3, Math.max(0.5, Math.round((z + d * 0.1) * 10) / 10)))}
+          onAccount={() => {
+            setPanel(false);
+            setAccount(true);
+          }}
+          onExport={() => void onExport()}
+          onImport={() => importInput.current?.click()}
+          onHelp={() => setHelp(true)}
+          onClose={closeMenu}
+        />
+      )}
 
       <Sidebar
         lib={lib}
@@ -740,8 +734,6 @@ export function App() {
           setNoteId(id);
         }}
         onClose={() => setSidebar(false)}
-        onExport={() => void onExport()}
-        onImport={(f) => void onImport(f)}
       />
 
       <main className={`desk${draw ? ' drawing' : ''}`}>
@@ -843,6 +835,7 @@ export function App() {
       <input ref={picker} type="color" className="picker" aria-label="색 고르기" />
       <input
         ref={importInput}
+        className="import-input"
         type="file"
         accept="application/json,.json"
         hidden
@@ -931,35 +924,32 @@ export function App() {
       )}
       {mode === 'edit' && !draw && !hasSel && (
         <nav className="touchbar" aria-label="편집 도구">
-          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => indentCmd(-1)(v.state, v.dispatch, v))}>
-            ⇤ 내어쓰기
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => indentCmd(-1)(v.state, v.dispatch, v))} aria-label="내어쓰기">
+            ⇤
           </button>
-          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => indentCmd(1)(v.state, v.dispatch, v))}>
-            ⇥ 들여쓰기
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => indentCmd(1)(v.state, v.dispatch, v))} aria-label="들여쓰기">
+            ⇥
           </button>
-          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => toggleBranchCmd(v.state, v.dispatch, v))}>
-            ├ 꺾쇠
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => toggleBranchCmd(v.state, v.dispatch, v))} aria-label="꺾쇠 줄">
+            ├
           </button>
-          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => sideCmd()(v.state, v.dispatch, v))}>
-            ┬ 옆 가지
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => sideCmd()(v.state, v.dispatch, v))} aria-label="옆 가지">
+            ┬
           </button>
-          <button type="button" className={subbar === 'pen' ? 'on' : ''} onPointerDown={keepFocus} onClick={() => setSubbar((x) => (x === 'pen' ? null : 'pen'))}>
-            <i className={`pen-dot${pen ? '' : ' pen-auto'}`} style={pen ? { background: colorOf(pen) } : undefined} /> 펜
+          <button type="button" className={subbar === 'pen' ? 'on' : ''} onPointerDown={keepFocus} onClick={() => setSubbar((x) => (x === 'pen' ? null : 'pen'))} aria-label="펜 색">
+            <i className={`pen-dot${pen ? '' : ' pen-auto'}`} style={pen ? { background: colorOf(pen) } : undefined} />
           </button>
-          <button type="button" className={subbar === 'hl' ? 'on' : ''} onPointerDown={keepFocus} onClick={() => setSubbar((x) => (x === 'hl' ? null : 'hl'))}>
-            <span className="swatch hl-sw hl-y" /> 형광펜
+          <button type="button" className={subbar === 'hl' ? 'on' : ''} onPointerDown={keepFocus} onClick={() => setSubbar((x) => (x === 'hl' ? null : 'hl'))} aria-label="형광펜 색">
+            <span className="swatch hl-sw hl-y" />
           </button>
-          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => void undo(v.state))}>
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => void undo(v.state))} aria-label="되돌리기">
             ↶
           </button>
-          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => void redo(v.state))}>
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => void redo(v.state))} aria-label="다시 하기">
             ↷
           </button>
-          <button type="button" onPointerDown={keepFocus} onClick={() => act('insert')}>
-            ＋ 넣기
-          </button>
-          <button type="button" onPointerDown={keepFocus} onClick={() => act('draw')}>
-            ✎ 그리기
+          <button type="button" onPointerDown={keepFocus} onClick={() => act('draw')} aria-label="그리기">
+            ✎
           </button>
         </nav>
       )}

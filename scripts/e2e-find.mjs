@@ -216,11 +216,12 @@ try {
   await k.press('Escape');
   await sleep(100);
   check(!(await page.$('.panel.emph')), 'Esc → 강조 판 닫힘');
-  await page.click('.tbtn[title^="강조 모아 보기"]');
-  const byBtn = await page.waitForSelector('.panel.emph', { timeout: 3000 }).then(() => true, () => false);
-  await page.click('.tbtn[title^="강조 모아 보기"]');
+  await page.click('.more-btn');
+  await clickText('.menu.more button', '강조 모아 보기');
+  const byMenu = await page.waitForSelector('.panel.emph', { timeout: 3000 }).then(() => true, () => false);
+  await k.press('Escape');
   await sleep(100);
-  check(byBtn && !(await page.$('.panel.emph')), '위쪽 ◎ 강조 단추로 열고 닫기');
+  check(byMenu && !(await page.$('.panel.emph')) && !(await page.$('.menu.more')), '⋯ 메뉴의 강조 모아 보기로 열기(메뉴는 닫힘), Esc로 닫기');
 
   // 6-1) 글상자 안도 찾고 효과를 넣는다. 본문과 글상자를 한 번의 ⌘Z로 되돌린다.
   await page.click('.addnote');
@@ -419,7 +420,8 @@ try {
       else orig.call(this);
     };
   });
-  await clickText('.side-foot .backup button', '백업 내보내기');
+  await page.click('.more-btn');
+  await clickText('.menu.more button', '백업 내보내기');
   await page.waitForFunction(() => !!window.__blob, { timeout: 8000 });
   const json = await page.evaluate(() => window.__blob);
   const data = JSON.parse(json);
@@ -432,7 +434,7 @@ try {
   p2.on('pageerror', (e) => errors.push(`p2: ${e}`));
   await p2.goto(URL, { waitUntil: 'networkidle0' });
   await p2.waitForSelector('.editor > p');
-  const input = await p2.$('.side-foot .backup input[type=file]');
+  const input = await p2.$('input.import-input');
   await input.uploadFile(file);
   await p2.waitForFunction(() => [...document.querySelectorAll('.note-item .t')].some((e) => e.textContent === '회계원리'), { timeout: 8000 }).catch(() => {});
   const titles = await p2.$$eval('.note-item .t', (els) => els.map((e) => e.textContent));
