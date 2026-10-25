@@ -60,8 +60,15 @@ export function withReplaced(s: TextShape, hits: { from: number; to: number }[],
   return { ...s, doc: tr.doc.toJSON(), text: plainText(tr.doc) };
 }
 
+// 글씨 크기 · 행간 · 자간은 노트 값(--fs0 · --lh0 · --trk0)에 곱하고 더해서, 안쪽 트리 · 가지선도 같이 맞는다
 export function tboxStyle(r: Resolved & { t: 'text' }): CSSProperties {
-  return { left: `${r.a.x}mm`, top: `${r.a.y}mm`, width: `${r.bw}mm`, color: strokeOf(r.c) };
+  const st: Record<string, string> = { left: `${r.a.x}mm`, top: `${r.a.y}mm`, width: `${r.bw}mm`, color: strokeOf(r.c) };
+  const fs = r.fs ?? 1;
+  const lh = Math.round(fs * (r.lh ?? 1) * 1000) / 1000;
+  if (fs !== 1) st['--fs'] = `calc(var(--fs0) * ${fs})`;
+  if (lh !== 1) st['--lh'] = `calc(var(--lh0) * ${lh})`;
+  if (r.ls) st['--trk'] = `calc(var(--trk0) + ${r.ls}em)`;
+  return st as CSSProperties;
 }
 
 interface BoxProps {

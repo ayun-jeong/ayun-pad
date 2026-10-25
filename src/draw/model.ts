@@ -42,6 +42,9 @@ export interface TextShape extends Base {
   text: string; // 찾기 · 옛 글상자용 맨 글
   doc?: unknown; // 글상자 내용(ProseMirror JSON). 펜 · 형광펜 · 동그라미 · 밑줄이 그대로 들어간다
   box?: boolean; // 테두리
+  fs?: number; // 글씨 크기(노트 글씨의 배수, 기본 1)
+  ls?: number; // 자간(em, 노트 자간에 더함)
+  lh?: number; // 행간(글씨 크기에 맞춘 줄 높이의 배수, 기본 1)
 }
 
 export type Shape = PathShape | BoxShape | TextShape;

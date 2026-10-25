@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react';
 import { TextSelection, type EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { defaultDeleteFilter, defaultProtectedNodes, prosemirrorToYXmlFragment, ySyncPluginKey } from 'y-prosemirror';
 import * as Y from 'yjs';
 import { SHAPES } from '../draw/model';
-import { ShapesLayer, type DrawState } from '../draw/ShapesLayer';
+import { ShapesLayer, type DrawState, type WidgetApi } from '../draw/ShapesLayer';
 import { createEditor, type EditorHooks } from '../editor/createEditor';
 import { autoKey } from '../editor/decorations';
 import type { RuleSettings } from '../editor/inputRules';
@@ -33,6 +33,8 @@ interface Props {
   onEdit(): void;
   onDoc(doc: NoteDoc | null, view: EditorView | null, src: HTMLElement | null, um: Y.UndoManager | null): void;
 }
+
+const WIDGET_NODES = new Set(['table', 'tl', 'graph']);
 
 interface Live {
   doc: NoteDoc;
@@ -73,6 +75,43 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
   const [paperH, setPaperH] = useState(0);
   const [srcH, setSrcH] = useState(0);
   const [live, setLive] = useState<Live | null>(null);
+  // 그림 층에서 본문 위젯(표 · 그래프 · 연표)을 골라 지우기 · 글씨 크기
+  const widgets = useMemo<WidgetApi | undefined>(() => {
+    if (!live) return undefined;
+    const v = live.view;
+    const each = (ids: string[] | null, fn: (n: import('prosemirror-model').Node, pos: number) => void) => {
+      const set = ids && new Set(ids);
+      v.state.doc.forEach((n, pos) => {
+        if (WIDGET_NODES.has(n.type.name) && n.attrs.id && (!set || set.has(n.attrs.id as string))) fn(n, pos);
+      });
+    };
+    return {
+      list: () => {
+        const out: { id: string; el: HTMLElement }[] = [];
+        each(null, (n, pos) => {
+          const el = v.nodeDOM(pos);
+          if (el instanceof HTMLElement) out.push({ id: n.attrs.id as string, el });
+        });
+        return out;
+      },
+      remove: (ids) => {
+        const at: [number, number][] = [];
+        each(ids, (n, pos) => at.push([pos, pos + n.nodeSize]));
+        if (!at.length) return;
+        const tr = v.state.tr;
+        for (const [a, b] of at.reverse()) tr.delete(a, b);
+        v.dispatch(tr);
+      },
+      scale: (ids, dir) => {
+        const tr = v.state.tr;
+        each(ids, (n, pos) => {
+          const s = Math.round(Math.min(1, Math.max(0.35, ((n.attrs.scale as number) ?? 1) + 0.05 * dir)) * 100) / 100;
+          if (s !== n.attrs.scale) tr.setNodeMarkup(pos, undefined, { ...n.attrs, scale: s });
+        });
+        if (tr.docChanged) v.dispatch(tr);
+      },
+    };
+  }, [live]);
   const [tick, bumpTick] = useReducer((x: number) => x + 1, 0);
   const [extent, setExtent] = useState(0);
   const [slash, setSlash] = useState<SlashState | null>(null);
@@ -199,6 +238,7 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
     '--lh0': `${fit.pitch}mm`,
     '--fs0': `${typo.fontPt}pt`,
     '--trk': `${typo.tracking}em`,
+    '--trk0': `${typo.tracking}em`,
     '--wb': typo.wordBreak === 'all' ? 'break-all' : 'keep-all',
     padding: `${typo.mTop}mm ${typo.mInner}mm ${typo.mTop}mm ${typo.mOuter}mm`,
   } as CSSProperties;
@@ -234,6 +274,7 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
                   draw={draw}
                   setDraw={setDraw}
                   onExtent={onExtent}
+                  widgets={widgets}
                   onCaret={(x, y) => {
                     const v = live.view;
                     const hit = v.posAtCoords({ left: x, top: y });

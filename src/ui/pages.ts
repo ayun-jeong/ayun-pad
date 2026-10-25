@@ -15,6 +15,7 @@ function setVars(el: HTMLElement, typo: Typo) {
   el.style.setProperty('--lh0', `${fit.pitch}mm`);
   el.style.setProperty('--fs0', `${typo.fontPt}pt`);
   el.style.setProperty('--trk', `${typo.tracking}em`);
+  el.style.setProperty('--trk0', `${typo.tracking}em`);
   el.style.setProperty('--wb', typo.wordBreak === 'all' ? 'break-all' : 'keep-all');
 }
 

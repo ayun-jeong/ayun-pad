@@ -740,6 +740,174 @@ try {
   const texts = await page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).filter((x) => x.t === 'text').map((x) => x.text));
   check(texts.includes('빈 곳 글상자') && texts.includes('단추 글상자'), `위쪽 T 글상자 단추로도 (${texts.join(' | ')})`);
 
+  // 19) 스마트 보조선 · 자석 스냅, 영역 고르기 · 여러 개 한꺼번에(옮기기 · 색 · 지우기 · 복사), 글상자 일괄 서식, 위젯 고르기
+  await page.click('.addnote');
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+  await page.click('.editor');
+  await k.type('스냅 시험');
+  await combo(['Alt'], 'KeyD');
+  await page.waitForSelector('.drawbar');
+  await press('.drawbar .swatches button', (b) => b.getAttribute('aria-label') === '검정');
+  const L5 = await page.$eval('.shapes-layer', (e) => {
+    const r = e.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, mmW: e.offsetWidth / (96 / 25.4) };
+  });
+  const at5 = (x, y) => [L5.x + (x / L5.mmW) * L5.w, L5.y + (y / L5.mmW) * L5.w];
+  const drag5 = async (from, to, during) => {
+    await page.mouse.move(...at5(...from));
+    await page.mouse.down();
+    await page.mouse.move(...at5(...to), { steps: 8 });
+    const seen = during ? await during() : null;
+    await page.mouse.up();
+    await sleep(120);
+    return seen;
+  };
+  const rects = () =>
+    page.evaluate(() =>
+      Object.values(window.__ayunpad.doc().shapes.toJSON())
+        .filter((s) => s.t === 'rect')
+        .sort((p, q) => p.z - q.z)
+        .map((s) => ({ id: s.id, x: Math.min(s.a.x, s.b.x), y: Math.min(s.a.y, s.b.y), c: s.c })),
+    );
+  const guideNow = () => page.evaluate(() => ({ lines: document.querySelectorAll('.shapes-layer .sh-guide').length, labels: [...document.querySelectorAll('.shapes-layer .sh-gaplabel')].map((e) => e.textContent) }));
+  for (const [a, b] of [
+    [[20, 30], [40, 40]], // A
+    [[60, 50], [75, 58]], // B
+    [[10, 70], [20, 78]], // R1
+    [[30, 70], [40, 78]], // R2
+    [[52, 70], [62, 78]], // R3
+  ]) {
+    await k.press('KeyR');
+    await drag5(a, b);
+  }
+  let R = await rects();
+  check(R.length === 5, `네모 다섯 개 (${R.length})`);
+  // B를 A 왼쪽 가장자리 가까이(0.6mm 옆)로 → 찰칵 붙고 분홍 보조선
+  const g1 = await drag5([67.5, 50], [67.5 - 39.4, 50], guideNow);
+  R = await rects();
+  check(Math.abs(R[1].x - 20) < 0.02 && g1.lines > 0, `5px 안으로 가져가면 왼쪽 가장자리에 찰칵 + 보조선 (x ${R[1].x}, 보조선 ${g1.lines})`);
+  check((await guideNow()).lines === 0, '놓으면 보조선 사라짐');
+  // R3를 R1-R2 간격(10mm)과 거의 같은 자리로 → 같은 간격으로 붙고 수치 표시
+  const g2 = await drag5([57, 70], [55.5, 70], guideNow);
+  R = await rects();
+  check(Math.abs(R[4].x - 50) < 0.02 && g2.labels.length >= 2 && g2.labels.every((t) => t === '10.0mm'), `세 개 나란히: 같은 간격으로 붙고 간격 수치 (x ${R[4].x}, ${g2.labels.join(' ')})`);
+  // ⌘(Ctrl)를 누르고 끌면 스냅 없이
+  await page.keyboard.down(meta);
+  const g3 = await drag5([55, 70], [55.5, 70], guideNow);
+  await page.keyboard.up(meta);
+  R = await rects();
+  check(Math.abs(R[4].x - 50.5) < 0.1 && g3.lines === 0, `${meta}를 누르고 끌면 붙지 않음 (x ${R[4].x})`);
+
+  // 영역 고르기: 빈 곳에서 끌어 R1 · R2
+  await k.press('KeyV');
+  await drag5([5, 65], [45, 82]);
+  const selLabel = () => page.$eval('.drawbar.has-sel .dsel b', (e) => e.textContent).catch(() => '');
+  check((await selLabel()) === '고른 것 2개' && (await page.$$('.shapes-layer .sh-selbox')).length === 2, `빈 곳을 끌어 걸친 것 고르기 (${await selLabel()})`);
+  const shiftClick = async (x, y) => {
+    await page.keyboard.down('Shift');
+    await page.mouse.click(...at5(x, y));
+    await page.keyboard.up('Shift');
+    await sleep(100);
+  };
+  await shiftClick(55.5, 70);
+  check((await selLabel()) === '고른 것 3개', `⇧+누르기 → 하나 더 (${await selLabel()})`);
+  await shiftClick(15, 70);
+  check((await selLabel()) === '고른 것 2개', `⇧+누르기 한 번 더 → 빼기 (${await selLabel()})`);
+  // 한꺼번에 옮기기: R2를 끌면 R3도 같이
+  await drag5([35, 70], [35, 80]);
+  R = await rects();
+  check(Math.abs(R[3].y - 80) < 0.3 && Math.abs(R[4].y - 80) < 0.3 && Math.abs(R[2].y - 70) < 0.01, `고른 것 함께 옮기기 (R2 ${R[3].y.toFixed(1)}, R3 ${R[4].y.toFixed(1)}, R1 ${R[2].y})`);
+  await press('.drawbar .swatches button', (b) => b.getAttribute('aria-label') === '파랑');
+  await sleep(80);
+  R = await rects();
+  check(R[3].c === 'b' && R[4].c === 'b' && R[2].c === 'k', `한꺼번에 색 바꾸기 (${R.map((r) => r.c).join('')})`);
+  await k.press('Backspace');
+  await sleep(100);
+  check((await rects()).length === 3, '⌫ → 고른 것 한꺼번에 지움');
+  await combo([meta], 'KeyZ');
+  await sleep(150);
+  check((await rects()).length === 5, '⌘Z 한 번 → 둘 다 돌아옴');
+  // 복사 · 붙여넣기
+  await page.mouse.click(...at5(15, 70));
+  await shiftClick(35, 80);
+  await combo([meta], 'KeyC');
+  await combo([meta], 'KeyV');
+  await sleep(250);
+  R = await rects();
+  const newest = R.slice(-2);
+  check(R.length === 7 && Math.abs(newest[0].x - 13) < 0.05 && Math.abs(newest[1].x - 33) < 0.05 && (await selLabel()) === '고른 것 2개', `${meta}C ${meta}V → 두 개 복사, 3mm 비켜 붙고 붙인 것이 골라짐 (${R.length}개, x ${newest.map((r) => r.x).join(',')})`);
+  await k.press('Escape');
+  await sleep(80);
+  check(!(await page.$('.drawbar.has-sel')), 'Esc → 고름 모두 풀기');
+  await page.mouse.click(...at5(15, 70));
+  await page.mouse.click(...at5(5, 110));
+  await sleep(80);
+  check(!(await page.$('.drawbar.has-sel')), '빈 곳 한 번 누르기 → 고름 풀기');
+
+  // 글상자 두 개를 한꺼번에: 글씨 크기 · 자간 · 행간 · 형광펜
+  for (const [x, t] of [
+    [10, '가나다'],
+    [50, '라마바'],
+  ]) {
+    await k.press('KeyT');
+    await page.mouse.click(...at5(x, 120));
+    await page.waitForSelector('.tbox.tedit .tb-edit');
+    await k.type(t);
+    await k.press('Escape');
+    await sleep(120);
+  }
+  await drag5([4, 112], [90, 128]);
+  check((await selLabel()) === '고른 것 2개', `글상자 두 개 고르기 (${await selLabel()})`);
+  for (const l of ['글씨 크게', '자간 넓게', '행간 넓게', '노랑 형광펜']) await press('.drawbar button', new Function('b', `return b.getAttribute('aria-label') === '${l}'`));
+  await sleep(150);
+  const tbs = await page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).filter((s) => s.t === 'text').map((s) => ({ fs: s.fs, ls: s.ls, lh: s.lh, hl: JSON.stringify(s.doc).includes('"hl"') })));
+  check(tbs.length === 2 && tbs.every((t) => t.fs === 1.1 && t.ls === 0.02 && t.lh === 1.1 && t.hl), `글상자 모두 글씨 · 자간 · 행간 · 형광펜 (${JSON.stringify(tbs)})`);
+  const tbStyle = await page.$eval('.tbox', (e) => e.getAttribute('style'));
+  check(tbStyle.includes('--fs: calc(var(--fs0) * 1.1)') && tbStyle.includes('--trk'), '글상자에 글씨 크기 · 자간이 보이게 들어감');
+  await press('.drawbar .ddone', () => true);
+  await sleep(100);
+
+  // 위젯(표)도 영역으로 골라 글씨 크기 · 지우기(⌘Z로 되돌림)
+  const pEnd = await page.$('.editor > p');
+  await pEnd.click();
+  await k.press('End');
+  await k.press('Enter');
+  await k.type('/표 2x2');
+  await page.waitForSelector('.slash button.on');
+  await k.press('Enter');
+  await page.waitForSelector('.editor table');
+  await combo(['Alt'], 'KeyD');
+  await page.waitForSelector('.drawbar');
+  await k.press('KeyV');
+  const tr = await page.$eval('.editor table', (e) => {
+    const r = e.getBoundingClientRect();
+    return { l: r.left, t: r.top, r: r.right, b: r.bottom };
+  });
+  await page.mouse.move(tr.l + 3, tr.t - 5); // 글 칸 안(그림 층은 글 칸만 덮는다)
+  await page.mouse.down();
+  await page.mouse.move(tr.r + 12, tr.b + 6, { steps: 8 });
+  await page.mouse.up();
+  await sleep(120);
+  check((await selLabel()) === '고른 위젯', `영역으로 표(위젯) 고르기 (${await selLabel()})`);
+  await press('.drawbar button', (b) => b.getAttribute('aria-label') === '글씨 작게');
+  await sleep(100);
+  const tScale = await page.evaluate(() => {
+    let s = null;
+    window.__ayunpad.view().state.doc.forEach((n) => {
+      if (n.type.name === 'table') s = n.attrs.scale;
+    });
+    return s;
+  });
+  check(tScale === 0.95, `고른 표 글씨 작게 → 표 크기 0.95 (${tScale})`);
+  await k.press('Backspace');
+  await sleep(120);
+  check(!(await page.$('.editor table')), '⌫ → 고른 표 지움');
+  await combo([meta], 'KeyZ');
+  await sleep(150);
+  check(!!(await page.$('.editor table')), '⌘Z → 표 돌아옴');
+  await press('.drawbar .ddone', () => true);
+  await sleep(100);
+
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();
 } catch (e) {

@@ -490,3 +490,12 @@ body.drawing .toasts { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 104
 .emph-u { text-decoration: underline; text-underline-offset: 0.18em; }
 .find-list .emph-x { border: 0; background: transparent; color: var(--ink-3); font-size: 17px; line-height: 1; padding: 2px 6px; flex: none; border-radius: 6px; }
 .find-list .emph-x:hover { color: #d42a2a; background: var(--bg); }
+
+/* 스마트 보조선 · 영역 고르기 */
+.sh-guide { stroke: #ff2d87; stroke-width: 1px; vector-effect: non-scaling-stroke; fill: none; }
+.sh-marquee { fill: rgba(0, 100, 232, 0.08); stroke: #0064e8; stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.sh-group { fill: none; stroke: #0064e8; stroke-width: 1px; vector-effect: non-scaling-stroke; stroke-opacity: 0.55; }
+.sh-gaplabel { position: absolute; transform: translate(-50%, calc(-100% - 3px)); background: #ff2d87; color: #fff; font: 600 10px/1.35 var(--ui, system-ui); padding: 0 4px; border-radius: 4px; pointer-events: none; white-space: nowrap; z-index: 3; }
+.sh-gaplabel.v { transform: translate(5px, -50%); }
+.drawbar .dlab { color: var(--ink-3); font-size: 11.5px; padding: 0 2px 0 6px; }
+.drawbar .dlab:first-child { padding-left: 2px; }

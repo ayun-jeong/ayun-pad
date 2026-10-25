@@ -64,7 +64,7 @@ try {
   const clickText = (sel, text) => page.$$eval(sel, (els, t) => els.find((e) => e.textContent.trim().startsWith(t))?.click(), text);
 
   // 1) ⌘F → '모집' 4곳, 위치(반쪽 · 트리 경로)
-  await page.click('.editor');
+  await (await page.waitForSelector('.editor')).click();
   await combo([meta], 'KeyF');
   await page.waitForSelector('.panel.find input[type=search]');
   await k.type('모집');
@@ -122,7 +122,7 @@ try {
   check((await marks(page))['circ:r']?.length === 3, '⌘⇧Z → 다시');
 
   // 4-1) 판을 닫았다 열어도(글자 선택 없이) 검색어와 고름 상태가 그대로
-  await page.click('.editor');
+  await (await page.waitForSelector('.editor')).click();
   await page.evaluate(() => {
     const v = window.__ayunpad.view();
     v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.atStart(v.state.doc)));
@@ -164,7 +164,7 @@ try {
 
   // 6-0) 강조 모아 보기(⌘K 명령): 종류별로 보고, ×로 하나씩 · 단추로 한꺼번에 지우고, 되돌리기
   const emphCount = (M) => ({ c: M['circ:r']?.length ?? 0, u: M['u:b']?.length ?? 0 });
-  await page.click('.editor');
+  await (await page.waitForSelector('.editor')).click();
   await combo([meta], 'KeyK');
   await page.waitForSelector('.palette input');
   await k.type('강조 지우기');
@@ -225,7 +225,7 @@ try {
   // 6-1) 글상자 안도 찾고 효과를 넣는다. 본문과 글상자를 한 번의 ⌘Z로 되돌린다.
   await page.click('.addnote');
   await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
-  await page.click('.editor');
+  await (await page.waitForSelector('.editor')).click();
   await k.type('재무관리 본문');
   await combo(['Alt'], 'KeyD');
   await page.waitForSelector('.drawbar');
@@ -242,7 +242,7 @@ try {
   await k.press('Escape');
   await k.press('Escape');
   await sleep(100);
-  await page.click('.editor');
+  await (await page.waitForSelector('.editor')).click();
   await combo([meta], 'KeyF');
   await page.waitForSelector('.panel.find input[type=search]');
   await page.$eval('.panel.find input[type=search]', (e) => e.select());
@@ -316,7 +316,7 @@ try {
   await sleep(300);
 
   // 7) ⌘K: 초성으로 본문 찾기 → 그 줄로
-  await page.click('.editor');
+  await (await page.waitForSelector('.editor')).click();
   await combo([meta], 'KeyK');
   await page.waitForSelector('.palette input');
   await k.type('ㅅㅌㅂㅅ');
@@ -354,7 +354,7 @@ try {
 
   // 7-2) ⌥C: 최근 색 5개 기억 → 숫자로 바로
   await page.evaluate(() => localStorage.setItem('ayunpad-recent-colors', JSON.stringify(['#12A4B5'])));
-  await page.click('.editor');
+  await (await page.waitForSelector('.editor')).click();
   await page.evaluate(() => {
     const v = window.__ayunpad.view();
     v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, 1, 4)));
@@ -406,7 +406,7 @@ try {
   await k.press('Enter');
   await page.waitForFunction(() => document.querySelector('.crumb input')?.value === '회계원리', { timeout: 5000 }).catch(() => {});
   check((await page.$eval('.crumb input', (e) => e.value)) === '회계원리', '⌘K → 새 노트 ‘회계원리’');
-  await page.click('.editor');
+  await (await page.waitForSelector('.editor')).click();
   await k.type('차변과 대변');
   await sleep(600);
 
