@@ -49,7 +49,7 @@ export interface DrawState {
   picked?: boolean; // 글쓰기 화면에서 그림을 눌러 고치는 중: 지우거나 · 빈 곳을 누르거나 · Esc 한 번이면 바로 글쓰기로
 }
 
-export const DEFAULT_DRAW: DrawState = { tool: 'arrow', c: 'r', w: DEFAULT_W, ortho: false, lock: false };
+export const DEFAULT_DRAW: DrawState = { tool: 'select', c: 'r', w: DEFAULT_W, ortho: false, lock: false };
 
 // 본문 위젯(표 · 그래프 · 연표 · 수직선): 글 흐름 안에 있어서 옮기지는 못하고, 골라서 지우기 · 글씨 크기만 한다
 export interface WidgetApi {
@@ -1229,8 +1229,14 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highligh
       ) : (
         <>
           <div className="dgroup">
-            {TOOLS.map((t) => (
-              <button key={t.t} type="button" className={draw.tool === t.t ? 'on' : ''} onClick={() => setDraw({ tool: t.t })} title={`${t.name} (${t.key})`}>
+            {TOOLS.filter((t) => t.t !== 'select').map((t) => (
+              <button
+                key={t.t}
+                type="button"
+                className={draw.tool === t.t ? 'on' : ''}
+                onClick={() => setDraw({ tool: draw.tool === t.t ? 'select' : t.t })}
+                title={`${t.name} (${t.key}) · 한 번 더 누르면 끄기`}
+              >
                 {t.name}
                 <kbd>{t.key}</kbd>
               </button>
@@ -1251,7 +1257,13 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highligh
               완성
             </button>
           )}
-          <span className="dhint">{drawing ? '누를 때마다 꺾임 · 두 번 눌러 끝 · ⌫ 마지막 점 빼기' : '그린 것을 누르면 고치기 · 고르기(V)로 빈 곳을 끌면 여러 개'}</span>
+          <span className="dhint">
+            {drawing
+              ? '누를 때마다 꺾임 · 두 번 눌러 끝 · ⌫ 마지막 점 빼기'
+              : draw.tool === 'select'
+                ? '종이를 끌면 여러 개 고르기 · 그린 것을 누르면 고치기 · 도구를 눌러 그리기'
+                : `${TOOLS.find((t) => t.t === draw.tool)?.name ?? ''} 그리기 · 다 그리면 다시 고르기로 · 단추를 한 번 더 누르면 끄기`}
+          </span>
         </>
       )}
       <button type="button" className="ddone" onClick={() => setDraw(null)} title="그리기 끝 (Esc · ⌥D)">

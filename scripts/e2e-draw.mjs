@@ -155,7 +155,9 @@ try {
   // 5) 그리기: 자유 경로 화살표 — 시작점, 꺾는 점 하나, 끝점에서 두 번 누르기
   await combo(['Alt'], 'KeyD');
   await page.waitForSelector('.drawbar');
-  check(await page.$eval('.shapes-layer', (e) => e.classList.contains('on') && e.classList.contains('tool-arrow')), '⌥D → 그리기(화살표 도구)');
+  check(await page.$eval('.shapes-layer', (e) => e.classList.contains('on') && e.classList.contains('tool-select')), '⌥D → 그리기(고르기 상태로 시작)');
+  await press('.drawbar button', (b) => b.textContent.startsWith('화살표'));
+  check(await page.$eval('.shapes-layer', (e) => e.classList.contains('tool-arrow')), '막대의 화살표 → 화살표 도구');
   const box = await page.$eval('.shapes-layer', (e) => {
     const r = e.getBoundingClientRect();
     return { x: r.left, y: r.top, w: r.width, h: r.height, mmW: e.offsetWidth / (96 / 25.4), mmH: e.offsetHeight / (96 / 25.4) };
@@ -622,6 +624,10 @@ try {
   check(barOn === '화살표A,직각H,초록', `막대를 마우스로 눌러 도구 · 직각 · 색 고르기 (${barOn})`);
   await press('.drawbar button', (b) => b.textContent.startsWith('직각'));
   await sleep(60);
+  await press('.drawbar button', (b) => b.textContent.startsWith('화살표'));
+  const offTool = await page.$eval('.shapes-layer', (e) => e.classList.contains('tool-select'));
+  await press('.drawbar button', (b) => b.textContent.startsWith('화살표'));
+  check(offTool && (await page.$eval('.shapes-layer', (e) => e.classList.contains('tool-arrow'))), '켜진 도구 단추를 한 번 더 누르면 꺼지고(고르기), 다시 누르면 켜짐');
   const L4 = await page.$eval('.shapes-layer', (e) => {
     const r = e.getBoundingClientRect();
     return { x: r.left, y: r.top, w: r.width, mmW: e.offsetWidth / (96 / 25.4) };
@@ -798,8 +804,7 @@ try {
   R = await rects();
   check(Math.abs(R[4].x - 50.5) < 0.1 && g3.lines === 0, `${meta}를 누르고 끌면 붙지 않음 (x ${R[4].x})`);
 
-  // 영역 고르기: 빈 곳에서 끌어 R1 · R2
-  await k.press('KeyV');
+  // 영역 고르기: 빈 곳에서 끌어 R1 · R2(고르기 단추 없이, 그리고 나면 늘 고르기 상태)
   await drag5([5, 65], [45, 82]);
   const selLabel = () => page.$eval('.drawbar.has-sel .dsel b', (e) => e.textContent).catch(() => '');
   check((await selLabel()) === '고른 것 2개' && (await page.$$('.shapes-layer .sh-selbox')).length === 2, `빈 곳을 끌어 걸친 것 고르기 (${await selLabel()})`);
@@ -878,7 +883,9 @@ try {
   await page.waitForSelector('.editor table');
   await combo(['Alt'], 'KeyD');
   await page.waitForSelector('.drawbar');
-  await k.press('KeyV');
+  const startTool = await page.$eval('.shapes-layer', (e) => [...e.classList].find((c) => c.startsWith('tool-')));
+  const noSelBtn = await page.$$eval('.drawbar button', (bs) => !bs.some((b) => b.textContent.startsWith('고르기')));
+  check(startTool === 'tool-select' && noSelBtn, `그리기에 들어가면 바로 고르기 상태, 고르기 단추는 없음 (${startTool})`);
   const tr = await page.$eval('.editor table', (e) => {
     const r = e.getBoundingClientRect();
     return { l: r.left, t: r.top, r: r.right, b: r.bottom };

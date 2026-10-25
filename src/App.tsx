@@ -286,7 +286,8 @@ export function App() {
               requestAnimationFrame(() => viewRef.current?.focus());
               return null;
             }
-            return { ...drawPrefs.current, tool: drawPrefs.current.tool === 'select' ? 'arrow' : drawPrefs.current.tool };
+            // 늘 고르기로 시작: 종이를 끌면 바로 영역 고르기, 도구는 눌렀을 때만(그리고 나면 다시 고르기)
+            return { ...drawPrefs.current, tool: 'select' };
           });
           break;
         case 'draw-text':
