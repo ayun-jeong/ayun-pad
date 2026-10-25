@@ -444,6 +444,46 @@ try {
   check((await p2.$eval('.editor', (e) => e.textContent)).includes('차변과 대변'), '가져온 노트 내용');
   await ctx.close();
 
+  // 9-1) 버그 고친 것들: '+ 과목' 이름 짓기, 빈 노트 이름 되돌리기, 연도 넣은 연표에 바로 치기, 종이 끝 글상자
+  await clickText('.subject-name .mini', '+ 과목');
+  await page.waitForSelector('.subject-name input');
+  await sleep(400); // 새 노트가 열리며 편집 칸이 커서를 가져가던 때를 기다린다
+  const subjFocused = await page.evaluate(() => document.activeElement?.getAttribute('aria-label'));
+  await k.type('회계원리');
+  await k.press('Enter');
+  await sleep(150);
+  const subjNames = await page.$$eval('.subject-name span', (e) => e.map((x) => x.textContent));
+  check(subjFocused === '과목 이름' && subjNames.includes('회계원리'), `+ 과목 → 이름 칸에 커서가 남아 바로 이름 짓기 (${subjFocused}, ${subjNames.join(' · ')})`);
+  const titleBox = await page.$('.crumb input');
+  await titleBox.click({ count: 3 });
+  await k.press('Backspace');
+  await (await page.waitForSelector('.editor')).click();
+  await sleep(150);
+  check((await page.$eval('.crumb input', (e) => e.value)) === '새 노트', `노트 이름을 비우고 나가면 원래 이름으로 (${await page.$eval('.crumb input', (e) => e.value)})`);
+  await k.type('/연표 1950 4');
+  await page.waitForSelector('.slash button.on');
+  await k.press('Enter');
+  await page.waitForSelector('.editor .wg.tl');
+  await sleep(150);
+  await k.type('6·25');
+  await sleep(150);
+  const tlCells = await page.evaluate(() => ({ year: document.querySelector('.wg.tl .tl-val .wg-ed')?.textContent, ev: document.querySelector('.wg.tl .tl-lab .wg-ed')?.textContent }));
+  check(tlCells.year === '1950' && tlCells.ev === '6·25', `연도를 넣은 연표에 바로 치면 첫 사건 칸에 (${JSON.stringify(tlCells)})`);
+  await k.press('Escape');
+  await k.press('ArrowDown');
+  const p0 = await (await page.$('.editor > p')).boundingBox();
+  await page.mouse.click(p0.x + p0.width - 6, p0.y + p0.height / 2, { count: 2 });
+  await page.waitForSelector('.tbox.tedit .tb-edit');
+  await k.type('끝');
+  await (await page.waitForSelector('.editor')).click();
+  await sleep(150);
+  const edge = await page.evaluate(() => {
+    const L = document.querySelector('.shapes-layer').getBoundingClientRect();
+    const b = document.querySelector('.tbox').getBoundingClientRect();
+    return { over: Math.round(b.right - L.right), w: Math.round(b.width) };
+  });
+  check(edge.over <= 1 && edge.w > 60, `종이 오른쪽 끝에서 만든 글상자도 종이 안에 (넘친 ${edge.over}px, 폭 ${edge.w}px)`);
+
   // 10) 폰: 글자를 고르면 아래 막대가 색 도구로
   const ctx3 = await browser.createBrowserContext();
   const m = await ctx3.newPage();
@@ -464,6 +504,12 @@ try {
   await sleep(100);
   const pen = await m.$eval('.editor > p [data-pen]', (e) => `${e.dataset.pen}:${e.textContent}`).catch(() => '');
   check(pen === 'r:영학', `색 막대 빨강 → 고른 글자 빨강 (${pen})`);
+  await m.click('.top .tbtn[aria-label="과목 목록 열고 닫기"]');
+  await m.waitForSelector('.side:not(.hidden)');
+  await m.waitForSelector('.side-backdrop');
+  await m.mouse.click(370, 500); // 목록 바깥(어두운 곳)
+  await sleep(150);
+  check(!!(await m.$('.side.hidden')), '폰: 과목 목록 바깥을 누르면 닫힘');
   await ctx3.close();
 
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);

@@ -182,6 +182,7 @@ interface Ix {
   marquee: { a: XY; b: XY; add: boolean; base: string[]; wbase: string[]; moved: boolean } | null;
   guides: Guides | null; // 스마트 보조선(맞춘 줄 · 같은 간격)
   last: { t: number; p: XY } | null;
+  pid: number | null; // 지금 받는 포인터(두 번째 손가락 · 손바닥은 무시)
 }
 
 type Mods = { metaKey: boolean; ctrlKey: boolean };
@@ -192,7 +193,11 @@ const freeOf = (q: XY, last: XY | null, ortho: boolean) => ({ x: !(ortho && last
 export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, setDraw, onExtent, onCaret, widgets, host, settings }: Props) {
   const [, repaint] = useReducer((x: number) => x + 1, 0);
   const layer = useRef<HTMLDivElement>(null);
-  const ix = useRef<Ix>({ sel: [], wsel: [], drawing: null, cursor: null, press: null, box: null, drag: null, drafts: new Map(), marquee: null, guides: null, last: null }).current;
+  const ix = useRef<Ix>({ sel: [], wsel: [], drawing: null, cursor: null, press: null, box: null, drag: null, drafts: new Map(), marquee: null, guides: null, last: null, pid: null }).current;
+  // 새 글상자는 첫 글자를 쓸 때 저장한다(그냥 나가면 흔적 없이 사라지고 되돌리기 칸도 안 남는다)
+  const [pending, setPending] = useState<TextShape | null>(null);
+  const geo = useRef<{ lines: Lines; W: number; H: number } | null>(null);
+  const wasActive = useRef(false);
   const textH = useRef(new Map<string, number>());
   const [editing, setEditing] = useState<string | null>(null);
   const autoFocusId = useRef<string | null>(null);
@@ -213,7 +218,6 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     ix.sel = [id];
     ix.wsel = [];
     setDraw({ tool: 'select', picked: true });
-    host.toast('그림을 골랐어요 · 아래 막대에서 색 · 굵기 · 직각 · 복제 · 지우기 · 빈 곳을 누르면 글쓰기로');
     repaint();
   };
 
@@ -267,22 +271,42 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       ix.wsel = [];
       ix.marquee = null;
       ix.guides = null;
+      ix.pid = null;
+      // 그리기를 막 끝냈고(⌥D · Esc · 완료 · 지우기) 커서가 아무 데도 없으면 본문으로 돌려준다(이어 친 글자가 사라지지 않게)
+      if (wasActive.current) {
+        wasActive.current = false;
+        requestAnimationFrame(() => {
+          const a = document.activeElement;
+          if (!a || a === document.body) editor.focus({ preventScroll: true });
+        });
+      }
       return;
     }
+    wasActive.current = true;
     (document.activeElement as HTMLElement | null)?.blur?.();
     document.body.classList.add('drawing');
     return () => document.body.classList.remove('drawing');
-  }, [active, ix]);
+  }, [active, ix, editor]);
 
   // 줄 위치는 그릴 때마다 화면에서 잰다(tick = 편집 칸이 바뀐 횟수). 그림이 없으면 재지 않는다.
-  const all = [...shapes.values()].sort((a, b) => a.z - b.z);
-  const lines = all.length || draw ? measureLines(src, editor, pitch) : NO_LINES;
+  const all = [...shapes.values(), ...(pending && !shapes.has(pending.id) ? [pending] : [])].sort((a, b) => a.z - b.z);
   void tick;
-  const W = src.offsetWidth / PX_PER_MM;
-  const H = src.offsetHeight / PX_PER_MM;
+  // 반쪽 · A4 보기 중에는 이 칼럼이 숨어(너비 0) 다 0으로 재진다 → 마지막으로 잰 자리를 그대로 쓴다
+  const hidden = src.offsetWidth === 0;
+  let lines: Lines;
+  let W: number;
+  let H: number;
+  if (hidden && geo.current) ({ lines, W, H } = geo.current);
+  else {
+    lines = all.length || draw ? measureLines(src, editor, pitch) : NO_LINES;
+    W = src.offsetWidth / PX_PER_MM;
+    H = src.offsetHeight / PX_PER_MM;
+    if (!hidden) geo.current = { lines, W, H };
+  }
   const resolved = all.map((s) => ix.drafts.get(s.id) ?? resolve(s, lines));
   const byId = (id: string | null | undefined) => (id ? resolved.find((r) => r.id === id) : undefined);
-  if (ix.sel.some((id) => !shapes.has(id))) ix.sel = ix.sel.filter((id) => shapes.has(id));
+  const live = (id: string) => shapes.has(id) || pending?.id === id;
+  if (ix.sel.some((id) => !live(id))) ix.sel = ix.sel.filter(live);
   const th = (id: string) => textH.current.get(id) ?? pitch;
 
   // 그림이 마지막 줄보다 아래로 내려가면 종이(반쪽 · 인쇄)도 그만큼 늘린다
@@ -295,7 +319,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
 
   useLayoutEffect(() => {
     const host = layer.current;
-    if (!host) return;
+    if (!host || src.offsetWidth === 0) return; // 숨어 있으면 높이가 0으로 재진다
     let changed = false;
     host.querySelectorAll<HTMLElement>('.tbox').forEach((el) => {
       const id = el.dataset.sid!;
@@ -392,12 +416,26 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
 
   // 누른 자리에 빈 글상자를 만들고 바로 쓰게 한다
   const newText = (p: XY) => {
-    const s: Shape = { id: newId(), t: 'text', a: anchorAt({ x: p.x, y: p.y - pitch / 2 }, lines), bw: Math.min(30, Math.max(8, W - p.x)), text: '', doc: emptyTextDoc(), c: 'k', w: drawRef.current?.w ?? DEFAULT_W, z: nextZ() };
-    put(s);
-    pickOnly([s.id]);
+    const fresh = measureLines(src, editor, pitch);
+    const bw = Math.min(30, W);
+    const x = Math.max(0, Math.min(p.x, W - bw)); // 오른쪽 끝 가까이 눌러도 종이 밖으로 나가지 않게
+    const s: TextShape = { id: newId(), t: 'text', a: anchorAt({ x, y: p.y - pitch / 2 }, fresh), bw, text: '', doc: emptyTextDoc(), c: 'k', w: drawRef.current?.w ?? DEFAULT_W, z: nextZ() };
+    setPending(s);
+    if (drawRef.current) pickOnly([s.id]);
     autoFocusId.current = s.id;
     setEditing(s.id);
   };
+  // 위치만 바꾼다(끄는 동안 다른 기기 · ⌘Z로 지워졌으면 되살리지 않고, 그새 바뀐 색 같은 것은 그대로 둔다)
+  const putGeometry = (rs: Resolved[]) =>
+    write(() => {
+      for (const r of rs) {
+        const cur = shapes.get(r.id);
+        if (!cur) continue;
+        const g = unresolve(r, lines);
+        const patch = g.t === 'path' ? { pts: g.pts } : g.t === 'text' ? { a: g.a, bw: g.bw } : { a: g.a, b: g.b };
+        shapes.set(r.id, clean({ ...cur, ...patch } as Shape));
+      }
+    });
 
   // 글상자 편집기로 커서(그리기 중 두 번 누르기 · Enter)
   const focusBox = (id: string) => requestAnimationFrame(() => src.querySelector<HTMLElement>(`.tbox[data-sid="${id}"] .tb-edit`)?.focus());
@@ -421,17 +459,24 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       }
       repaint();
     };
-    const onUp = () => {
+    const end = (save: boolean) => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
       const d = ix.drafts.get(id);
       ix.drafts = new Map();
       ix.guides = null;
-      if (d) put(unresolve(d, lines));
+      if (save && d?.t === 'text') {
+        if (pending?.id === id) setPending({ ...pending, ...(unresolve(d, lines) as TextShape) });
+        else putGeometry([d]);
+      }
       repaint();
     };
+    const onUp = () => end(true);
+    const onCancel = () => end(false);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
   };
 
   const finishBox = (p: XY) => {
@@ -477,6 +522,9 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   const onDown = (e: React.PointerEvent) => {
     const d = drawRef.current;
     if (!d || !fromLayer(e) || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    if ((e.target as Element | null)?.closest?.('.tbox.tedit')) return; // 고치고 있는 글상자 안은 글상자에게(커서 · 글자 고르기)
+    if (ix.pid !== null && e.pointerId !== ix.pid) return; // 끄는 중에 닿은 두 번째 손가락 · 손바닥
+    ix.pid = e.pointerId;
     e.preventDefault();
     const p = toMM(e);
     // 글상자를 고치던 중이면 먼저 끝낸다(누르기는 그대로 이어서 처리)
@@ -571,7 +619,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
 
   const onMove = (e: React.PointerEvent) => {
     const d = drawRef.current;
-    if (!d || !fromLayer(e)) return;
+    if (!d || !fromLayer(e) || (ix.pid !== null && e.pointerId !== ix.pid)) return;
     const p = toMM(e);
     if (ix.press && !ix.press.moved && dist(p, ix.press.p) > 2) ix.press.moved = true;
     if (ix.drawing) {
@@ -637,7 +685,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   };
 
   const onUp = (e: React.PointerEvent) => {
-    if (!fromLayer(e)) return;
+    if (!fromLayer(e) || (ix.pid !== null && e.pointerId !== ix.pid)) return;
+    ix.pid = null;
     const p = toMM(e);
     // 처음 점에서 끌어서 놓으면 곧은 화살표 하나로 끝
     if (ix.press) {
@@ -681,7 +730,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       const drafts = [...ix.drafts.values()];
       ix.drafts = new Map();
       ix.guides = null;
-      if (g.moved && drafts.length) write(() => drafts.forEach((r) => shapes.set(r.id, clean(unresolve(r, lines)))));
+      if (g.moved && drafts.length) putGeometry(drafts);
       else if (g.mode === 'move') {
         if (g.toggle) ix.sel = ix.sel.filter((x) => x !== g.toggle);
         else if (g.only) pickOnly([g.only]);
@@ -814,9 +863,18 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     }
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)) return;
+      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       const d = drawRef.current;
       if (!d) return;
+      // 한 번 넣기(＋ 넣기 › 글상자 · /글상자): 종이를 누르기 전까지는 Esc(그만두기)만
+      if (d.quick) {
+        if (e.code === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          setDraw(null);
+        }
+        return;
+      }
       const id = keyId(e);
       const code = e.code;
       const sel = selShapes();
@@ -882,7 +940,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     };
     const onPaste = (e: ClipboardEvent) => {
       const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)) return;
+      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       pasted.current = true;
       const text = e.clipboardData?.getData('text/plain') ?? '';
       e.preventDefault();
@@ -906,6 +964,10 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   // 글상자에서 커서가 빠지면: 빈 글상자는 지운다
   const doneText = (id: string) => {
     setEditing((cur) => (cur === id ? null : cur));
+    if (pending?.id === id) {
+      setPending(null);
+      return;
+    }
     const s = shapes.get(id);
     if (s?.t === 'text' && !s.text.trim()) write(() => shapes.delete(s.id));
     repaint();
@@ -983,16 +1045,22 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
               onSave={(doc) => {
                 const s = shapes.get(r.id);
                 if (s?.t === 'text') putTyping({ ...s, doc: doc.toJSON(), text: plainText(doc) });
+                else if (pending?.id === r.id && plainText(doc).trim()) {
+                  // 첫 글자: 이때 저장(만든 것 + 첫 글자가 되돌리기 한 칸)
+                  put({ ...pending, doc: doc.toJSON(), text: plainText(doc) });
+                  setPending(null);
+                }
               }}
               onFocus={() => {
                 if (autoFocusId.current === r.id) autoFocusId.current = null;
-                pickOnly([r.id]);
+                if (drawRef.current) pickOnly([r.id]);
                 setEditing(r.id);
               }}
               onBlur={() => doneText(r.id)}
               onDrag={(mode, e) => dragBox(mode, r.id, e)}
               onDelete={() => {
-                write(() => shapes.delete(r.id));
+                if (pending?.id === r.id) setPending(null);
+                else write(() => shapes.delete(r.id));
                 setEditing(null);
               }}
             />
@@ -1008,7 +1076,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
             wcount={wsel.length}
             drawing={!!ix.drawing}
             setDraw={(p) => {
-              finishOrCancel();
+              if (!p || 'tool' in p) finishOrCancel(); // 도구를 바꾸거나 끝낼 때만(색 · 굵기 · 직각은 긋던 것에 이어서)
               setDraw(p && { ...p, picked: false }); // 막대에서 도구 · 설정을 고르면 그리기로 넘어간 것(null = 그리기 끝)
             }}
             update={update}
@@ -1084,8 +1152,6 @@ interface BarProps {
 const alt = isMac ? '⌥' : 'Alt+';
 const mod = isMac ? '⌘' : 'Ctrl+';
 
-const KIND_NAME: Record<string, string> = { path: '선', rect: '네모', ellipse: '원', text: '글상자' };
-const kindOf = (s: Shape) => (s.t === 'path' ? (s.head ? '화살표' : '선') : KIND_NAME[s.t]);
 
 // 그리기 막대. 무엇이든 고르면 고른 것(여러 개면 모두)의 색 · 굵기 · 직각 · 화살촉 · 점선 · 글씨 · 형광펜 · 복제 · 지우기,
 // 고른 게 없으면 새로 그릴 도구와 설정.
@@ -1157,7 +1223,7 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highligh
             <button type="button" className="dtools" onClick={toTools} title="고르기를 풀고 그리기 도구로(새로 그리기)">
               ‹ 도구
             </button>
-            <b>고른 {n === 1 ? (sel[0] ? kindOf(sel[0]) : '위젯') : `것 ${n}개`}</b>
+            {n > 1 ? <b>{n}개</b> : sel.length === 0 ? <b>위젯</b> : null}
           </div>
           {sel.length > 0 && swatches}
           {strokes.length > 0 && width}
@@ -1220,11 +1286,6 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highligh
               지우기
             </button>
           </div>
-          <span className="dhint">
-            {n > 1 ? '끌면 함께 옮겨요 · ⇧+누르기로 넣고 빼기' : '끌어서 옮기기 · 점 끌어 모양 바꾸기 · ⇧+누르기 · 빈 곳 끌기로 여러 개'}
-            {` · ${mod} 누르고 끌면 스냅 없이`}
-            {draw.picked ? ' · 빈 곳을 누르면 글쓰기로' : ''}
-          </span>
         </>
       ) : (
         <>

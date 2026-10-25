@@ -347,6 +347,119 @@ try {
   await alt('Digit1');
   await sleep(200);
 
+  // 9) 버그 고친 것들: 펜을 든 채 한글 조합, 위젯 · 칸을 고른 채 Enter, 위젯 옆 ⌫ · Delete, 칸 여러 개에 펜, 위젯 글칸 ⌘⇧Z
+  await page.click('.addnote');
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+  await page.click('.editor');
+  const cdp = await page.target().createCDPSession();
+  const compose = async (steps) => {
+    for (const s of steps) {
+      await cdp.send('Input.imeSetComposition', { text: s, selectionStart: s.length, selectionEnd: s.length });
+      await sleep(50);
+    }
+    await cdp.send('Input.insertText', { text: steps[steps.length - 1] });
+    await sleep(120);
+  };
+  await alt('KeyR');
+  await compose(['ㅎ', '하', '한']);
+  await compose(['ㄱ', '그', '글']);
+  const ime = await page.evaluate(() => {
+    const n = window.__ayunpad.view().state.doc.child(0);
+    const marks = [];
+    n.forEach((c) => marks.push(c.marks.find((m) => m.type.name === 'pen')?.attrs.c ?? '-'));
+    return { text: n.textContent, marks: marks.join('') };
+  });
+  check(ime.text === '한글' && ime.marks === 'r', `빨간 펜을 든 채 한글 조합이 안 깨짐 (${JSON.stringify(ime)})`);
+  await alt('KeyA');
+  // 그래프를 고른 채 Enter → 지우지 않고 아래 새 줄
+  await k.press('Enter');
+  await k.type('/그래프');
+  await page.waitForSelector('.slash button.on');
+  await k.press('Enter');
+  await page.waitForSelector('.editor .wg.graph');
+  const blocks = () => page.evaluate(() => { const o = []; window.__ayunpad.view().state.doc.forEach((n) => o.push(n.type.name)); return o.join(','); });
+  const selectNode = (name) =>
+    page.evaluate((nm) => {
+      const v = window.__ayunpad.view();
+      let at = -1;
+      v.state.doc.forEach((n, pos) => {
+        if (n.type.name === nm && at < 0) at = pos;
+      });
+      v.focus();
+      v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.near(v.state.doc.resolve(at))));
+      const NS = Object.getPrototypeOf(v.state.selection).constructor;
+      return at;
+    }, name);
+  await page.evaluate(() => {
+    const v = window.__ayunpad.view();
+    let at = -1;
+    v.state.doc.forEach((n, pos) => {
+      if (n.type.name === 'graph') at = pos;
+    });
+    v.focus();
+    // NodeSelection.create 대신: 위젯 앞 줄 끝에서 Delete 한 번 = 위젯 고르기
+    const $end = v.state.doc.resolve(at - 1);
+    v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.create(v.state.doc, $end.pos)));
+  });
+  await k.press('Delete');
+  await sleep(80);
+  const selName = await page.evaluate(() => window.__ayunpad.view().state.selection.node?.type.name ?? '');
+  check(selName === 'graph' && (await blocks()).includes('graph'), `위젯 앞 줄 끝 Delete → 위젯을 고르기만(안 지움) (${selName})`);
+  await k.press('Enter');
+  await sleep(80);
+  const afterEnter = await blocks();
+  check(afterEnter.includes('graph') && /graph,line/.test(afterEnter), `위젯을 고른 채 Enter → 지우지 않고 아래 새 줄 (${afterEnter})`);
+  // 그래프 다음 줄 맨 앞 ⌫ → 고르기, 한 번 더 → 지움
+  await k.press('Backspace');
+  await sleep(60);
+  const sel2 = await page.evaluate(() => window.__ayunpad.view().state.selection.node?.type.name ?? '');
+  check(sel2 === 'graph' && (await blocks()).includes('graph'), `위젯 다음 줄 맨 앞 ⌫ → 위젯을 고르기만 (${sel2})`);
+  await k.press('Backspace');
+  await sleep(80);
+  check(!(await blocks()).includes('graph'), '한 번 더 ⌫ → 위젯 지움');
+  // 표: 칸 여러 개를 고른 채 Enter는 칸을 비우지 않고, 펜은 모든 칸에
+  await k.type('/표 2x2');
+  await page.waitForSelector('.slash button.on');
+  await k.press('Enter');
+  await page.waitForSelector('.editor table');
+  for (const t of ['aa', 'bb', 'cc', 'dd']) {
+    await k.type(t);
+    await k.press('Tab');
+  }
+  await page.evaluate(() => {
+    const v = window.__ayunpad.view();
+    const cells = [];
+    v.state.doc.descendants((n, pos) => {
+      if (n.type.name === 'table_cell' || n.type.name === 'table_header') cells.push(pos);
+      return n.type.name !== 'table_cell' && n.type.name !== 'table_header';
+    });
+    window.__cellRange = [cells[0], cells[cells.length - 1]];
+  });
+  const cellSelect = () =>
+    page.evaluate(() => {
+      const v = window.__ayunpad.view();
+      const [a, b] = window.__cellRange;
+      // 첫 칸에서 마지막 칸까지 끌어 고른 것과 같게(⇧+방향키로 칸 고르기)
+      v.focus();
+      v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.near(v.state.doc.resolve(a + 2))));
+    });
+  await cellSelect();
+  for (let i = 0; i < 4; i++) {
+    await k.down('Shift');
+    await k.press(i % 2 ? 'ArrowDown' : 'ArrowRight');
+    await k.up('Shift');
+  }
+  await sleep(80);
+  const multi = await page.evaluate(() => window.__ayunpad.view().state.selection.ranges.length);
+  await k.press('Enter');
+  await sleep(80);
+  const cellTexts = await page.$$eval('.editor table td, .editor table th', (cs) => cs.map((c) => c.textContent).join(','));
+  check(multi > 1 && cellTexts.includes('aa') && cellTexts.includes('dd'), `칸 여러 개를 고른 채 Enter → 칸 내용 그대로 (${multi}칸, ${cellTexts})`);
+  await alt('KeyR');
+  await sleep(80);
+  const redCells = await page.$$eval('.editor table [data-pen="r"]', (e) => e.map((x) => x.textContent).join(','));
+  check(redCells.split(',').length >= 2, `칸 여러 개에 ⌥R → 고른 칸 모두 빨강 (${redCells})`);
+
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();
 } catch (e) {

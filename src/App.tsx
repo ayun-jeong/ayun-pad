@@ -71,6 +71,7 @@ export function App() {
   const [panel, setPanel] = useState(false);
   const [help, setHelp] = useState(false);
   const [menu, setMenu] = useState(false);
+  const titleAtFocus = useRef('');
   const closeMenu = useCallback(() => setMenu(false), []);
   const [account, setAccount] = useState(false);
   const [versions, setVersions] = useState(false);
@@ -171,12 +172,14 @@ export function App() {
       setNoteId(ok(last) ? last : (seeded ?? first));
       setReady(true);
       lib.fonts.forEach((f) => void ensureFont(f.id));
-      purgeOld(lib);
       // ⌘K가 바로 뜨도록 노트 본문 색인을 미리 만들어 둔다
       setTimeout(() => void indexNotes(lib, null, () => undefined, () => false), 4000);
       void hub
         .init()
-        .then(() => consumeLoginLink())
+        .then(() => {
+          purgeOld(lib); // 로그인을 확인한 뒤라야 서버 기록도 지운다
+          return consumeLoginLink();
+        })
         .then((err) => {
           if (err) toast('로그인 링크가 만료됐거나 이미 쓰였어요. 새 링크가 필요합니다');
         });
@@ -378,6 +381,7 @@ export function App() {
         setSearch(null);
         setInsert(false);
         setEmph(false);
+        if (window.innerWidth <= 720) setSidebar(false);
         if (findRef.current) {
           setFind(null);
           viewRef.current?.focus();
@@ -663,7 +667,13 @@ export function App() {
         <div className="crumb">
           <span className="subj">{subject?.name}</span>
           <span className="subj">›</span>
-          <input aria-label="노트 이름" value={note?.title ?? ''} onChange={(e) => note && updateNote(lib, note.id, { title: e.currentTarget.value })} />
+          <input
+            aria-label="노트 이름"
+            value={note?.title ?? ''}
+            onFocus={(e) => (titleAtFocus.current = e.currentTarget.value)}
+            onChange={(e) => note && updateNote(lib, note.id, { title: e.currentTarget.value })}
+            onBlur={(e) => note && !e.currentTarget.value.trim() && updateNote(lib, note.id, { title: titleAtFocus.current.trim() || '새 노트' })}
+          />
         </div>
         {pen && (
           <button type="button" className="tbtn pen-now" onClick={() => withView((v) => penCmd(null)(v.state, v.dispatch, v))} title="지금 든 펜 · 누르면 자동 펜으로 (⌥A)">
@@ -725,6 +735,7 @@ export function App() {
         />
       )}
 
+      {sidebar && <div className="side-backdrop" onClick={() => setSidebar(false)} aria-hidden="true" />}
       <Sidebar
         lib={lib}
         noteId={noteId}
@@ -925,31 +936,33 @@ export function App() {
       {mode === 'edit' && !draw && !hasSel && (
         <nav className="touchbar" aria-label="편집 도구">
           <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => indentCmd(-1)(v.state, v.dispatch, v))} aria-label="내어쓰기">
-            ⇤
+            ⇤<small>내어</small>
           </button>
           <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => indentCmd(1)(v.state, v.dispatch, v))} aria-label="들여쓰기">
-            ⇥
+            ⇥<small>들여</small>
           </button>
           <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => toggleBranchCmd(v.state, v.dispatch, v))} aria-label="꺾쇠 줄">
-            ├
+            ├<small>꺾쇠</small>
           </button>
           <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => sideCmd()(v.state, v.dispatch, v))} aria-label="옆 가지">
-            ┬
+            ┬<small>옆가지</small>
           </button>
           <button type="button" className={subbar === 'pen' ? 'on' : ''} onPointerDown={keepFocus} onClick={() => setSubbar((x) => (x === 'pen' ? null : 'pen'))} aria-label="펜 색">
             <i className={`pen-dot${pen ? '' : ' pen-auto'}`} style={pen ? { background: colorOf(pen) } : undefined} />
+            <small>펜</small>
           </button>
           <button type="button" className={subbar === 'hl' ? 'on' : ''} onPointerDown={keepFocus} onClick={() => setSubbar((x) => (x === 'hl' ? null : 'hl'))} aria-label="형광펜 색">
             <span className="swatch hl-sw hl-y" />
+            <small>형광</small>
           </button>
           <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => void undo(v.state))} aria-label="되돌리기">
-            ↶
+            ↶<small>취소</small>
           </button>
           <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => void redo(v.state))} aria-label="다시 하기">
-            ↷
+            ↷<small>다시</small>
           </button>
           <button type="button" onPointerDown={keepFocus} onClick={() => act('draw')} aria-label="그리기">
-            ✎
+            ✎<small>그리기</small>
           </button>
         </nav>
       )}

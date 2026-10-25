@@ -1,5 +1,6 @@
 import type { Mark, MarkType, Node, ResolvedPos } from 'prosemirror-model';
-import { NodeSelection, TextSelection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
+import { NodeSelection, TextSelection, type Command, type EditorState, type Selection, type Transaction } from 'prosemirror-state';
+import { CellSelection } from 'prosemirror-tables';
 import { headRange, infoOf, lineInfos } from './decorations';
 import { clamp } from './layout';
 import { MAX_DEPTH, type LineInfo } from './model';
@@ -105,6 +106,15 @@ function splitLine(tr: Transaction): Transaction {
 // Enter: 같은 깊이·같은 종류로 새 줄(꺾쇠 줄이면 새 줄에도 꺾쇠). 빈 줄이면 한 단계 위로.
 export const enterCmd: Command = (state, dispatch) => {
   const sel = state.selection;
+  if (sel instanceof CellSelection) return true; // 칸 여러 개를 고른 채 Enter: 칸 내용을 지우지 않는다
+  if (sel instanceof NodeSelection && sel.node.isBlock) {
+    // 위젯(표 · 그래프 · 연표)을 고른 채 Enter: 지우지 않고 그 아래 새 줄로
+    if (dispatch) {
+      const tr = state.tr.insert(sel.to, schema.nodes.line.create({ depth: (sel.node.attrs.depth as number) ?? 0 }));
+      dispatch(tr.setSelection(TextSelection.create(tr.doc, sel.to + 1)).scrollIntoView());
+    }
+    return true;
+  }
   const $f = sel.$from;
   const c = ctxOf($f);
   if (sel.empty && c && $f.parent.content.size === 0) {
@@ -130,22 +140,40 @@ export const unbranchAtStart: Command = (state, dispatch) => {
   return true;
 };
 
-// 표 바로 다음 줄 맨 앞에서 ⌫: 표를 고른다(한 번 더 ⌫ 하면 표가 지워진다)
-export const selectTableBefore: Command = (state, dispatch) => {
+const isWidget = (n: Node | null | undefined) => !!n && (n.type.name === 'table' || (n.isBlock && n.isAtom));
+
+// 위젯(표 · 연표 · 그래프) 바로 다음 줄 맨 앞에서 ⌫: 위젯을 고른다(한 번 더 ⌫ 하면 지운다). 한 번에 통째로 지워지지 않게.
+export const selectWidgetBefore: Command = (state, dispatch) => {
   const { $from, empty } = state.selection;
   if (!empty || $from.parentOffset !== 0 || $from.depth !== 1) return false;
   const idx = $from.index(0);
   const before = idx > 0 ? state.doc.child(idx - 1) : null;
-  if (!before || before.type.name !== 'table') return false;
-  dispatch?.(state.tr.setSelection(NodeSelection.create(state.doc, $from.before(1) - before.nodeSize)).scrollIntoView());
+  if (!isWidget(before)) return false;
+  dispatch?.(state.tr.setSelection(NodeSelection.create(state.doc, $from.before(1) - before!.nodeSize)).scrollIntoView());
   return true;
 };
 
-// ⇧Enter: 줄 안에서 줄바꿈(가지는 그대로)
-export const insertBr: Command = (state, dispatch) => {
+// 위젯 바로 앞 줄 끝에서 Delete: 위젯을 고른다(한 번 더 누르면 지운다)
+export const selectWidgetAfter: Command = (state, dispatch) => {
+  const { $from, empty } = state.selection;
+  if (!empty || $from.depth !== 1 || $from.parentOffset !== $from.parent.content.size) return false;
+  const idx = $from.index(0);
+  const after = idx + 1 < state.doc.childCount ? state.doc.child(idx + 1) : null;
+  if (!isWidget(after)) return false;
+  dispatch?.(state.tr.setSelection(NodeSelection.create(state.doc, $from.after(1))).scrollIntoView());
+  return true;
+};
+
+// ⇧Enter: 줄 안에서 줄바꿈(가지는 그대로). 위젯 · 칸 여러 개를 고른 채면 Enter와 같이(지우지 않는다).
+export const insertBr: Command = (state, dispatch, view) => {
+  const sel = state.selection;
+  if (sel instanceof CellSelection || (sel instanceof NodeSelection && sel.node.isBlock)) return enterCmd(state, dispatch, view);
   dispatch?.(state.tr.replaceSelectionWith(schema.nodes.br.create()).scrollIntoView());
   return true;
 };
+
+// 고른 곳(표 칸 여러 개를 고르면 칸마다)
+const rangesOf = (sel: Selection) => sel.ranges.map((r) => ({ from: r.$from.pos, to: r.$to.pos })).filter((r) => r.from < r.to);
 
 function replaceMark(tr: Transaction, from: number, to: number, type: MarkType, mark: Mark | null) {
   tr.removeMark(from, to, type);
@@ -160,7 +188,7 @@ export function penCmd(c: string | null, report?: (pen: string | null, onSelecti
     if (!sel.empty) {
       if (dispatch) {
         const tr = state.tr;
-        replaceMark(tr, sel.from, sel.to, schema.marks.pen, c ? schema.marks.pen.create({ c }) : null);
+        for (const r of rangesOf(sel)) replaceMark(tr, r.from, r.to, schema.marks.pen, c ? schema.marks.pen.create({ c }) : null);
         dispatch(tr);
         report?.(c, true);
       }
@@ -183,11 +211,11 @@ export function penCmd(c: string | null, report?: (pen: string | null, onSelecti
 export function hlCmd(c: string | 'none' | null): Command {
   return (state, dispatch) => {
     const sel = state.selection;
-    const range = sel.empty ? headRange(state) : { from: sel.from, to: sel.to };
-    if (range.from >= range.to) return true;
+    const ranges = sel.empty ? [headRange(state)].filter((r) => r.from < r.to) : rangesOf(sel);
+    if (!ranges.length) return true;
     if (dispatch) {
       const tr = state.tr;
-      replaceMark(tr, range.from, range.to, schema.marks.hl, c ? schema.marks.hl.create({ c }) : null);
+      for (const r of ranges) replaceMark(tr, r.from, r.to, schema.marks.hl, c ? schema.marks.hl.create({ c }) : null);
       dispatch(tr);
     }
     return true;
@@ -207,12 +235,12 @@ function wordAt(state: EditorState): { from: number; to: number } {
 // ⌥O: 빨간 동그라미 켜기·끄기. 선택이 없으면 커서가 있는 낱말에.
 export const circleCmd: Command = (state, dispatch) => {
   const sel = state.selection;
-  const range = sel.empty ? wordAt(state) : { from: sel.from, to: sel.to };
-  if (range.from >= range.to) return true;
+  const ranges = sel.empty ? [wordAt(state)].filter((r) => r.from < r.to) : rangesOf(sel);
+  if (!ranges.length) return true;
   if (dispatch) {
-    const has = state.doc.rangeHasMark(range.from, range.to, schema.marks.circ);
+    const has = ranges.some((r) => state.doc.rangeHasMark(r.from, r.to, schema.marks.circ));
     const tr = state.tr;
-    replaceMark(tr, range.from, range.to, schema.marks.circ, has ? null : schema.marks.circ.create({ c: 'r' }));
+    for (const r of ranges) replaceMark(tr, r.from, r.to, schema.marks.circ, has ? null : schema.marks.circ.create({ c: 'r' }));
     dispatch(tr);
   }
   return true;
@@ -221,24 +249,21 @@ export const circleCmd: Command = (state, dispatch) => {
 // ⌥, / ⌥. : 자간 0.01em씩. 선택이 없으면 지금 줄 전체.
 export function trackCmd(delta: number, report?: (v: number) => void): Command {
   return (state, dispatch) => {
-    let { from, to } = state.selection;
-    if (state.selection.empty) {
-      const $f = state.selection.$from;
-      from = $f.start();
-      to = $f.end();
-    }
-    if (from >= to) return true;
+    const sel = state.selection;
+    const ranges = sel.empty ? [{ from: sel.$from.start(), to: sel.$from.end() }].filter((r) => r.from < r.to) : rangesOf(sel);
+    if (!ranges.length) return true;
     const tr = state.tr;
     let shown: number | null = null;
-    state.doc.nodesBetween(from, to, (node, pos) => {
-      if (!node.isText) return;
-      const a = Math.max(from, pos);
-      const b = Math.min(to, pos + node.nodeSize);
-      const cur = (node.marks.find((m) => m.type === schema.marks.track)?.attrs.v as number | undefined) ?? 0;
-      const v = Math.round(clamp(cur + delta, -0.15, 0.3) * 100) / 100;
-      if (shown === null) shown = v;
-      replaceMark(tr, a, b, schema.marks.track, v !== 0 ? schema.marks.track.create({ v }) : null);
-    });
+    for (const { from, to } of ranges)
+      state.doc.nodesBetween(from, to, (node, pos) => {
+        if (!node.isText) return;
+        const a = Math.max(from, pos);
+        const b = Math.min(to, pos + node.nodeSize);
+        const cur = (node.marks.find((m) => m.type === schema.marks.track)?.attrs.v as number | undefined) ?? 0;
+        const v = Math.round(clamp(cur + delta, -0.15, 0.3) * 100) / 100;
+        if (shown === null) shown = v;
+        replaceMark(tr, a, b, schema.marks.track, v !== 0 ? schema.marks.track.create({ v }) : null);
+      });
     if (dispatch) {
       dispatch(tr);
       if (shown !== null) report?.(shown);
@@ -298,11 +323,10 @@ export function prevInfo(c: Ctx): LineInfo | null {
 // 글자 모양 판에서 '선택한 글자에만' 글꼴 바꾸기
 export function fontCmd(f: string | null): Command {
   return (state, dispatch) => {
-    const { from, to, empty } = state.selection;
-    if (empty) return false;
+    if (state.selection.empty) return false;
     if (dispatch) {
       const tr = state.tr;
-      replaceMark(tr, from, to, schema.marks.font, f ? schema.marks.font.create({ f }) : null);
+      for (const r of rangesOf(state.selection)) replaceMark(tr, r.from, r.to, schema.marks.font, f ? schema.marks.font.create({ f }) : null);
       dispatch(tr);
     }
     return true;

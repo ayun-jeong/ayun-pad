@@ -44,6 +44,7 @@ try {
     for (const m of [...mods].reverse()) await k.up(m);
   };
   const shapes = () => page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()));
+  const docTextOf = (pg) => pg.evaluate(() => window.__ayunpad.view().state.doc.textContent);
   // 진짜 마우스로 누르기. DOM .click()에는 pointerdown이 없어서 '누름을 그림 층이 가로채 단추가 안 먹는' 문제를 못 잡는다.
   const press = async (sel, pred) => {
     for (const h of await page.$$(sel)) if (await h.evaluate(pred)) return h.click().then(() => true);
@@ -389,10 +390,16 @@ try {
   check((await page.$$eval('.wg.graph', (g) => g.length)) === 1, '넣기 판 → xy축 그래프');
   await toLastLine();
   await openInsert();
-  await rowBtn('그림', '네모');
-  await sleep(100);
-  check(await page.$eval('.shapes-layer', (e) => e.classList.contains('on') && e.classList.contains('tool-rect')), '넣기 판 네모 → 그리기(네모 도구)');
-  await k.press('Escape');
+  await rowBtn('그 밖에', '분수');
+  await sleep(150);
+  const hasFrac = await page.evaluate(() => {
+    let f = false;
+    window.__ayunpad.view().state.doc.descendants((n) => {
+      if (n.type.name === 'frac') f = true;
+    });
+    return f;
+  });
+  check(hasFrac && !(await page.$('.panel.insert')), '넣기 판 그 밖에 › 분수 → 분수 들어감(도형 줄은 ✎ 그리기로 옮김)');
   await k.press('Escape');
   await sleep(100);
 
@@ -405,7 +412,7 @@ try {
   const pxPerMm = L2.w / L2.mmW;
   await toLastLine();
   await openInsert();
-  await rowBtn('그림', '글상자');
+  await rowBtn('그 밖에', '글상자');
   await sleep(80);
   check(!(await page.$('.drawbar')), '글상자 한 번 넣기에는 도구 막대 없음');
   await page.mouse.click(mmX(60), L2.y + 20 * pxPerMm);
@@ -470,9 +477,13 @@ try {
   await k.type('아래 줄');
   await sleep(200);
   const font0 = await page.$eval('.editor .tblw th', (e) => parseFloat(getComputedStyle(e).fontSize));
-  const shrink = async (sel) => {
-    await page.hover(sel);
+  // 표 · 그래프 손잡이와 막대는 커서가 그 안에 있을 때만 보인다 → 먼저 칸이나 이름표를 누른다
+  const focusIn = async (sel) => {
+    await (await page.$(`${sel} td, ${sel} th, ${sel} .wg-ed`)).click();
     await sleep(80);
+  };
+  const shrink = async (sel) => {
+    await focusIn(sel);
     const b = await (await page.$(`${sel} .wg-size`)).boundingBox();
     await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
     await page.mouse.down();
@@ -561,7 +572,9 @@ try {
   await page.waitForSelector('.editor table');
   const padOf = () => page.$eval('.editor .tblw', (e) => getComputedStyle(e).paddingLeft);
   const pad0 = await padOf();
-  await page.hover('.editor .tblw');
+  await (await page.$('.editor .tblw td, .editor .tblw th')).click();
+  await sleep(80);
+  check(!!(await page.$eval('.editor .tblw > .tbl-ctl', (e) => getComputedStyle(e).display !== 'none')), '표 칸에 커서를 두면 막대가 보임');
   const hb = await (await page.$('.editor .tblw > .wg-size')).boundingBox();
   await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
   await page.mouse.down();
@@ -571,7 +584,7 @@ try {
   const pad1 = await padOf();
   check(pad0 === pad1 && parseFloat(pad0) > 0, `표를 줄여도 들여쓰기 · 가지선 자리는 그대로 (${pad0} → ${pad1})`);
   const tableBtn = (label) => page.$$eval('.editor .tblw .tbl-ctl button', (bs, l) => bs.find((b) => b.textContent === l)?.click(), label);
-  await page.hover('.editor .tblw');
+  await (await page.$('.editor .tblw td, .editor .tblw th')).click();
   await tableBtn('행＋');
   await tableBtn('열＋');
   await sleep(100);
@@ -606,7 +619,8 @@ try {
   await page.waitForSelector('.slash button.on');
   await k.press('Enter');
   await page.waitForSelector('.wg.graph');
-  await page.hover('.wg.graph');
+  await (await page.$('.wg.graph .wg-ed')).click();
+  await sleep(60);
   await page.$$eval('.wg.graph .wg-ctl button', (bs) => bs.find((b) => b.textContent === '지우기')?.click());
   await sleep(120);
   check(!(await page.$('.wg.graph')), '그래프 지우기 단추');
@@ -809,7 +823,7 @@ try {
   // 영역 고르기: 빈 곳에서 끌어 R1 · R2(고르기 단추 없이, 그리고 나면 늘 고르기 상태)
   await drag5([5, 65], [45, 82]);
   const selLabel = () => page.$eval('.drawbar.has-sel .dsel b', (e) => e.textContent).catch(() => '');
-  check((await selLabel()) === '고른 것 2개' && (await page.$$('.shapes-layer .sh-selbox')).length === 2, `빈 곳을 끌어 걸친 것 고르기 (${await selLabel()})`);
+  check((await selLabel()) === '2개' && (await page.$$('.shapes-layer .sh-selbox')).length === 2, `빈 곳을 끌어 걸친 것 고르기 (${await selLabel()})`);
   const shiftClick = async (x, y) => {
     await page.keyboard.down('Shift');
     await page.mouse.click(...at5(x, y));
@@ -817,9 +831,9 @@ try {
     await sleep(100);
   };
   await shiftClick(55.5, 70);
-  check((await selLabel()) === '고른 것 3개', `⇧+누르기 → 하나 더 (${await selLabel()})`);
+  check((await selLabel()) === '3개', `⇧+누르기 → 하나 더 (${await selLabel()})`);
   await shiftClick(15, 70);
-  check((await selLabel()) === '고른 것 2개', `⇧+누르기 한 번 더 → 빼기 (${await selLabel()})`);
+  check((await selLabel()) === '2개', `⇧+누르기 한 번 더 → 빼기 (${await selLabel()})`);
   // 한꺼번에 옮기기: R2를 끌면 R3도 같이
   await drag5([35, 70], [35, 80]);
   R = await rects();
@@ -842,7 +856,7 @@ try {
   await sleep(250);
   R = await rects();
   const newest = R.slice(-2);
-  check(R.length === 7 && Math.abs(newest[0].x - 13) < 0.05 && Math.abs(newest[1].x - 33) < 0.05 && (await selLabel()) === '고른 것 2개', `${meta}C ${meta}V → 두 개 복사, 3mm 비켜 붙고 붙인 것이 골라짐 (${R.length}개, x ${newest.map((r) => r.x).join(',')})`);
+  check(R.length === 7 && Math.abs(newest[0].x - 13) < 0.05 && Math.abs(newest[1].x - 33) < 0.05 && (await selLabel()) === '2개', `${meta}C ${meta}V → 두 개 복사, 3mm 비켜 붙고 붙인 것이 골라짐 (${R.length}개, x ${newest.map((r) => r.x).join(',')})`);
   await k.press('Escape');
   await sleep(80);
   check(!(await page.$('.drawbar.has-sel')), 'Esc → 고름 모두 풀기');
@@ -864,7 +878,7 @@ try {
     await sleep(120);
   }
   await drag5([4, 112], [90, 128]);
-  check((await selLabel()) === '고른 것 2개', `글상자 두 개 고르기 (${await selLabel()})`);
+  check((await selLabel()) === '2개', `글상자 두 개 고르기 (${await selLabel()})`);
   for (const l of ['글씨 크게', '자간 넓게', '행간 넓게', '노랑 형광펜']) await press('.drawbar button', new Function('b', `return b.getAttribute('aria-label') === '${l}'`));
   await sleep(150);
   const tbs = await page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).filter((s) => s.t === 'text').map((s) => ({ fs: s.fs, ls: s.ls, lh: s.lh, hl: JSON.stringify(s.doc).includes('"hl"') })));
@@ -897,7 +911,7 @@ try {
   await page.mouse.move(tr.r + 12, tr.b + 6, { steps: 8 });
   await page.mouse.up();
   await sleep(120);
-  check((await selLabel()) === '고른 위젯', `영역으로 표(위젯) 고르기 (${await selLabel()})`);
+  check((await selLabel()) === '위젯', `영역으로 표(위젯) 고르기 (${await selLabel()})`);
   await press('.drawbar button', (b) => b.getAttribute('aria-label') === '글씨 작게');
   await sleep(100);
   const tScale = await page.evaluate(() => {
@@ -916,6 +930,150 @@ try {
   check(!!(await page.$('.editor table')), '⌘Z → 표 돌아옴');
   await press('.drawbar .ddone', () => true);
   await sleep(100);
+
+  // 20) 버그 고친 것들: A4 보기 · 인쇄 복제, 첫 글상자 줄 붙기, 그리기 중 글상자 안 누르기, 고름 넘어감, 끝낸 뒤 커서, 끄는 중 지워짐, 빈 글상자, 긋는 중 색, select 키, 한 번 넣기
+  await page.click('.addnote');
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+  await page.click('.editor');
+  await k.type('버그 시험 첫 줄');
+  await k.press('Enter');
+  await k.type('둘째 줄');
+  const L6 = await page.$eval('.shapes-layer', (e) => {
+    const r = e.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, mmW: e.offsetWidth / (96 / 25.4) };
+  });
+  const at6 = (x, y) => [L6.x + (x / L6.mmW) * L6.w, L6.y + (y / L6.mmW) * L6.w];
+  // 그림 없는 노트에서 빈 곳 두 번 누르기로 만든 첫 글상자도 줄에 붙는다
+  await page.mouse.click(...at6(60, 30), { count: 2 });
+  await page.waitForSelector('.tbox.tedit .tb-edit');
+  await k.type('첫 상자');
+  await page.click('.editor > p');
+  await sleep(150);
+  const firstBox = await page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).find((s) => s.t === 'text'));
+  check(!!firstBox?.a?.l, `그림 없던 노트의 첫 글상자도 줄에 붙음 (l=${firstBox?.a?.l})`);
+  // 글쓰기 화면에서 글상자를 눌렀다가 본문으로 → ⌥D에 고른 것이 따라오지 않음
+  await page.click('.tbox');
+  await sleep(80);
+  await page.click('.editor > p');
+  await combo(['Alt'], 'KeyD');
+  await page.waitForSelector('.drawbar');
+  check(!(await page.$('.drawbar.has-sel')), '글쓰기 화면에서 누른 글상자가 그리기의 고름으로 넘어가지 않음');
+  // ⌥D로 끝내면 본문에 커서가 돌아와 바로 이어 쓴다
+  await combo(['Alt'], 'KeyD');
+  await sleep(150);
+  await k.type('Z');
+  check((await docTextOf(page)).includes('Z'), '그리기를 끝내면 커서가 본문으로 돌아와 이어 쓰기');
+  // 긋는 중에 막대의 색을 눌러도 화살표는 이어서, 완성하면 그 색
+  await combo(['Alt'], 'KeyD');
+  await page.waitForSelector('.drawbar');
+  await press('.drawbar button', (b) => b.textContent.startsWith('화살표'));
+  await page.mouse.click(...at6(10, 50));
+  await sleep(420);
+  await press('.drawbar .swatches button', (b) => b.getAttribute('aria-label') === '파랑');
+  const stillDrawing = !!(await page.$('.drawbar .dfinish'));
+  await page.mouse.click(...at6(60, 50), { count: 2 });
+  await sleep(150);
+  const arrow6 = await page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).find((s) => s.t === 'path'));
+  check(stillDrawing && arrow6?.c === 'b' && arrow6.pts.length === 2, `긋는 중 색을 바꿔도 이어 긋고 그 색으로 (${arrow6?.c}, 점 ${arrow6?.pts.length})`);
+  // 끄는 동안 다른 데서 지워지면 놓아도 되살아나지 않음
+  const onArrow = await page.$eval('.shapes-layer svg g[data-sid] polyline', (el) => {
+    const q = el.getPointAtLength(el.getTotalLength() * 0.5);
+    const m = el.getScreenCTM();
+    return [q.x * m.a + m.e, q.y * m.d + m.f];
+  });
+  await page.mouse.move(...onArrow);
+  await page.mouse.down();
+  await page.mouse.move(onArrow[0] + 30, onArrow[1] + 20, { steps: 5 });
+  await page.evaluate((id) => window.__ayunpad.doc().ydoc.transact(() => window.__ayunpad.doc().shapes.delete(id), 'remote'), arrow6.id);
+  await page.mouse.up();
+  await sleep(120);
+  check(!(await page.evaluate((id) => window.__ayunpad.doc().shapes.has(id), arrow6.id)), '끄는 동안 지워진 그림은 놓아도 되살아나지 않음');
+  // 그리기 중 고치고 있는 글상자 안을 누르면 상자가 끌리지 않고 커서만
+  await press('.drawbar button', (b) => b.textContent.startsWith('글상자'));
+  await page.mouse.click(...at6(10, 70));
+  await page.waitForSelector('.tbox.tedit .tb-edit');
+  await k.type('가나다라마바사');
+  const tb0 = await page.$eval('.tbox.tedit', (e) => e.getBoundingClientRect().left);
+  const ed0 = await (await page.$('.tbox.tedit .tb-edit')).boundingBox();
+  await page.mouse.move(ed0.x + 4, ed0.y + ed0.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(ed0.x + ed0.width * 0.6, ed0.y + ed0.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await sleep(100);
+  const tb1 = await page.$eval('.tbox.tedit', (e) => e.getBoundingClientRect().left).catch(() => null);
+  const picked = await page.evaluate(() => getSelection()?.toString() ?? '');
+  const why = await page.evaluate(() => `${document.activeElement?.className} · ${document.querySelector('.tbox .tb-edit')?.textContent}`);
+  check(tb1 !== null && Math.abs(tb1 - tb0) < 0.5 && picked.length > 0, `그리기 중 고치던 글상자 안 끌기 → 글자 고르기, 상자는 그대로 (고른 글자 '${picked}', ${tb0}→${tb1}, ${why})`);
+  await k.press('Escape');
+  await sleep(100);
+  // select(글꼴 고르기)에 커서가 있으면 화살표 키가 그림을 옮기지 않음
+  await page.mouse.click(...at6(10, 70));
+  await sleep(100);
+  const beforeSel = await page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).find((s) => s.t === 'text').a.x);
+  await combo(['Alt'], 'KeyT');
+  await page.waitForSelector('.panel select');
+  await page.click('.panel select');
+  await k.press('ArrowDown');
+  await k.press('Escape');
+  await sleep(120);
+  const afterSel = await page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).find((s) => s.t === 'text').a.x);
+  check(beforeSel === afterSel, `글꼴 고르기 상자에서 ↓를 눌러도 그림은 그대로 (${beforeSel} → ${afterSel})`);
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await sleep(100);
+  if (await page.$('.drawbar')) await press('.drawbar .ddone', () => true);
+  // 빈 글상자를 만들고 그냥 나가면 흔적 없음(⌘Z로 안 보이는 상자가 되살아나지 않음)
+  const nText = async () => page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).filter((s) => s.t === 'text').length);
+  const n0 = await nText();
+  await page.mouse.click(...at6(70, 90), { count: 2 });
+  await page.waitForSelector('.tbox.tedit .tb-edit');
+  await page.click('.editor > p');
+  await sleep(120);
+  await combo([meta], 'KeyZ');
+  await sleep(150);
+  check((await nText()) === n0, `빈 글상자를 그냥 나가면 흔적 없음, ⌘Z로도 안 생김 (${n0} → ${await nText()})`);
+  await combo([meta, 'Shift'], 'KeyZ');
+  // 한 번 넣기(＋ 넣기 › 글상자) 중에는 도구 키가 먹지 않고 Esc로 그만두기
+  await page.$$eval('.top .tbtn', (bs) => bs.find((b) => b.textContent.includes('넣기'))?.click());
+  await page.waitForSelector('.panel.insert');
+  await page.$$eval('.panel.insert button', (bs) => bs.find((b) => b.textContent.trim() === '글상자')?.click());
+  await sleep(80);
+  await k.press('KeyA');
+  await sleep(60);
+  const quickTool = await page.$eval('.shapes-layer', (e) => [...e.classList].find((c) => c.startsWith('tool-')));
+  await k.press('Escape');
+  await sleep(80);
+  check(quickTool === 'tool-text' && !(await page.$('.shapes-layer.on')), `한 번 넣기 중에는 A가 먹지 않고 Esc로 그만두기 (${quickTool})`);
+  // A4 보기 · 다시 반쪽 · 인쇄에도 그림과 글상자 자리가 그대로(숨은 칼럼을 0으로 재지 않음)
+  await combo(['Alt'], 'KeyD');
+  await page.waitForSelector('.drawbar');
+  await press('.drawbar button', (b) => b.textContent.startsWith('화살표'));
+  await page.mouse.click(...at6(10, 40));
+  await sleep(420);
+  await page.mouse.click(...at6(50, 40), { count: 2 });
+  await sleep(150);
+  await press('.drawbar .ddone', () => true);
+  await combo(['Alt'], 'Digit3');
+  await sleep(400);
+  await combo(['Alt'], 'Digit2');
+  await sleep(400);
+  await combo(['Alt'], 'Digit3');
+  await sleep(400);
+  const a4 = await page.evaluate(() => {
+    const vb = document.querySelector('.sheet-src .shapes-svg')?.getAttribute('viewBox');
+    const page = document.querySelector('.pages');
+    const tops = [...(page?.querySelectorAll('.tbox') ?? [])].map((e) => parseFloat(e.style.top));
+    return { vb, lines: page?.querySelectorAll('.shapes-svg polyline').length ?? 0, tops };
+  });
+  check(a4.vb && !a4.vb.startsWith('0 0 0.000') && a4.lines > 0 && a4.tops.every((t) => t > 1), `A4 · 반쪽을 오가도 그림 · 글상자 그대로 (viewBox ${a4.vb}, 선 ${a4.lines}, 글상자 위치 ${a4.tops.join(',')})`);
+  await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
+  await sleep(200);
+  const pr = await page.evaluate(() => ({ lines: document.querySelectorAll('.print-root .shapes-svg polyline').length, tops: [...document.querySelectorAll('.print-root .tbox')].map((e) => parseFloat(e.style.top)) }));
+  await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+  check(pr.lines > 0 && pr.tops.length > 0 && pr.tops.every((t) => t > 1), `A4 보기에서 인쇄해도 그림 · 글상자 그대로 (선 ${pr.lines}, 글상자 ${pr.tops.join(',')})`);
+  await combo(['Alt'], 'Digit1');
+  await sleep(200);
 
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();

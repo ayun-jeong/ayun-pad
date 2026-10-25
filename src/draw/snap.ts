@@ -65,11 +65,18 @@ const keys = (b: Box, ax: Axis) => [lo(b, ax), (lo(b, ax) + hi(b, ax)) / 2, hi(b
 const overlap = (a: Box, b: Box, ax: Axis) => Math.min(hi(a, ax), hi(b, ax)) - Math.max(lo(a, ax), lo(b, ax));
 const coord = (p: XY, ax: Axis) => (ax === 'x' ? p.x : p.y);
 
-// ax 방향으로 b 바로 앞 · 뒤의 이웃(수직 방향으로 겹치는 것 중 가장 가까운 것). slack만큼은 겹쳐도 이웃으로 본다.
+// 같은 줄에 있나: 수직 방향으로 겹치면. 두께가 0인 것(수평 · 수직 선 · 화살표)은 닿기만 해도
+function inRow(a: Box, b: Box, ax: Axis): boolean {
+  const c = cross(ax);
+  const o = overlap(a, b, c);
+  return o > EPS || (o >= -EPS && Math.min(hi(a, c) - lo(a, c), hi(b, c) - lo(b, c)) <= EPS);
+}
+
+// ax 방향으로 b 바로 앞 · 뒤의 이웃(같은 줄에서 가장 가까운 것). slack만큼은 겹쳐도 이웃으로 본다.
 function before(b: Box, list: Box[], ax: Axis, slack: number): Box | undefined {
   let best: Box | undefined;
   for (const o of list) {
-    if (o === b || overlap(o, b, cross(ax)) <= 0 || hi(o, ax) > lo(b, ax) + slack || lo(o, ax) >= lo(b, ax)) continue;
+    if (o === b || !inRow(o, b, ax) || hi(o, ax) > lo(b, ax) + slack || lo(o, ax) >= lo(b, ax)) continue;
     if (!best || hi(o, ax) > hi(best, ax)) best = o;
   }
   return best;
@@ -77,7 +84,7 @@ function before(b: Box, list: Box[], ax: Axis, slack: number): Box | undefined {
 function after(b: Box, list: Box[], ax: Axis, slack: number): Box | undefined {
   let best: Box | undefined;
   for (const o of list) {
-    if (o === b || overlap(o, b, cross(ax)) <= 0 || lo(o, ax) < hi(b, ax) - slack || hi(o, ax) <= hi(b, ax)) continue;
+    if (o === b || !inRow(o, b, ax) || lo(o, ax) < hi(b, ax) - slack || hi(o, ax) <= hi(b, ax)) continue;
     if (!best || lo(o, ax) < lo(best, ax)) best = o;
   }
   return best;

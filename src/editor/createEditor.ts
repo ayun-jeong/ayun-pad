@@ -1,4 +1,4 @@
-import { baseKeymap, chainCommands, deleteSelection, joinBackward, selectNodeBackward, toggleMark } from 'prosemirror-commands';
+import { baseKeymap, chainCommands, deleteSelection, joinBackward, joinForward, selectNodeBackward, selectNodeForward, toggleMark } from 'prosemirror-commands';
 import { undoInputRule } from 'prosemirror-inputrules';
 import { keymap } from 'prosemirror-keymap';
 import { EditorState, type Command, type Plugin, type Transaction } from 'prosemirror-state';
@@ -7,7 +7,7 @@ import { EditorView } from 'prosemirror-view';
 import { redo, undo, ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
 import type * as Y from 'yjs';
 import { clipboardTextParser, clipboardTextSerializer } from './clipboard';
-import { enterCmd, insertBr, selectTableBefore, unbranchAtStart } from './commands';
+import { enterCmd, insertBr, selectWidgetAfter, selectWidgetBefore, unbranchAtStart } from './commands';
 import { autoKey, autoPlugin } from './decorations';
 import { findPlugin } from './find';
 import { idPlugin } from './ids';
@@ -18,7 +18,8 @@ import { penPlugin } from './pen';
 import { schema } from './schema';
 import { shortcutPlugin, type ShortcutHost } from './shortcuts';
 import { slashPlugin } from './slash';
-import { nodeViews, TableViewClass, trailingLinePlugin } from './widgets';
+import { undoPlugin } from './undoKey';
+import { nodeViews, tableCursorPlugin, TableViewClass, trailingLinePlugin } from './widgets';
 
 export interface EditorHooks extends ShortcutHost {
   onChange(state: EditorState, tr: Transaction | null): void;
@@ -39,13 +40,14 @@ export function enginePlugins(o: EngineOptions): Plugin[] {
   const plugins: Plugin[] = [];
   if (o.main) plugins.push(ySyncPlugin(o.main.fragment), yUndoPlugin(o.main.undoManager ? { undoManager: o.main.undoManager } : undefined), slashPlugin(o.host));
   plugins.push(mathMenuPlugin(o.settings), shortcutPlugin(o.host), rulesPlugin(o.settings));
-  if (o.main) plugins.push(columnResizing({ View: TableViewClass, cellMinWidth: 24 }), tableEditing({ allowTableNodeSelection: true }));
+  if (o.main) plugins.push(columnResizing({ View: TableViewClass, cellMinWidth: 24 }), tableEditing({ allowTableNodeSelection: true }), tableCursorPlugin());
   if (o.keys) plugins.push(keymap(o.keys));
   plugins.push(
     keymap({
       Enter: enterCmd,
       'Shift-Enter': insertBr,
-      Backspace: chainCommands(undoInputRule, unbranchAtStart, deleteSelection, selectTableBefore, joinBackward, selectNodeBackward),
+      Backspace: chainCommands(undoInputRule, unbranchAtStart, deleteSelection, selectWidgetBefore, joinBackward, selectNodeBackward),
+      Delete: chainCommands(deleteSelection, selectWidgetAfter, joinForward, selectNodeForward),
       'Mod-z': o.undo,
       'Mod-Shift-z': o.redo,
       'Mod-y': o.redo,
@@ -57,6 +59,7 @@ export function enginePlugins(o: EngineOptions): Plugin[] {
     autoPlugin(),
     penPlugin(),
     idPlugin(),
+    undoPlugin(o.undo, o.redo),
   );
   if (o.main) plugins.push(trailingLinePlugin(), findPlugin());
   return plugins;

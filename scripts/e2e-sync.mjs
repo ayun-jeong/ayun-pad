@@ -133,6 +133,7 @@ try {
   await A.keyboard.press('KeyD');
   await A.keyboard.up('Alt');
   await A.waitForSelector('.drawbar');
+  await A.keyboard.press('KeyA'); // 그리기는 고르기 상태로 시작 → 화살표 도구로
   const box = await A.$eval('.shapes-layer', (e) => {
     const r = e.getBoundingClientRect();
     return { x: r.left, y: r.top, w: r.width, mmW: e.offsetWidth / (96 / 25.4) };

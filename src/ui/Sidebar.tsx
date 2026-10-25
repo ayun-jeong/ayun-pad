@@ -45,10 +45,16 @@ export function Sidebar({ lib, noteId, open, onOpen, onClose }: Props) {
       {subjects.map((s) => (
         <div className="subject" key={s.id}>
           <div className="subject-name" onDoubleClick={() => setEditing(s.id)}>
+            {editing !== s.id && ![...lib.notes.values()].some((n) => n.subjectId === s.id) && (
+              <button type="button" className="mini subject-del" title="빈 과목 지우기" aria-label={`${s.name} 과목 지우기`} onClick={() => lib.subjects.delete(s.id)}>
+                ×
+              </button>
+            )}
             {editing === s.id ? (
               <input
                 autoFocus
                 defaultValue={s.name}
+                onFocus={(e) => e.currentTarget.select()}
                 aria-label="과목 이름"
                 onBlur={(e) => commitSubject(s.id, e.currentTarget.value)}
                 onKeyDown={(e) => {
@@ -96,6 +102,7 @@ export function Sidebar({ lib, noteId, open, onOpen, onClose }: Props) {
                   <input
                     autoFocus
                     defaultValue={n.title}
+                    onFocus={(e) => e.currentTarget.select()}
                     aria-label="노트 이름"
                     onClick={(e) => e.stopPropagation()}
                     onBlur={(e) => commitNote(n.id, e.currentTarget.value)}
@@ -127,6 +134,7 @@ export function Sidebar({ lib, noteId, open, onOpen, onClose }: Props) {
             onClick={() => {
               const n = addNote(lib, s.id, '새 노트');
               onOpen(n.id);
+              if (window.innerWidth <= 720) onClose();
             }}
           >
             + 노트

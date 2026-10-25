@@ -6,6 +6,7 @@ import * as Y from 'yjs';
 import { SHAPES } from '../draw/model';
 import { ShapesLayer, type DrawState, type WidgetApi } from '../draw/ShapesLayer';
 import { createEditor, type EditorHooks } from '../editor/createEditor';
+import { newId } from '../editor/ids';
 import { autoKey } from '../editor/decorations';
 import type { RuleSettings } from '../editor/inputRules';
 import { fitPitch, halfLabel, HALF_W, DEFAULT_TYPO, type Typo } from '../editor/layout';
@@ -16,7 +17,7 @@ import { slashKey, type SlashState } from '../editor/slash';
 import { MathMenu, SlashMenu } from './Menus';
 import { ensureFont } from '../store/fontSync';
 import { openNote, readTypo, type NoteDoc } from '../store/noteDoc';
-import { hub } from '../store/sync';
+import { hub, REMOTE } from '../store/sync';
 
 export const PX_PER_MM = 96 / 25.4;
 // 종이 왼쪽 회색 칸(쪽 번호 자리). 종이 밖이라 필기와 붙지 않고 인쇄되지 않는다.
@@ -136,8 +137,10 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
     frame.current = requestAnimationFrame(() => {
       frame.current = 0;
       const ed = mountRef.current?.querySelector<HTMLElement>('.editor');
+      // 반쪽 · A4 보기 중에는 편집 칸이 숨어 있어(display:none) 높이가 0으로 재진다 → 재지 않고 둔다(인쇄 · 보기 복제가 망가지지 않게)
+      if (!ed || ed.offsetParent === null) return;
       const f = fitPitch(typoRef.current);
-      if (ed) pushWidgets(ed, f.usable * PX_PER_MM, f.pitch * PX_PER_MM, zoomRef.current || 1);
+      pushWidgets(ed, f.usable * PX_PER_MM, f.pitch * PX_PER_MM, zoomRef.current || 1);
       // 그림 층은 그림이 있을 때만 다시 그린다(글만 쓰는 동안은 가볍게)
       if (liveRef.current?.doc.shapes.size || drawOn.current) bumpTick();
     });
@@ -151,15 +154,17 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
     const onMeta = () => setTypo(readTypo(doc));
     const onUpdate = (_u: Uint8Array, origin: unknown) => {
       if (origin !== null && typeof origin === 'object' && 'whenSynced' in (origin as object)) return; // IndexedDB에서 읽어 온 것
+      if (origin === REMOTE) return; // 다른 기기에서 온 것(그쪽에서 이미 고친 시각을 올렸다)
       cb.current.onEdit();
     };
     void doc.ready.then(async () => {
       if (cancelled) return;
       // 로그인돼 있으면 서버 내용을 먼저 받는다(최대 3초). 받기 전에 빈 줄을 깔면 기기마다 빈 줄이 하나씩 늘어난다.
-      if (hub.session) await Promise.race([hub.pullOnce(`note:${noteId}`, doc.ydoc), new Promise((r) => setTimeout(r, 3000))]);
+      // 이 기기에 내용이 없을 때만 기다린다(있으면 바로 열고 실시간 동기화가 합친다). 느린 망에서도 빈 줄이 더 생기지 않게 넉넉히 10초.
+      if (hub.session && doc.fragment.length === 0) await Promise.race([hub.pullOnce(`note:${noteId}`, doc.ydoc), new Promise((r) => setTimeout(r, 10000))]);
       if (cancelled || !mountRef.current) return;
       // 새 노트는 편집기를 열기 전에 빈 줄 하나를 깔아 둔다. 그래야 첫 입력을 ⌘Z로 되돌려도 줄 없는 노트가 되지 않는다.
-      if (doc.fragment.length === 0) prosemirrorToYXmlFragment(schema.node('doc', null, [schema.node('line')]), doc.fragment);
+      if (doc.fragment.length === 0) prosemirrorToYXmlFragment(schema.node('doc', null, [schema.node('line', { id: newId() })]), doc.fragment);
       setTypo(readTypo(doc));
       doc.meta.observe(onMeta);
       doc.ydoc.on('update', onUpdate);
@@ -185,7 +190,9 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
       setLive({ doc, view, um });
       cb.current.onDoc(doc, view, srcRef.current, um);
       hub.attach(`note:${noteId}`, doc.ydoc);
-      view.focus();
+      // 다른 입력 칸(새 과목 이름 등)에 커서가 있으면 뺏지 않는다
+      const a = document.activeElement as HTMLElement | null;
+      if (!a || a === document.body || !(a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable)) view.focus();
     });
     return () => {
       cancelled = true;

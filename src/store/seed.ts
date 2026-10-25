@@ -1,3 +1,4 @@
+import { newId } from '../editor/ids';
 import { prosemirrorToYXmlFragment } from 'y-prosemirror';
 import type { Kind } from '../editor/model';
 import { schema } from '../editor/schema';
@@ -23,7 +24,7 @@ export function sampleDoc() {
   return schema.node(
     'doc',
     null,
-    SAMPLE.map(([depth, kind, text]) => schema.node('line', { depth, kind }, text ? [schema.text(text)] : [])),
+    SAMPLE.map(([depth, kind, text]) => schema.node('line', { id: newId(), depth, kind }, text ? [schema.text(text)] : [])),
   );
 }
 

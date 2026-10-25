@@ -124,7 +124,7 @@ export function buildShortcuts(): Map<string, Run> {
   });
   // ⌥Tab : 글 바로 옆으로 가지(┬─). Tab(아래 가지)과 짝. 자식이 있으면 아래 ↔ 옆 바꾸기.
   // 윈도는 Alt+Tab이 창 바꾸기라 Alt+] 로.
-  const side: Run = (v, h) => sideCmd((s, created) => h.toast(created ? '옆 가지: Enter로 다음 항목' : s ? '자식을 옆으로' : '자식을 아래로'))(v.state, v.dispatch, v);
+  const side: Run = (v) => sideCmd()(v.state, v.dispatch, v);
   map.set('alt+Tab', side);
   if (!isMac) map.set('alt+BracketRight', side);
   map.set('mod+BracketRight', exec(indentCmd(1)));

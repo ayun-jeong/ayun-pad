@@ -259,7 +259,7 @@ export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial,
               모두 해제
             </button>
             <span>
-              {pickable.length}곳 중 <b>{onCount}</b>곳 고름{labels ? ` · 이름표 ${labels}곳은 찾기만` : ''}
+              <b>{onCount}</b>곳 고름{labels ? ` · 이름표 ${labels}곳은 찾기만` : ''}
             </span>
           </div>
           <ol className="find-list" ref={list}>
@@ -348,11 +348,11 @@ export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial,
         </div>
       </div>
       <div className="find-undo">
-        <button type="button" onClick={() => um?.undo()} title="되돌리기 (⌘Z)">
-          ↶ 되돌리기
+        <button type="button" onClick={() => um?.undo()} title="되돌리기 (⌘Z)" aria-label="되돌리기">
+          ↶
         </button>
-        <button type="button" onClick={() => um?.redo()} title="다시 하기 (⌘⇧Z)">
-          ↷ 다시
+        <button type="button" onClick={() => um?.redo()} title="다시 하기 (⌘⇧Z)" aria-label="다시 하기">
+          ↷
         </button>
         <button type="button" onClick={onEmph} title="노트의 강조 표시를 모두 보고 하나씩 · 한 번에 지우기">
           강조 모아 보기 · 지우기

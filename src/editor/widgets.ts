@@ -1,8 +1,10 @@
 import type { Node } from 'prosemirror-model';
 import { NodeSelection, Plugin, Selection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
+import { Decoration, DecorationSet } from 'prosemirror-view';
 import { addColumnAfter, addRowAfter, deleteColumn, deleteRow, TableView } from 'prosemirror-tables';
 import type { EditorView, NodeView } from 'prosemirror-view';
-import { undo, yUndoPluginKey } from 'y-prosemirror';
+import { yUndoPluginKey } from 'y-prosemirror';
+import { runUndo } from './undoKey';
 import { arrowize } from './arrows';
 import { MAX_DEPTH } from './model';
 import { schema } from './schema';
@@ -263,7 +265,7 @@ abstract class WidgetView implements NodeView {
     } else if (mod && (e.code === 'KeyZ' || e.code === 'KeyY')) {
       e.preventDefault();
       t.blur();
-      undo(this.view.state);
+      runUndo(this.view, e.shiftKey || e.code === 'KeyY'); // ⌘⇧Z · Ctrl+Y는 다시 하기
       this.view.focus();
     }
   }
@@ -572,7 +574,8 @@ class PadTableView extends TableView {
   private placeHandle() {
     this.handle.style.left = `${this.table.offsetLeft + this.table.offsetWidth}px`;
     this.handle.style.top = `${this.table.offsetTop + this.table.offsetHeight}px`;
-    this.ctl.style.left = `${this.table.offsetLeft}px`;
+    // 막대는 표 오른쪽 위(윗줄 글은 보통 왼쪽에 있어서 덜 가린다)
+    this.ctl.style.left = `${this.table.offsetLeft + this.table.offsetWidth}px`;
     this.ctl.style.top = `${this.table.offsetTop}px`;
   }
 
@@ -688,7 +691,24 @@ export function focusFirstLabel(view: EditorView) {
     const node = view.state.doc.resolve(before).nodeBefore;
     if (node?.type !== schema.nodes.tl) return;
     const dom = view.nodeDOM(before - node.nodeSize) as HTMLElement | null;
-    dom?.querySelector<HTMLElement>('.tl-val .wg-ed')?.focus();
+    // 연도를 넣어 만든 연표면 연도는 이미 있으니 첫 사건 칸으로(아니면 첫 연도 칸). 커서는 글 끝에.
+    const year = dom?.querySelector<HTMLElement>('.tl-val .wg-ed');
+    const target = year?.textContent ? dom?.querySelector<HTMLElement>('.tl-lab .wg-ed') : year;
+    if (target) focusEnd(target);
+  });
+}
+
+// 커서가 들어 있는 표에 tbl-cur(막대 · 크기 손잡이를 그때만 보인다)
+export function tableCursorPlugin(): Plugin {
+  return new Plugin({
+    props: {
+      decorations(state) {
+        const $f = state.selection.$from;
+        for (let d = $f.depth; d > 0; d--)
+          if ($f.node(d).type.name === 'table') return DecorationSet.create(state.doc, [Decoration.node($f.before(d), $f.after(d), { class: 'tbl-cur' })]);
+        return null;
+      },
+    },
   });
 }
 

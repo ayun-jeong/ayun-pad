@@ -114,6 +114,11 @@ describe('스마트 보조선 · 스냅', () => {
     expect(s.dx).toBeCloseTo(-0.6);
     expect(s.gaps.length).toBe(2);
   });
+  it('두께가 0인 수평 화살표끼리도 같은 간격', () => {
+    const s = snapMove(B(40.6, 5, 10, 0), [B(0, 5, 10, 0), B(20, 5, 10, 0)], 1.3);
+    expect(s.dx).toBeCloseTo(-0.6);
+    expect(s.gaps.length).toBe(2);
+  });
   it('⇧로 가로만 옮길 때는 세로를 맞추지 않는다', () => {
     const s = snapMove(B(10.5, 10.5, 5, 5), [B(10, 10, 5, 5)], 1.3, 'x');
     expect(s.dy).toBe(0);

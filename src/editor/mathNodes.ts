@@ -1,7 +1,9 @@
 import type { Node } from 'prosemirror-model';
-import { TextSelection } from 'prosemirror-state';
+import { NodeSelection, Selection, TextSelection } from 'prosemirror-state';
+import { CellSelection } from 'prosemirror-tables';
 import type { EditorView, NodeView } from 'prosemirror-view';
-import { redo, undo, yUndoPluginKey } from 'y-prosemirror';
+import { yUndoPluginKey } from 'y-prosemirror';
+import { runUndo } from './undoKey';
 import { arrowize } from './arrows';
 import { schema } from './schema';
 
@@ -160,8 +162,7 @@ abstract class InlineMathView implements NodeView {
     } else if (mod && (e.code === 'KeyZ' || e.code === 'KeyY')) {
       stop();
       el.blur();
-      if (e.shiftKey || e.code === 'KeyY') redo(this.view.state);
-      else undo(this.view.state);
+      runUndo(this.view, e.shiftKey || e.code === 'KeyY'); // 본문이면 Yjs, 글상자면 그 글상자 되돌리기
       this.view.focus();
     }
   }
@@ -233,8 +234,15 @@ export function focusMath(view: EditorView, pos: number) {
 export function insertMath(view: EditorView, kind: 'frac' | 'sqrt', at?: number) {
   const { state } = view;
   const tr = state.tr;
-  let pos = at ?? state.selection.from;
-  if (at === undefined && !state.selection.empty) {
+  const sel = state.selection;
+  let pos = at ?? sel.from;
+  if (at === undefined && sel instanceof NodeSelection && sel.node.isBlock) {
+    // 위젯을 고른 채 넣기: 위젯은 두고 그 아래 새 줄에
+    tr.insert(sel.to, schema.nodes.line.create({ depth: (sel.node.attrs.depth as number) ?? 0 }));
+    pos = sel.to + 1;
+  } else if (at === undefined && sel instanceof CellSelection) {
+    pos = Selection.findFrom(state.doc.resolve(sel.$headCell.pos + 1), 1, true)?.from ?? sel.from; // 칸 여러 개: 지우지 않고 마지막 칸에
+  } else if (at === undefined && !sel.empty) {
     tr.deleteSelection();
     pos = tr.selection.from;
   }

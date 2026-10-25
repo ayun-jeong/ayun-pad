@@ -241,14 +241,13 @@ export function EmphasisPanel({ view, state, ydoc, shapes, um, src, usable, toas
         >
           {filter === 'all' ? '전부' : `${NAME[filter]} 전부`} 지우기 ({shown.length})
         </button>
-        <button type="button" onClick={() => um?.undo()} title="되돌리기 (⌘Z)">
-          ↶ 되돌리기
+        <button type="button" onClick={() => um?.undo()} title="되돌리기 (⌘Z)" aria-label="되돌리기">
+          ↶
         </button>
-        <button type="button" onClick={() => um?.redo()} title="다시 하기 (⌘⇧Z)">
-          ↷ 다시
+        <button type="button" onClick={() => um?.redo()} title="다시 하기 (⌘⇧Z)" aria-label="다시 하기">
+          ↷
         </button>
       </div>
-      <p className="note">줄을 누르면 그 자리로 가요. ×는 그 강조만, 아래 단추는 지금 보이는 종류를 한꺼번에 지워요.</p>
     </section>
   );
 }

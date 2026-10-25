@@ -18,17 +18,9 @@ const GRAPHS: [GraphTpl, string][] = [
   ['plc', '제품수명주기'],
 ];
 
-const SHAPES: [AppAction, string][] = [
-  ['draw-text', '글상자'],
-  ['draw-rect', '네모'],
-  ['draw-ellipse', '원'],
-  ['draw-line', '선'],
-  ['draw-arrow', '화살표'],
-];
-
 const n = (v: string, d: number) => (v.trim() !== '' && Number.isFinite(Number(v)) ? Number(v) : d);
 
-// '＋ 넣기': 표 · 수직선 · 연표 · 그래프 · 분수 · 루트 · 글상자 · 도형. 지금 커서가 있던 줄 다음에 넣는다.
+// '＋ 넣기': 표 · 수직선 · 연표 · 그래프 · 분수 · 루트 · 글상자. 지금 커서가 있던 줄 다음에 넣는다(도형은 ✎ 그리기).
 // 본문에서 / 를 쳐도 같은 것을 넣을 수 있다(/표 3x4, /연표 2016 10).
 export function InsertPanel({ view, app, onClose }: Props) {
   const [rows, setRows] = useState('3');
@@ -108,27 +100,17 @@ export function InsertPanel({ view, app, onClose }: Props) {
       </div>
 
       <div className="ins-row">
-        <b>수식</b>
+        <b>그 밖에</b>
         <button type="button" onClick={() => run(() => insertMath(view, 'frac'), false)}>
           분수
         </button>
         <button type="button" onClick={() => run(() => insertMath(view, 'sqrt'), false)}>
           루트 √
         </button>
+        <button type="button" onClick={() => run(() => app('draw-text'), false)} title="누르고 종이를 누르면 그 자리에(빈 곳 두 번 누르기 · ⌥+클릭으로도)">
+          글상자
+        </button>
       </div>
-
-      <div className="ins-row">
-        <b>그림</b>
-        {SHAPES.map(([a, name]) => (
-          <button key={a} type="button" onClick={() => run(() => app(a), false)}>
-            {name}
-          </button>
-        ))}
-      </div>
-
-      <p className="note">
-        본문에서 <kbd>/</kbd>를 쳐도 넣을 수 있어요(/표 3x4 · /연표 2016 10). <kbd>⌥</kbd>+클릭이면 종이 아무 데나 바로 글상자.
-      </p>
     </section>
   );
 }
