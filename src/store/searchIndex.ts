@@ -1,11 +1,13 @@
 import type { Node } from 'prosemirror-model';
 import { yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror';
+import type { Shape } from '../draw/model';
 import { lineText } from '../editor/decorations';
 import { headText } from '../editor/find';
 import { allCho, choString, matchAt } from '../editor/hangul';
 import { schema } from '../editor/schema';
-import type { Library } from './library';
+import type { Library, NoteMeta } from './library';
 import { openNote } from './noteDoc';
+import { hub } from './sync';
 
 // ⌘K 전체 검색용 색인. 노트마다 줄 글과 트리 경로(위 줄들의 주제어)를 모아 둔다.
 // 고친 시각(updatedAt)이 같으면 다시 읽지 않는다.
@@ -22,6 +24,7 @@ export interface IndexLine extends Prepared {
   id: string | null;
   idx: number; // 문서 맨 바깥 블록 번호(id가 없을 때 찾아가는 데 쓴다)
   path: string[];
+  box?: string; // 글상자 안 글이면 그 글상자 id
 }
 
 export interface NoteIndex {
@@ -64,24 +67,46 @@ export function indexDoc(doc: Node): IndexLine[] {
   return out;
 }
 
-export async function indexNotes(lib: Library, live: { noteId: string; doc: Node } | null, onNote: (ni: NoteIndex) => void, stopped: () => boolean) {
-  const notes = [...lib.notes.values()].filter((n) => !n.deleted).sort((a, b) => b.updatedAt - a.updatedAt);
-  for (const n of notes) {
-    if (stopped()) return;
+// 글상자 글도 찾는다(글상자마다 줄 단위로)
+export function indexShapes(shapes: Iterable<Shape>): IndexLine[] {
+  const out: IndexLine[] = [];
+  for (const s of shapes) {
+    if (s.t !== 'text') continue;
+    for (const line of (s.text || '').split('\n')) {
+      const text = clean(line);
+      if (text.trim()) out.push({ id: null, idx: -1, path: ['글상자'], box: s.id, ...prep(text) });
+    }
+  }
+  return out;
+}
+
+// 노트마다 본문 · 글상자 색인. skip은 빼고(찾기 판은 지금 노트를 편집기에서 바로 찾는다).
+// 로그인돼 있으면 서버에서 먼저 받아서 찾는다 — 다른 기기에서 쓰고 이 기기에서는 아직 안 연 노트도 나오게.
+export async function indexNotes(
+  lib: Library,
+  live: { noteId: string; doc: Node; shapes?: Iterable<Shape> } | null,
+  onNote: (ni: NoteIndex) => void,
+  stopped: () => boolean,
+  skip?: string,
+) {
+  const notes = [...lib.notes.values()].filter((n) => !n.deleted && n.id !== skip).sort((a, b) => b.updatedAt - a.updatedAt);
+  const one = async (n: NoteMeta) => {
     if (live && n.id === live.noteId) {
-      onNote({ noteId: n.id, at: n.updatedAt, lines: indexDoc(live.doc) });
-      continue;
+      onNote({ noteId: n.id, at: n.updatedAt, lines: [...indexDoc(live.doc), ...indexShapes(live.shapes ?? [])] });
+      return;
     }
     const hit = cache.get(n.id);
     if (hit && hit.at === n.updatedAt) {
       onNote(hit);
-      continue;
+      return;
     }
     const d = openNote(n.id);
     try {
       await d.ready;
+      if (hub.session) await Promise.race([hub.pullOnce(`note:${n.id}`, d.ydoc), new Promise((r) => setTimeout(r, 5000))]);
+      if (stopped()) return;
       const root = yXmlFragmentToProseMirrorRootNode(d.fragment, schema);
-      const ni = { noteId: n.id, at: n.updatedAt, lines: indexDoc(root) };
+      const ni = { noteId: n.id, at: n.updatedAt, lines: [...indexDoc(root), ...indexShapes(d.shapes.values())] };
       cache.set(n.id, ni);
       onNote(ni);
     } catch {
@@ -89,7 +114,13 @@ export async function indexNotes(lib: Library, live: { noteId: string; doc: Node
     } finally {
       d.destroy();
     }
-  }
+  };
+  // 네 개씩 나란히(서버에서 받는 동안 줄 서서 기다리지 않게)
+  let i = 0;
+  const worker = async () => {
+    while (i < notes.length && !stopped()) await one(notes[i++]);
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
 }
 
 // 글 안에서 찾기: 그대로(대소문자 무시) → 초성만이면 초성 글에서 → 섞였으면(치는 중 글자) 첫 글자가 맞는 자리만 자세히

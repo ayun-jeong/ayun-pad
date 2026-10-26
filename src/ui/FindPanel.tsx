@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { NodeSelection, TextSelection, type EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import type * as Y from 'yjs';
@@ -7,7 +7,10 @@ import { searchText, textDoc, withEffects, withReplaced } from '../draw/TextBox'
 import { applyEffects, findKey, findMeta, pathOf, removeEffects, replaceHits, searchLabels, snippet, type Effect } from '../editor/find';
 import { halfLabel } from '../editor/layout';
 import { PEN, PEN_NAME, type PenKey } from '../editor/model';
+import type { Library } from '../store/library';
+import { findIn, indexNotes, type NoteIndex } from '../store/searchIndex';
 import { PX_PER_MM } from './EditorPane';
+import type { JumpTarget } from './SearchPalette';
 
 interface Props {
   view: EditorView;
@@ -18,10 +21,16 @@ interface Props {
   src: HTMLElement | null;
   usable: number;
   initial: string;
+  onQuery?(q: string): void;
   toast(msg: string): void;
+  lib: Library;
+  noteId: string | null;
+  onOpenNote(noteId: string, target: JumpTarget): void;
   onClose(): void;
   onEmph(): void;
 }
+
+const OTHER_MAX = 40;
 
 const EFFECTS: { k: Effect; name: string; colors: PenKey[] }[] = [
   { k: 'circ', name: '동그라미', colors: ['r', 'b', 'k', 'p', 'g', 'y'] },
@@ -46,7 +55,7 @@ type Row =
 
 // ⌘F: 이 노트(본문 · 표 · 글상자 · 위젯 이름표)에서 찾고, 고른 곳에만 동그라미 · 밑줄 · 형광펜 · 글자색을 한 번에.
 // 고름은 적용할 때까지 그대로 남고, 판을 닫았다 열어도 · 그 사이 글을 고쳐도 남는다. 검색어를 바꿀 때만 다시 전부 고름.
-export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial, toast, onClose, onEmph }: Props) {
+export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial, onQuery, toast, lib, noteId, onOpenNote, onClose, onEmph }: Props) {
   const fs = findKey.getState(state);
   const [q, setQ] = useState(initial);
   const [rep, setRep] = useState('');
@@ -64,6 +73,7 @@ export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial,
     return () => shapes.unobserve(o);
   }, [shapes]);
   useEffect(() => {
+    onQuery?.(q);
     if (!view.isDestroyed) view.dispatch(findMeta(view.state.tr, { query: q, open: true }));
     if (boxOff.query !== q) boxOff.off.clear();
     boxOff.query = q;
@@ -87,6 +97,58 @@ export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial,
   useEffect(() => {
     list.current?.querySelector('li.cur')?.scrollIntoView({ block: 'nearest' });
   }, [ci]);
+
+  // 다른 노트에서도 찾는다(본문 · 글상자, 다른 기기에서 쓴 노트도). 누르면 그 노트로 가서 이 판 그대로 강조를 이어 한다.
+  const [index, setIndex] = useState<Map<string, NoteIndex>>(new Map());
+  const [indexing, setIndexing] = useState(true);
+  useEffect(() => {
+    let stop = false;
+    let t = 0;
+    const acc = new Map<string, NoteIndex>();
+    setIndexing(true);
+    void indexNotes(
+      lib,
+      null,
+      (ni) => {
+        acc.set(ni.noteId, ni);
+        if (!t) t = window.setTimeout(() => ((t = 0), setIndex(new Map(acc))), 80);
+      },
+      () => stop,
+      noteId ?? undefined,
+    ).then(() => {
+      if (stop) return;
+      setIndex(new Map(acc));
+      setIndexing(false);
+    });
+    return () => {
+      stop = true;
+      clearTimeout(t);
+    };
+  }, [lib, noteId]);
+  const others = useMemo(() => {
+    const query = q.trim();
+    if (!query) return [];
+    const out: { key: string; noteId: string; title: string; pre: string; hit: string; post: string; target: JumpTarget }[] = [];
+    const notes = [...lib.notes.values()].filter((n) => !n.deleted && n.id !== noteId).sort((a, b) => b.updatedAt - a.updatedAt);
+    for (const n of notes) {
+      for (const l of index.get(n.id)?.lines ?? []) {
+        const m = findIn(l, query);
+        if (!m) continue;
+        const a = Math.max(0, m.at - 12);
+        out.push({
+          key: `${n.id}:${l.idx}:${l.box ?? l.id ?? ''}:${m.at}`,
+          noteId: n.id,
+          title: [n.title, ...l.path].join(' › '),
+          pre: (a > 0 ? '…' : '') + l.text.slice(a, m.at),
+          hit: l.text.slice(m.at, m.at + m.len),
+          post: l.text.slice(m.at + m.len, m.at + m.len + 24),
+          target: { lineId: l.id, idx: l.idx, q: l.text.slice(m.at, m.at + m.len), box: l.box },
+        });
+        if (out.length >= OTHER_MAX) return out;
+      }
+    }
+    return out;
+  }, [q, index, lib, noteId]);
 
   const body = fs?.hits ?? [];
   const boxes: TextShape[] = [...shapes.values()].filter((s): s is TextShape => s.t === 'text').sort((a, b) => a.z - b.z);
@@ -336,6 +398,9 @@ export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial,
           <button type="button" onClick={clear} disabled={!onCount} title="고른 효과(없으면 전부)를 고른 곳에서 지웁니다">
             효과 지우기
           </button>
+          <button type="button" onClick={onEmph} title="노트의 강조 표시를 모두 보고 하나씩 · 한 번에 지우기">
+            강조 모아 보기 · 지우기
+          </button>
         </div>
       </div>
       <div className="sub find-rep">
@@ -354,11 +419,32 @@ export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial,
         <button type="button" onClick={() => um?.redo()} title="다시 하기 (⌘⇧Z)" aria-label="다시 하기">
           ↷
         </button>
-        <button type="button" onClick={onEmph} title="노트의 강조 표시를 모두 보고 하나씩 · 한 번에 지우기">
-          강조 모아 보기 · 지우기
-        </button>
         <span className="note">↑↓ · Enter 이동 · Space 고르기 · ⌘Enter 적용</span>
       </div>
+      {q.trim() && (
+        <div className="sub find-others">
+          <label>
+            다른 노트에서 {others.length >= OTHER_MAX ? `${OTHER_MAX}곳 넘게` : `${others.length}곳`}
+            {indexing ? ' · 찾는 중…' : ''}
+          </label>
+          {others.length > 0 && (
+            <ol className="find-list">
+              {others.map((o) => (
+                <li key={o.key}>
+                  <button type="button" onClick={() => onOpenNote(o.noteId, o.target)} title="그 노트로 가서 이어서 강조하기">
+                    <span className="find-at">{o.title}</span>
+                    <span className="find-snip">
+                      {o.pre}
+                      <mark>{o.hit}</mark>
+                      {o.post}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
     </section>
   );
 }

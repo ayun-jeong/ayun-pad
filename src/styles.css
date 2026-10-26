@@ -529,3 +529,7 @@ body.drawing .toasts { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 104
 .touchbar small { display: none; }
 @media (pointer: coarse), (max-width: 720px) { .touchbar small { display: block; } }
 .subject-name .subject-del { order: 2; }
+
+/* 찾기 판: 다른 노트에서 찾은 곳 */
+.find-others .find-list { max-height: 24vh; }
+.find-others label { color: var(--ink-2); font-size: 13px; }

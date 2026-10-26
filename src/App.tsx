@@ -73,6 +73,12 @@ export function App() {
   const [menu, setMenu] = useState(false);
   const titleAtFocus = useRef('');
   const closeMenu = useCallback(() => setMenu(false), []);
+  // 찾기 판의 검색어(다른 노트로 옮겨 가며 판이 다시 떠도 이어지게)
+  const findQ = useRef('');
+  const closeFind = useCallback(() => {
+    setFind(null);
+    viewRef.current?.focus();
+  }, []);
   const [account, setAccount] = useState(false);
   const [versions, setVersions] = useState(false);
   const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([]);
@@ -86,7 +92,7 @@ export function App() {
   const [draw, setDrawState] = useState<DrawState | null>(null);
   const [find, setFind] = useState<{ initial: string } | null>(null);
   const [edState, setEdState] = useState<EditorState | null>(null);
-  const [search, setSearch] = useState<{ live: { noteId: string; doc: import('prosemirror-model').Node } | null } | null>(null);
+  const [search, setSearch] = useState<{ live: { noteId: string; doc: import('prosemirror-model').Node; shapes?: import('./draw/model').Shape[] } | null } | null>(null);
   const findRef = useRef(false);
   findRef.current = !!find;
   const pendingJump = useRef<{ noteId: string; target: JumpTarget } | null>(null);
@@ -267,7 +273,7 @@ export function App() {
           break;
         case 'search': {
           const v = viewRef.current;
-          setSearch({ live: v && noteRef.current ? { noteId: noteRef.current, doc: v.state.doc } : null });
+          setSearch({ live: v && noteRef.current ? { noteId: noteRef.current, doc: v.state.doc, shapes: [...(docRef.current?.shapes.values() ?? [])] } : null });
           break;
         }
         case 'save':
@@ -345,7 +351,9 @@ export function App() {
           const { from, to, empty, $from, $to } = v.state.selection;
           const picked = empty || !$from.sameParent($to) ? '' : v.state.doc.textBetween(from, to, ' ');
           setEdState(v.state);
-          setFind({ initial: picked && picked.length <= 40 ? picked : (findKey.getState(v.state)?.query ?? '') });
+          const init = picked && picked.length <= 40 ? picked : findQ.current || (findKey.getState(v.state)?.query ?? '');
+          findQ.current = init;
+          setFind({ initial: init });
           break;
         }
         case 'pitch-down':
@@ -469,6 +477,18 @@ export function App() {
 
   // 검색에서 고른 줄로: 줄 id로 찾고(없으면 블록 번호), 찾은 말을 골라 둔 채 화면을 옮긴다
   const jumpTo = useCallback((v: EditorView, t: JumpTarget) => {
+    // 글상자 안 글: 그 글상자로 가서 잠깐 깜박인다
+    if (t.box) {
+      const el = srcRef.current?.querySelector(`.tbox[data-sid="${t.box}"]`);
+      if (el) {
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        el.classList.remove('flash');
+        void (el as HTMLElement).offsetWidth;
+        el.classList.add('flash');
+        setTimeout(() => el.classList.remove('flash'), 1200);
+      }
+      return;
+    }
     const doc = v.state.doc;
     let pos = -1;
     if (t.lineId)
@@ -710,8 +730,8 @@ export function App() {
         <button type="button" className={`tbtn${insert ? ' on' : ''}`} onClick={() => act('insert')} title="표 · 수직선 · 연표 · 그래프 · 분수 · 글상자 · 도형 넣기 (본문에서 / 도 됨)">
           ＋<span className="wide-only"> 넣기</span>
         </button>
-        <button type="button" className="tbtn" onClick={() => act('search')} title="검색 · 모든 명령 (⌘K)" aria-label="검색">
-          ⌕<span className="wide-only"> 검색</span>
+        <button type="button" className={`tbtn${find ? ' on' : ''}`} onClick={() => (find ? closeFind() : act('find'))} title="찾기: 찾은 곳에 동그라미 · 밑줄 · 형광펜, 강조 지우기, 다른 노트 결과도 (⌘F) · 전체 검색 · 명령은 ⌘K" aria-label="찾기">
+          ⌕<span className="wide-only"> 찾기</span>
         </button>
         <button type="button" className={`tbtn more-btn${menu ? ' on' : ''}`} onClick={() => setMenu((x) => !x)} aria-label="더 보기" aria-expanded={menu} title="찾기 · 강조 · 글자 모양 · 배율 · 인쇄 · 로그인 · 백업 · 도움말">
           ⋯
@@ -808,13 +828,14 @@ export function App() {
           um={umRef.current}
           src={srcRef.current}
           usable={typo ? fitPitch(typo).usable : 291}
-          initial={find.initial}
+          initial={findQ.current || find.initial}
+          onQuery={(x) => (findQ.current = x)}
           toast={toast}
+          lib={lib}
+          noteId={noteId}
+          onOpenNote={openFromSearch}
           onEmph={() => act('emph')}
-          onClose={() => {
-            setFind(null);
-            viewRef.current?.focus();
-          }}
+          onClose={closeFind}
         />
       )}
       {emph && viewRef.current && edState && docRef.current && (

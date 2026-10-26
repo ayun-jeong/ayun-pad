@@ -290,7 +290,7 @@ try {
     });
   await page.$$eval('.fx-actions button', (b) => b[0].click());
   await sleep(150);
-  await clickText('.find-undo button', '강조 모아');
+  await clickText('.panel.find button', '강조 모아');
   await page.waitForSelector('.panel.emph');
   await sleep(100);
   const emAt = await page.$$eval('.emph-list .find-at', (e) => e.map((x) => x.textContent));
@@ -311,6 +311,63 @@ try {
   await sleep(150);
   cc = await circs();
   check(cc.body === 1 && cc.box, `되돌리기 한 번에 둘 다 돌아옴 (${JSON.stringify(cc)})`);
+  await k.press('Escape');
+  await page.$$eval('.note-item .t', (els) => els.find((e) => e.textContent === '견본 · 경영학')?.click());
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 11);
+  await sleep(300);
+
+  // 6-3) 위쪽 ⌕ = 찾기 판, 다른 노트 결과 → 누르면 그 노트로 가서 이어서 강조 / ⌘K는 글상자 글도 찾는다
+  await page.click('.addnote');
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+  await (await page.waitForSelector('.editor')).click();
+  await k.type('다른 노트의 직무분석 줄');
+  await sleep(300);
+  const Lx = await page.$eval('.shapes-layer', (e) => {
+    const r = e.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, mmW: e.offsetWidth / (96 / 25.4) };
+  });
+  await page.mouse.click(Lx.x + (40 / Lx.mmW) * Lx.w, Lx.y + (50 / Lx.mmW) * Lx.w, { count: 2 });
+  await page.waitForSelector('.tbox.tedit .tb-edit');
+  await k.type('글상자에만 쓴 보상관리');
+  await (await page.waitForSelector('.editor')).click();
+  await sleep(700);
+  await page.$$eval('.note-item .t', (els) => els.find((e) => e.textContent === '견본 · 경영학')?.click());
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 11);
+  await sleep(300);
+  await page.click('.top .tbtn[aria-label="찾기"]');
+  const panelOpen = await page.waitForSelector('.panel.find input[type=search]', { timeout: 3000 }).then(() => true, () => false);
+  check(panelOpen, '위쪽 ⌕ → 찾기 판(동그라미 · 밑줄 · 강조 모아 보기)');
+  await page.$eval('.panel.find input[type=search]', (e) => e.select());
+  await k.type('직무분석');
+  await page.waitForFunction(() => document.querySelectorAll('.find-others .find-list li').length > 0, { timeout: 6000 }).catch(() => {});
+  const other = await page.$$eval('.find-others .find-list li', (ls) => ls.map((l) => l.textContent));
+  check(other.length === 1 && other[0].includes('직무분석'), `찾기 판 아래에 다른 노트 결과 (${other.join(' / ')})`);
+  const ob = await page.$('.find-others .find-list li button');
+  const obox = await ob.boundingBox();
+  const atClick = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return `${e?.tagName}.${e?.className}`; }, [obox.x + obox.width / 2, obox.y + obox.height / 2]);
+  await ob.click();
+  const wentOther = await page.waitForFunction(() => !!window.__ayunpad.view()?.state.doc.textContent.includes('직무분석'), { timeout: 5000 }).then(() => true, () => false);
+  check(wentOther, `다른 노트 결과를 누르면 그 노트로 (${atClick}, y ${Math.round(obox.y)}, 제목 ${await page.$eval('.crumb input', (e) => e.value)})`);
+  await sleep(300);
+  const nHere = await page.$eval('.find-n', (e) => e.textContent).catch(() => '');
+  await page.$$eval('.fx-actions button', (b) => b[0].click());
+  await sleep(150);
+  const circledThere = await page.evaluate(() => {
+    let c = '';
+    window.__ayunpad.view().state.doc.descendants((n) => {
+      if (n.isText && n.marks.some((m) => m.type.name === 'circ')) c += n.text;
+    });
+    return c;
+  });
+  check(nHere === '1곳' && circledThere === '직무분석', `누르면 그 노트로 가고 판 그대로 동그라미 (${nHere}, ${circledThere})`);
+  await k.press('Escape');
+  await sleep(100);
+  await combo([meta], 'KeyK');
+  await page.waitForSelector('.palette input');
+  await k.type('보상관리');
+  await page.waitForFunction(() => [...document.querySelectorAll('.pal-snip')].some((e) => e.textContent.includes('보상관리')), { timeout: 5000 }).catch(() => {});
+  const boxHit = await page.$$eval('.pal-list button', (bs) => bs.map((b) => b.textContent).find((t) => t.includes('보상관리')) ?? '');
+  check(boxHit.includes('글상자'), `⌘K 전체 검색이 글상자 글도 찾음 (${boxHit})`);
   await k.press('Escape');
   await page.$$eval('.note-item .t', (els) => els.find((e) => e.textContent === '견본 · 경영학')?.click());
   await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 11);
@@ -425,7 +482,7 @@ try {
   await page.waitForFunction(() => !!window.__blob, { timeout: 8000 });
   const json = await page.evaluate(() => window.__blob);
   const data = JSON.parse(json);
-  check(data.app === 'ayun-pad' && Object.keys(data.notes).length === 3, `백업 파일: 노트 3개 (${Object.keys(data.notes).length})`);
+  check(data.app === 'ayun-pad' && Object.keys(data.notes).length === 4, `백업 파일: 노트 4개 (${Object.keys(data.notes).length})`);
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ayunpad-')), 'backup.json');
   fs.writeFileSync(file, json);
   const ctx = await browser.createBrowserContext();

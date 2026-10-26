@@ -62,7 +62,7 @@ export function MoreMenu({ mode, zoom, syncText, act, onZoom, onAccount, onExpor
           </button>
         ))}
       </div>
-      {item('찾기 · 일괄 강조', () => act('find'), `${M}F`)}
+      {item('전체 검색 · 명령', () => act('search'), `${M}K`)}
       {item('강조 모아 보기 · 지우기', () => act('emph'))}
       {item('글자 모양', () => act('type'), `${A}T`)}
       <div className="menu-row" role="group" aria-label="화면 배율">

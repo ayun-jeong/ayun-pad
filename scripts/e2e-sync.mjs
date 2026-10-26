@@ -147,6 +147,7 @@ try {
   const drawnB = await B.waitForSelector('.shapes-svg g[data-sid] polygon', { timeout: 8000 }).then(() => true, () => false);
   check(drawnB, 'A가 그린 화살표가 B에 실시간으로');
 
+
   // 버전 기록: 지금 저장 → 목록에 생김
   await A.click('.tbtn.sync');
   await A.waitForSelector('.panel');
@@ -160,6 +161,24 @@ try {
   await A.waitForSelector('.vpreview pre');
   const pre = await A.$eval('.vpreview pre', (e) => e.textContent);
   check(pre.includes('동기화 시험 A'), `버전 미리보기 (${pre.slice(0, 40)})`);
+
+  // 다른 기기에서 쓴 노트도 찾기: A가 새 노트에 쓰고, B는 그 노트를 열지 않은 채 ⌘K로 찾는다(서버에서 받아 와 찾음)
+  await A.keyboard.press('Escape');
+  await A.keyboard.press('Escape');
+  await A.click('.addnote');
+  await A.waitForFunction(() => document.querySelector('.editor')?.textContent === '', { timeout: 8000 });
+  await A.click('.editor');
+  await A.keyboard.type('원격검색표지 문장');
+  await sleep(2500); // 서버로 올라갈 때까지
+  await B.waitForFunction(() => document.querySelectorAll('.note-item').length >= 3, { timeout: 10000 }).catch(() => {});
+  await B.keyboard.down(process.platform === 'darwin' ? 'Meta' : 'Control');
+  await B.keyboard.press('KeyK');
+  await B.keyboard.up(process.platform === 'darwin' ? 'Meta' : 'Control');
+  await B.waitForSelector('.palette input');
+  await B.keyboard.type('원격검색표지');
+  const foundB = await B.waitForFunction(() => [...document.querySelectorAll('.pal-snip')].some((e) => e.textContent.includes('원격검색표지')), { timeout: 12000 }).then(() => true, () => false);
+  check(foundB, 'B에서 열어 보지 않은 A의 새 노트 내용도 전체 검색에 나옴');
+  await B.keyboard.press('Escape');
 
   check(errs.length === 0, `페이지 오류 없음 ${errs.slice(0, 2).join(' | ')}`);
   await browser.close();

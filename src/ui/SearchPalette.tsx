@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Node } from 'prosemirror-model';
+import type { Shape } from '../draw/model';
 import { matchRank } from '../editor/hangul';
 import { notesOf, sortedSubjects, type Library } from '../store/library';
 import { findIn, indexNotes, type NoteIndex } from '../store/searchIndex';
@@ -8,6 +9,7 @@ export interface JumpTarget {
   lineId: string | null;
   idx: number;
   q: string;
+  box?: string; // 글상자 안이면 그 글상자로
 }
 
 export interface PaletteCommand {
@@ -20,7 +22,7 @@ export interface PaletteCommand {
 interface Props {
   lib: Library;
   commands: PaletteCommand[];
-  live: { noteId: string; doc: Node } | null;
+  live: { noteId: string; doc: Node; shapes?: Shape[] } | null;
   onOpen(noteId: string, target?: JumpTarget): void;
   onNew(title: string): void;
   onClose(): void;
@@ -110,7 +112,7 @@ export function SearchPalette({ lib, commands, live, onOpen, onNew, onClose }: P
           hit: l.text.slice(m.at, m.at + m.len),
           post: l.text.slice(m.at + m.len, m.at + m.len + 30),
           noteId: n.id,
-          target: { lineId: l.id, idx: l.idx, q: l.text.slice(m.at, m.at + m.len) },
+          target: { lineId: l.id, idx: l.idx, q: l.text.slice(m.at, m.at + m.len), box: l.box },
         });
         if (++lines >= LINE_MAX) break;
       }
