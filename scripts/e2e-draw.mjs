@@ -450,6 +450,8 @@ try {
   await page.mouse.click(mb2.x + mb2.width / 2, mb2.y + mb2.height / 2, { count: 2 });
   const editing2 = await page.waitForSelector('.tbox.tedit .tb-grip', { timeout: 3000 }).then(() => true, () => false);
   check(editing2, '글상자를 두 번 누르면 고치기');
+  const tbBg = await page.$eval('.tbox.tedit', (e) => getComputedStyle(e).backgroundColor);
+  check(tbBg === 'rgba(0, 0, 0, 0)' || tbBg === 'transparent', `고치는 중인 글상자 배경은 투명 (${tbBg})`);
   const grip = await (await page.$('.tbox.tedit .tb-grip')).boundingBox();
   await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
   await page.mouse.down();
