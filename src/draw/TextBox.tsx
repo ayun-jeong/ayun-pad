@@ -4,6 +4,7 @@ import { EditorState, Selection } from 'prosemirror-state';
 import { Transform } from 'prosemirror-transform';
 import { EditorView } from 'prosemirror-view';
 import type * as Y from 'yjs';
+import { penCmd } from '../editor/commands';
 import { engineNodeViews, enginePlugins, markComposing } from '../editor/createEditor';
 import { lineText } from '../editor/decorations';
 import { searchDoc, type Effect } from '../editor/find';
@@ -11,6 +12,7 @@ import type { RuleSettings } from '../editor/inputRules';
 import { mathKey, type MathMenuState } from '../editor/mathMenu';
 import { schema } from '../editor/schema';
 import type { ShortcutHost } from '../editor/shortcuts';
+import { PEN_NAME, type PenKey } from '../editor/model';
 import { MathMenu } from '../ui/Menus';
 import { strokeOf, type Resolved, type TextShape } from './model';
 
@@ -83,12 +85,86 @@ interface BoxProps {
   onBlur(): void;
   onDrag(mode: 'move' | 'width', e: React.PointerEvent): void;
   onDelete(): void;
+  onPatch(p: Partial<TextShape>): void; // 글상자 전체 색 · 글씨 크기 · 테두리
+}
+
+const TB_COLORS: PenKey[] = ['r', 'b', 'k', 'p', 'y', 'g'];
+const TB_HL: PenKey[] = ['y', 'r', 'b', 'g'];
+
+// 글상자를 고치는 동안 바로 위에 뜨는 막대. 글자를 끌어 골랐으면 고른 글자만, 아니면 글상자 전체에.
+function TbBar({ view, r, onPatch }: { view: EditorView | null; r: Resolved & { t: 'text' }; onPatch(p: Partial<TextShape>): void }) {
+  // 누를 때 글상자에서 커서 · 고른 글자가 빠지지 않게
+  const keep = (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  const color = (c: PenKey) => {
+    const v = view;
+    if (v && !v.state.selection.empty) penCmd(c)(v.state, v.dispatch, v);
+    else onPatch({ c });
+  };
+  const hl = (c: PenKey | null) => {
+    const v = view;
+    if (!v) return;
+    const { from, to, empty } = v.state.selection;
+    const [a, b] = empty ? [0, v.state.doc.content.size] : [from, to];
+    const tr = v.state.tr.removeMark(a, b, schema.marks.hl);
+    if (c) tr.addMark(a, b, schema.marks.hl.create({ c }));
+    v.dispatch(tr);
+  };
+  const fs = r.fs ?? 1;
+  const size = (dir: 1 | -1) => onPatch({ fs: Math.round(Math.min(2.5, Math.max(0.6, fs + 0.1 * dir)) * 100) / 100 });
+  // 글상자 위에 자리가 없으면(화면 · 종이 맨 위) 글상자 아래에
+  const bar = useRef<HTMLDivElement>(null);
+  const [below, setBelow] = useState(false);
+  useLayoutEffect(() => {
+    const el = bar.current;
+    const desk = el?.closest('.desk');
+    if (!el) return;
+    const check = () => {
+      const top = desk ? desk.getBoundingClientRect().top : 0;
+      setBelow(el.parentElement!.getBoundingClientRect().top - el.getBoundingClientRect().height - 10 < top);
+    };
+    check();
+    desk?.addEventListener('scroll', check, { passive: true });
+    return () => desk?.removeEventListener('scroll', check);
+  }, []);
+  return (
+    <div ref={bar} className={`tb-bar${below ? ' below' : ''}`} role="toolbar" aria-label="글상자 꾸미기" onPointerDown={keep} onMouseDown={keep}>
+      {TB_COLORS.map((k) => (
+        <button key={k} type="button" className={r.c === k ? 'on' : ''} title={`${PEN_NAME[k]} 글자(끌어 고른 글자만, 아니면 글상자 전체)`} aria-label={`${PEN_NAME[k]} 글자`} onClick={() => color(k)}>
+          <i style={{ background: strokeOf(k) }} />
+        </button>
+      ))}
+      <span className="tb-sep" />
+      {TB_HL.map((k) => (
+        <button key={`h${k}`} type="button" title={`${PEN_NAME[k]} 형광펜(고른 글자만, 아니면 전체)`} aria-label={`${PEN_NAME[k]} 형광펜`} onClick={() => hl(k)}>
+          <i className="hl-i" style={{ background: strokeOf(k) }} />
+        </button>
+      ))}
+      <button type="button" title="형광펜 지우기" aria-label="형광펜 지우기" onClick={() => hl(null)}>
+        ×
+      </button>
+      <span className="tb-sep" />
+      <button type="button" title="글씨 작게" aria-label="글씨 작게" onClick={() => size(-1)}>
+        가−
+      </button>
+      <span className="tb-val">{Math.round(fs * 100)}%</span>
+      <button type="button" title="글씨 크게" aria-label="글씨 크게" onClick={() => size(1)}>
+        가+
+      </button>
+      <span className="tb-sep" />
+      <button type="button" className={r.box ? 'on' : ''} title="테두리" aria-label="테두리" onClick={() => onPatch({ box: !r.box })}>
+        □
+      </button>
+    </div>
+  );
 }
 
 // 글상자 = 본문과 똑같은 필기 엔진의 또 하나의 편집기. 늘 살아 있어서 누르면 바로 쓰고,
 // 트리(- 스페이스 · Tab · ⌥Tab) · 자동 색 · 화살표 변환 · 기호 메뉴 · 분수 · 루트 · 펜이 본문과 같다.
 // 내용은 도형 지도(shapes)에 ProseMirror JSON으로 저장되고, 되돌리기는 노트와 같은 줄(⌘Z)이다.
-export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFocus, onBlur, onDrag, onDelete }: BoxProps) {
+export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFocus, onBlur, onDrag, onDelete, onPatch }: BoxProps) {
   const mount = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const [math, setMath] = useState<MathMenuState | null>(null);
@@ -159,6 +235,7 @@ export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFo
       <div ref={mount} className="tb-mount" />
       {active && (
         <>
+          <TbBar view={view.current} r={r} onPatch={onPatch} />
           <span className="tb-grip" title="끌어서 옮기기" aria-label="글상자 옮기기" onPointerDown={(e) => onDrag('move', e)} />
           <span className="tb-width" title="끌어서 폭 바꾸기" aria-label="글상자 폭" onPointerDown={(e) => onDrag('width', e)} />
           <button

@@ -536,3 +536,18 @@ body.drawing .toasts { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 104
 
 /* ⌘+휠로 배율을 바꿀 때 잠깐 보이는 숫자 */
 .zoom-badge { position: fixed; top: 62px; right: max(16px, env(safe-area-inset-right)); z-index: 30; background: var(--ink); color: var(--bg); font: 600 12.5px/1 var(--ui, system-ui); padding: 6px 10px; border-radius: 999px; pointer-events: none; font-variant-numeric: tabular-nums; }
+
+/* 글상자를 고치는 동안 위에 뜨는 막대(화면 배율과 상관없이 같은 크기) */
+.tb-bar { position: absolute; left: -1mm; bottom: calc(100% + 3.8mm); display: flex; flex-wrap: wrap; align-items: center; gap: 2px; width: max-content; max-width: calc(100vw - 24px); padding: 3px 5px; background: var(--surface); border: 1px solid var(--rule-2); border-radius: 10px; box-shadow: var(--shadow); white-space: nowrap; z-index: 6; transform-origin: left bottom; transform: scale(calc(1 / var(--zoom, 1))); font: 12.5px/1 var(--ui, system-ui); color: var(--ink); letter-spacing: 0; cursor: default; }
+.tb-bar button { border: 1px solid transparent; background: transparent; border-radius: 6px; min-width: 24px; height: 24px; padding: 0 4px; display: inline-grid; place-items: center; font: inherit; color: inherit; cursor: pointer; }
+.tb-bar button:hover { border-color: var(--rule-2); }
+.tb-bar button.on { border-color: var(--ink); }
+.tb-bar i { width: 14px; height: 14px; border-radius: 50%; display: block; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15); }
+.tb-bar i.hl-i { border-radius: 3px; opacity: 0.45; }
+.tb-bar .tb-sep { width: 1px; height: 16px; background: var(--rule); margin: 0 3px; }
+.tb-bar .tb-val { min-width: 38px; text-align: center; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.tb-bar.below { bottom: auto; top: calc(100% + 1.4mm); transform-origin: left top; }
+.pcol .tb-bar { display: none; }
+
+/* 글쓰기 화면에서 본문을 끌어 고를 때 같이 잡힌 그림 · 글상자 */
+.sh-caught { fill: rgba(0, 100, 232, 0.07); stroke: rgba(0, 100, 232, 0.6); stroke-width: 1px; vector-effect: non-scaling-stroke; stroke-dasharray: 4 3; }

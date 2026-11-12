@@ -71,6 +71,7 @@ interface Props {
   onExtent(bottomMm: number): void;
   onCaret?(clientX: number, clientY: number): void; // 그 화면 자리에 글 커서 놓기
   widgets?: WidgetApi;
+  caught?: string[]; // 글쓰기 화면에서 본문을 끌어 고를 때 같이 잡힌 그림
   host: ShortcutHost;
   settings: RuleSettings;
 }
@@ -190,7 +191,7 @@ const snapOff = (e: Mods) => e.metaKey || e.ctrlKey; // ⌘(Ctrl)를 누르고 �
 // 직각 · 45°로 묶인 점은 묶인 방향을 빼고만 맞춘다
 const freeOf = (q: XY, last: XY | null, ortho: boolean) => ({ x: !(ortho && last && q.x === last.x), y: !(ortho && last && q.y === last.y) });
 
-export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, setDraw, onExtent, onCaret, widgets, host, settings }: Props) {
+export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, setDraw, onExtent, onCaret, widgets, caught, host, settings }: Props) {
   const [, repaint] = useReducer((x: number) => x + 1, 0);
   const layer = useRef<HTMLDivElement>(null);
   const ix = useRef<Ix>({ sel: [], wsel: [], drawing: null, cursor: null, press: null, box: null, drag: null, drafts: new Map(), marquee: null, guides: null, last: null, pid: null }).current;
@@ -261,6 +262,30 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     const on = (e: PointerEvent) => altRef.current(e);
     src.addEventListener('pointerdown', on, true);
     return () => src.removeEventListener('pointerdown', on, true);
+  }, [src]);
+
+  // 그리기(고르기)에서는 글 칸 바깥(종이 여백 · 회색 바깥)에서 끌기 시작해도 영역 고르기
+  const deskDown = useRef<(e: PointerEvent) => void>(() => undefined);
+  deskDown.current = (e: PointerEvent) => {
+    const d = drawRef.current;
+    const host = layer.current;
+    if (!d || d.tool !== 'select' || d.quick || e.button !== 0 || !host) return;
+    const t = e.target as Element | null;
+    if (!t || host.contains(t) || t.closest('.drawbar, .panel, .menu, .tbox, .zoom-badge')) return;
+    if (ix.pid !== null) return;
+    e.preventDefault();
+    const p = toMM(e);
+    ix.pid = e.pointerId;
+    host.setPointerCapture(e.pointerId);
+    ix.marquee = { a: p, b: p, add: e.shiftKey, base: e.shiftKey ? [...ix.sel] : [], wbase: e.shiftKey ? [...ix.wsel] : [], moved: false };
+    repaint();
+  };
+  useEffect(() => {
+    const desk = src.closest('.desk');
+    if (!desk) return;
+    const on = (e: Event) => deskDown.current(e as PointerEvent);
+    desk.addEventListener('pointerdown', on);
+    return () => desk.removeEventListener('pointerdown', on);
   }, [src]);
 
   // 그리기를 시작하면 편집 칸에서 커서를 뺀다(도구 글자가 노트에 쳐지지 않게). 그리기를 끝내면 고름도 푼다.
@@ -1015,6 +1040,13 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
         {selBoxes.map((b, i) => (
           <SelBox key={i} b={b} />
         ))}
+        {!draw &&
+          caught?.map((id) => {
+            const r = byId(id);
+            if (!r) return null;
+            const b = bboxOf(r, th);
+            return <rect key={`c-${id}`} className="sh-ui sh-caught" x={b.x - 0.8} y={b.y - 0.8} width={b.w + 1.6} height={b.h + 1.6} />;
+          })}
         {group && <rect className="sh-ui sh-group" x={group.x - 1.4} y={group.y - 1.4} width={group.w + 2.8} height={group.h + 2.8} />}
         {hs.map((h, i) => (
           <rect key={i} className="sh-ui sh-handle" x={h.x - hsz / 2} y={h.y - hsz / 2} width={hsz} height={hsz} rx={0.25} />
@@ -1062,6 +1094,11 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
                 if (pending?.id === r.id) setPending(null);
                 else write(() => shapes.delete(r.id));
                 setEditing(null);
+              }}
+              onPatch={(p) => {
+                const s = shapes.get(r.id);
+                if (s?.t === 'text') put({ ...s, ...p } as Shape);
+                else if (pending?.id === r.id) setPending({ ...pending, ...p });
               }}
             />
           ) : null,

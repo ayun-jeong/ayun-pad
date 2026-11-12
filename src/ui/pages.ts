@@ -29,7 +29,7 @@ function column(source: HTMLElement, typo: Typo): HTMLElement {
   clone.querySelectorAll('.sh-ui, .sh-hit, .wg-ctl, .tbl-ctl, .column-resize-handle, .drawbar, textarea.tedit').forEach((e) => e.remove());
   for (const e of [clone, ...Array.from(clone.querySelectorAll<HTMLElement>('[contenteditable]'))]) e.removeAttribute('contenteditable');
   clone.querySelectorAll('.ProseMirror-focused, .ProseMirror-selectednode, .sel, .selectedCell, .fh, .tedit, .flash').forEach((e) => e.classList.remove('ProseMirror-focused', 'ProseMirror-selectednode', 'sel', 'selectedCell', 'fh', 'on', 'cur', 'tedit', 'flash'));
-  clone.querySelectorAll('.tb-grip, .tb-width, .tb-del, .wg-size').forEach((e) => e.remove());
+  clone.querySelectorAll('.tb-grip, .tb-width, .tb-del, .tb-bar, .wg-size').forEach((e) => e.remove());
   clone.removeAttribute('role');
   clone.setAttribute('aria-hidden', 'true');
   clone.classList.remove('ProseMirror-focused');

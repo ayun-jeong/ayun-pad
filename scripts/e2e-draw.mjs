@@ -1075,6 +1075,123 @@ try {
   await combo(['Alt'], 'Digit1');
   await sleep(200);
 
+  // 21) 글상자 위 막대(고른 글자만 색 · 전체 색 · 글씨 크기 · 형광펜), 글쓰기에서 전체 고르면 그림도 같이 잡힘(복사 · 지우기), 여백에서 끌어 고르기
+  await page.click('.addnote');
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+  await page.click('.editor');
+  for (const t of ['첫째 줄', '둘째 줄', '셋째 줄', '넷째 줄']) {
+    await k.type(t);
+    await k.press('Enter');
+  }
+  const L7 = await page.$eval('.shapes-layer', (e) => {
+    const r = e.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, mmW: e.offsetWidth / (96 / 25.4) };
+  });
+  const at7 = (x, y) => [L7.x + (x / L7.mmW) * L7.w, L7.y + (y / L7.mmW) * L7.w];
+  const boxNow = () => page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).find((s) => s.t === 'text'));
+  await page.mouse.click(...at7(55, 12), { count: 2 });
+  await page.waitForSelector('.tbox.tedit .tb-edit');
+  check(!!(await page.$('.tbox.tedit .tb-bar')), '글상자를 고치면 바로 위에 꾸미기 막대');
+  await k.type('가나다라');
+  await k.down('Shift');
+  await k.press('ArrowLeft');
+  await k.press('ArrowLeft');
+  await k.up('Shift');
+  await press('.tb-bar button', (b) => b.getAttribute('aria-label') === '파랑 글자');
+  await sleep(120);
+  let tb7 = await boxNow();
+  const parts = (doc) => {
+    const out = [];
+    const walk = (n) => {
+      if (n.text) out.push(`${n.text}:${(n.marks ?? []).find((m) => m.type === 'pen')?.attrs.c ?? '-'}`);
+      (n.content ?? []).forEach(walk);
+    };
+    walk(doc);
+    return out.join(' ');
+  };
+  check(parts(tb7.doc) === '가나:- 다라:b' && !!(await page.$('.tbox.tedit')), `끌어 고른 글자만 파랑, 나머지는 그대로 · 고치는 중 그대로 (${parts(tb7.doc)})`);
+  await k.press('ArrowRight');
+  await press('.tb-bar button', (b) => b.getAttribute('aria-label') === '빨강 글자');
+  await press('.tb-bar button', (b) => b.getAttribute('aria-label') === '글씨 크게');
+  await press('.tb-bar button', (b) => b.getAttribute('aria-label') === '노랑 형광펜');
+  await sleep(150);
+  tb7 = await boxNow();
+  const val = await page.$eval('.tb-bar .tb-val', (e) => e.textContent).catch(() => '');
+  check(tb7.c === 'r' && tb7.fs === 1.1 && JSON.stringify(tb7.doc).includes('"hl"') && val === '110%', `고른 글자 없으면 글상자 전체: 빨강 · 글씨 110% · 형광펜 (${tb7.c}, ${tb7.fs}, ${val})`);
+  await k.press('Escape');
+  await sleep(100);
+  // 화살표 하나(둘째~셋째 줄에 붙음)
+  await combo(['Alt'], 'KeyD');
+  await page.waitForSelector('.drawbar');
+  await press('.drawbar button', (b) => b.textContent.startsWith('화살표'));
+  const pY = await page.$$eval('.editor > p', (ps) => ps.slice(1, 3).map((p) => p.getBoundingClientRect().top + p.getBoundingClientRect().height / 2));
+  await page.mouse.click(L7.x + 40, pY[0]);
+  await sleep(420);
+  await page.mouse.click(L7.x + 180, pY[1], { count: 2 });
+  await sleep(150);
+  // 그리기(고르기)에서 종이 여백(글 칸 왼쪽 바깥)에서 시작해도 영역 고르기
+  await press('.drawbar button', (b) => b.textContent.includes('도구'));
+  await page.mouse.move(L7.x - 10, L7.y + 4);
+  await page.mouse.down();
+  await page.mouse.move(L7.x + L7.w - 4, pY[1] + 60, { steps: 8 });
+  await page.mouse.up();
+  await sleep(120);
+  const mlab = await page.$eval('.drawbar.has-sel .dsel b', (e) => e.textContent).catch(() => '');
+  check(mlab === '2개', `여백에서 끌기 시작해도 영역 고르기 (${mlab})`);
+  await press('.drawbar .ddone', () => true);
+  await sleep(150);
+  // 글쓰기: ⌘A → 그림 · 글상자도 같이 잡힘
+  const nShapes = () => page.evaluate(() => Object.keys(window.__ayunpad.doc().shapes.toJSON()).length);
+  await page.click('.editor > p');
+  await combo([meta], 'KeyA');
+  await sleep(150);
+  const caught = await page.$$eval('.shapes-layer .sh-caught', (e) => e.length);
+  check(caught === 2, `본문을 전체 고르면 그림 · 글상자도 같이 잡힘 (${caught}개)`);
+  // 복사 → 끝에 붙여넣기 → 그림도 같이(새 줄에 붙음)
+  await page.evaluate(() => {
+    const dt = new DataTransfer();
+    document.querySelector('.editor').dispatchEvent(new ClipboardEvent('copy', { clipboardData: dt, bubbles: true, cancelable: true }));
+    window.__dt = dt;
+  });
+  await page.evaluate(() => {
+    const v = window.__ayunpad.view();
+    v.focus();
+    v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.atEnd(v.state.doc)));
+  });
+  await page.evaluate(() => {
+    const p = document.querySelector('.editor');
+    p.dispatchEvent(new ClipboardEvent('paste', { clipboardData: window.__dt, bubbles: true, cancelable: true }));
+  });
+  await sleep(250);
+  const afterPaste = await page.evaluate(() => {
+    const ids = new Set();
+    window.__ayunpad.view().state.doc.forEach((n) => ids.add(n.attrs.id));
+    const sh = Object.values(window.__ayunpad.doc().shapes.toJSON());
+    const anchored = sh.every((s) => (s.t === 'path' ? s.pts : s.t === 'text' ? [s.a] : [s.a, s.b]).every((a) => ids.has(a.l)));
+    return { n: sh.length, anchored, lines: window.__ayunpad.view().state.doc.childCount };
+  });
+  check(afterPaste.n === 4 && afterPaste.anchored, `복사해 붙이면 그림 · 글상자도 붙인 줄에 같이 (${JSON.stringify(afterPaste)})`);
+  // 전체 고르고 ⌫ → 글과 그림 모두 지움, ⌘Z 한 번이면 다 돌아옴(붙여넣기와 0.5초 넘게 떨어뜨려 따로 되돌리게)
+  await sleep(700);
+  await combo([meta], 'KeyA');
+  await sleep(100);
+  await k.press('Backspace');
+  await sleep(200);
+  const afterDel = { n: await nShapes(), text: await docTextOf(page) };
+  await combo([meta], 'KeyZ');
+  await sleep(250);
+  const afterUndo = { n: await nShapes(), text: (await docTextOf(page)).length };
+  check(afterDel.n === 0 && afterDel.text === '' && afterUndo.n === 4 && afterUndo.text > 10, `전체 고르고 ⌫ → 그림까지 지움, ⌘Z 한 번에 다 돌아옴 (${JSON.stringify(afterDel)} → ${JSON.stringify(afterUndo)})`);
+  // 한 줄 안에서 낱말만 고르면 그림은 안 잡힘
+  await page.evaluate(() => {
+    const v = window.__ayunpad.view();
+    v.focus();
+    const S = v.state.selection.constructor;
+    v.dispatch(v.state.tr.setSelection(S.create(v.state.doc, 2, 4)));
+  });
+  await sleep(100);
+  check((await page.$$('.shapes-layer .sh-caught')).length === 0, '한 줄 안 낱말만 고르면 그림은 안 잡힘');
+
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();
 } catch (e) {

@@ -3,6 +3,7 @@ import { TextSelection, type EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { defaultDeleteFilter, defaultProtectedNodes, prosemirrorToYXmlFragment, ySyncPluginKey } from 'y-prosemirror';
 import * as Y from 'yjs';
+import { caughtIds, dropCaught, pasteClip, rememberClip } from '../draw/caught';
 import { SHAPES } from '../draw/model';
 import { ShapesLayer, type DrawState, type WidgetApi } from '../draw/ShapesLayer';
 import { createEditor, type EditorHooks } from '../editor/createEditor';
@@ -76,6 +77,9 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
   const [paperH, setPaperH] = useState(0);
   const [srcH, setSrcH] = useState(0);
   const [live, setLive] = useState<Live | null>(null);
+  // 본문을 끌어 고른 범위에 붙은 그림 · 글상자(같이 잡힘)
+  const [caught, setCaught] = useState<string[]>([]);
+  const caughtRef = useRef<string[]>([]);
   // 그림 층에서 본문 위젯(표 · 그래프 · 연표)을 골라 지우기 · 글씨 크기
   const widgets = useMemo<WidgetApi | undefined>(() => {
     if (!live) return undefined;
@@ -176,8 +180,18 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
       const hooks: EditorHooks = {
         toast: (m) => cb.current.toast(m),
         app: (a) => cb.current.app(a),
-        onChange: (state) => {
+        onChange: (state, tr) => {
           cb.current.onState(state);
+          // 다른 기기 · 되돌리기로 바뀐 것은 건드리지 않는다
+          const local = !!tr && !(tr.getMeta(ySyncPluginKey) as { isChangeOrigin?: boolean } | undefined)?.isChangeOrigin;
+          // 고른 글이 지워지거나 바뀌면 같이 잡혀 있던 그림도(같은 되돌리기 칸)
+          if (local && tr!.docChanged && state.selection.empty && caughtRef.current.length) dropCaught(doc.ydoc, doc.shapes, caughtRef.current);
+          if (local && tr!.getMeta('uiEvent') === 'paste') pasteClip(tr!, state, doc.ydoc, doc.shapes);
+          const ids = doc.shapes.size ? caughtIds(state, doc.shapes.values()) : [];
+          if (ids.join() !== caughtRef.current.join()) {
+            caughtRef.current = ids;
+            setCaught(ids);
+          }
           const st = slashKey.getState(state);
           setSlash(st?.active ? st : null);
           const ms = mathKey.getState(state);
@@ -187,6 +201,11 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
       };
       hostRef.current = hooks;
       view = createEditor(mountRef.current, doc.fragment, hooks, um, settings);
+      const ed = view;
+      const remember = () => rememberClip(ed.state, doc.shapes, caughtRef.current);
+      // ProseMirror가 잘라내며 지우기 전에 기억해야 해서 capture로 먼저 듣는다
+      ed.dom.addEventListener('copy', remember, true);
+      ed.dom.addEventListener('cut', remember, true);
       setLive({ doc, view, um });
       cb.current.onDoc(doc, view, srcRef.current, um);
       hub.attach(`note:${noteId}`, doc.ydoc);
@@ -254,7 +273,7 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
 
   return (
     <div className="zoom-outer" style={{ width: widthPx * zoom, height: Math.max(paperH, halfPx) * zoom }}>
-      <div className="zoom-inner" style={{ transform: `scale(${zoom})`, paddingLeft: `${GUTTER_MM}mm` }}>
+      <div className="zoom-inner" style={{ transform: `scale(${zoom})`, paddingLeft: `${GUTTER_MM}mm`, ['--zoom' as string]: zoom } as CSSProperties}>
         <div className="half-nos" style={{ width: `${GUTTER_MM}mm` }} aria-hidden="true">
           {Array.from({ length: halves }, (_, k) => (
             <span key={k} className="half-no" style={{ top: `calc(${typo.mTop}mm + ${k * halfPx}px)` }}>
@@ -282,6 +301,7 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
                   setDraw={setDraw}
                   onExtent={onExtent}
                   widgets={widgets}
+                  caught={draw ? undefined : caught}
                   onCaret={(x, y) => {
                     const v = live.view;
                     const hit = v.posAtCoords({ left: x, top: y });
