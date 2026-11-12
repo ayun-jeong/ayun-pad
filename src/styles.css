@@ -509,6 +509,7 @@ body.drawing .toasts { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 104
 .emph-u { text-decoration: underline; text-underline-offset: 0.18em; }
 .find-list .emph-x { border: 0; background: transparent; color: var(--ink-3); font-size: 17px; line-height: 1; padding: 2px 6px; flex: none; border-radius: 6px; }
 .find-list .emph-x:hover { color: #d42a2a; background: var(--bg); }
+.linkish { border: 0; background: none; padding: 0; font: inherit; color: var(--focus); text-decoration: underline; cursor: pointer; }
 
 /* 스마트 보조선 · 영역 고르기 */
 .sh-guide { stroke: #ff2d87; stroke-width: 1px; vector-effect: non-scaling-stroke; fill: none; }

@@ -1,6 +1,7 @@
 import type { Mark, Node } from 'prosemirror-model';
 import { Plugin, PluginKey, type EditorState, type Transaction } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
+import { eraseHl } from './commands';
 import { lineText } from './decorations';
 import { schema } from './schema';
 
@@ -102,7 +103,8 @@ export function removeEffects(state: EditorState, kinds: Effect[]): Transaction 
   const on = findKey.getState(state)?.hits.filter((h) => h.on) ?? [];
   if (!on.length || !kinds.length) return null;
   const tr = state.tr;
-  for (const h of on) for (const k of kinds) tr.removeMark(h.from, h.to, schema.marks[k]);
+  for (const h of on) for (const k of kinds) if (k !== 'hl') tr.removeMark(h.from, h.to, schema.marks[k]);
+  if (kinds.includes('hl')) eraseHl(tr, on); // 형광펜은 자동 형광펜까지 지운다
   return tr;
 }
 

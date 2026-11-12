@@ -1,7 +1,8 @@
 import type { Mark, MarkType, Node, ResolvedPos } from 'prosemirror-model';
+import type { Transform } from 'prosemirror-transform';
 import { NodeSelection, TextSelection, type Command, type EditorState, type Selection, type Transaction } from 'prosemirror-state';
 import { CellSelection } from 'prosemirror-tables';
-import { headRange, infoOf, lineInfos, lineText } from './decorations';
+import { autoHlSpans, buildDecorations, headRange, infoOf, lineInfos, lineText } from './decorations';
 import { clamp } from './layout';
 import { MAX_DEPTH } from './model';
 import { penKey } from './pen';
@@ -214,6 +215,17 @@ export function penCmd(c: string | null, report?: (pen: string | null, onSelecti
   };
 }
 
+// 형광펜 지우기: 직접 칠한 형광펜을 걷어 내고, 그 자리에 자동 형광펜(꺾쇠 줄 · 대제목 · 콜론 앞)이 들어갈 곳은
+// 'none'(안 칠함)으로 막는다 → 지운 곳에는 어떤 형광펜도 남지 않는다. ⌥⇧A(자동으로)를 누르면 다시 자동.
+// 본문 거래 · 글상자 문서(Transform) 모두에 쓴다.
+export function eraseHl(tr: Transform, ranges: { from: number; to: number }[]): void {
+  if (!ranges.length) return;
+  for (const r of ranges) tr.removeMark(r.from, r.to, schema.marks.hl);
+  const auto = buildDecorations(tr.doc); // 걷어 낸 뒤에 자동 형광펜이 들어갈 자리
+  const none = schema.marks.hl.create({ c: 'none' });
+  for (const r of ranges) for (const s of autoHlSpans(auto, r.from, r.to)) tr.addMark(s.from, s.to, none);
+}
+
 // 형광펜: 선택이 있으면 거기, 없으면 지금 줄의 주제어(빨간 부분)에.
 // c = 'none' 은 지우기(자동 형광펜도 끔), null 은 자동으로 되돌리기.
 export function hlCmd(c: string | 'none' | null): Command {
@@ -223,7 +235,8 @@ export function hlCmd(c: string | 'none' | null): Command {
     if (!ranges.length) return true;
     if (dispatch) {
       const tr = state.tr;
-      for (const r of ranges) replaceMark(tr, r.from, r.to, schema.marks.hl, c ? schema.marks.hl.create({ c }) : null);
+      if (c === 'none') eraseHl(tr, ranges);
+      else for (const r of ranges) replaceMark(tr, r.from, r.to, schema.marks.hl, c ? schema.marks.hl.create({ c }) : null);
       dispatch(tr);
     }
     return true;

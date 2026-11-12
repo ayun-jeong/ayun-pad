@@ -159,7 +159,7 @@ export function TypePanel({ typo, fonts, hasSelection, onChange, onUpload, onSel
         <label>자동 규칙 (이 노트)</label>
         <label className="check">
           <input type="checkbox" checked={typo.auto} onChange={() => onChange({ auto: !typo.auto })} />
-          자동 색: 꺾쇠 줄 · 대제목 빨강 + 깊이별 형광펜, 예시 파랑
+          자동 색: 꺾쇠 줄 · 대제목 빨강 + 형광펜(빨 → 노 → 파 → 초 → 보, 가지는 제목 색의 다음 색), 예시 파랑
         </label>
         <label className="check">
           <input type="checkbox" checked={typo.arrows} onChange={() => onChange({ arrows: !typo.arrows })} />

@@ -173,7 +173,11 @@ try {
   const emphOpen = await page.waitForSelector('.panel.emph', { timeout: 3000 }).then(() => true, () => false);
   check(emphOpen, '⌘K ‘강조 지우기’ → 강조 모아 보기 판');
   const chips = await page.$$eval('.panel.emph .chips button', (b) => b.map((x) => x.textContent).join(','));
-  check(chips === '전체 6,동그라미 3,밑줄 3,형광펜 0,글자색 0', `종류별 개수 (${chips})`);
+  const autoN = await page.evaluate(() => {
+    const st = window.__ayunpad.view().state;
+    return st.plugins.find((p) => p.key === 'auto$').getState(st).deco.find(undefined, undefined, (s) => !!s?.autoHl).length;
+  });
+  check(autoN > 0 && chips === `전체 6,동그라미 3,밑줄 3,형광펜 ${autoN},글자색 0`, `종류별 개수, 형광펜에는 자동 형광펜 ${autoN}곳도 (${chips})`);
   await clickText('.panel.emph .chips button', '동그라미');
   await sleep(100);
   const circHits = await page.$$eval('.emph-list li .find-snip .circ', (e) => e.map((x) => x.textContent).join(','));
@@ -222,6 +226,47 @@ try {
   await k.press('Escape');
   await sleep(100);
   check(byMenu && !(await page.$('.panel.emph')) && !(await page.$('.menu.more')), '⋯ 메뉴의 강조 모아 보기로 열기(메뉴는 닫힘), Esc로 닫기');
+
+  // 6-0-1) 찾기 판 '효과 지우기'(형광펜): 꺾쇠 줄 주제어의 자동 형광펜까지 지운다(직접 칠한 것만 걷으면 자동이 다시 보였다)
+  const hlOnHits = () =>
+    page.evaluate(() => {
+      const st = window.__ayunpad.view().state;
+      const hits = st.plugins.find((p) => p.key === 'find$').getState(st).hits.filter((h) => h.on);
+      const autos = st.plugins.find((p) => p.key === 'auto$').getState(st).deco.find(undefined, undefined, (s) => !!s?.autoHl);
+      let n = 0;
+      for (const h of hits) {
+        if (autos.some((d) => d.from < h.to && d.to > h.from)) n++;
+        st.doc.nodesBetween(h.from, h.to, (nd) => {
+          if (nd.isText && nd.marks.some((m) => m.type.name === 'hl' && m.attrs.c !== 'none')) n++;
+        });
+      }
+      return { hits: hits.length, n };
+    });
+  await (await page.waitForSelector('.editor')).click();
+  await combo([meta], 'KeyF');
+  await page.waitForSelector('.panel.find input[type=search]');
+  await page.$eval('.panel.find input[type=search]', (e) => e.select());
+  await k.type('모집');
+  await sleep(150);
+  const hl0 = await hlOnHits();
+  const fxOn = () => page.$$eval('.fx-row', (rows) => rows.map((r) => r.querySelector('input[type=checkbox]').checked));
+  const setFx = async (want) => {
+    const now = await fxOn();
+    for (let i = 0; i < want.length; i++) if (now[i] !== want[i]) await page.$$eval('.fx-row input[type=checkbox]', (els, j) => els[j].click(), i);
+    await sleep(50);
+  };
+  const fxSaved = await fxOn();
+  await setFx(fxSaved.map((_, i) => i === 2)); // 동그라미 · 밑줄 · 형광펜 · 글자색 중 형광펜만
+  await clickText('.fx-actions button', '효과 지우기');
+  await sleep(150);
+  const hl1 = await hlOnHits();
+  check(hl0.n > 0 && hl1.hits === hl0.hits && hl1.n === 0, `효과 지우기(형광펜) → 고른 곳에 자동 형광펜도 안 남음 (${hl0.n} → ${hl1.n}, ${hl1.hits}곳)`);
+  await clickText('.find-undo button', '↶');
+  await sleep(150);
+  check((await hlOnHits()).n === hl0.n, '↶ → 자동 형광펜 돌아옴');
+  await setFx(fxSaved);
+  await k.press('Escape');
+  await sleep(100);
 
   // 6-1) 글상자 안도 찾고 효과를 넣는다. 본문과 글상자를 한 번의 ⌘Z로 되돌린다.
   await page.click('.addnote');

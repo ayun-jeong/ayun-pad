@@ -588,6 +588,13 @@ try {
     rootBox.length === 2 && rootBox.every((l) => l.k === 'branch' && l.d === '1' && l.cols === 1 && l.bg.includes('gradient')) && rootBox[0].bg !== rootBox[1].bg,
     `글상자 첫 줄 '- ' → 제목 없는 트리 ┌─ └─ (${JSON.stringify(rootBox.map((l) => [l.k, l.d, l.cols]))})`,
   );
+  // 글상자 막대 '형광펜 지우기'(×): 꺾쇠 줄 자동 형광펜까지
+  const boxHl = () => page.$$eval('.tbox.tedit .tb-edit .hl', (e) => e.map((x) => x.textContent).join(','));
+  const hlBefore = await boxHl();
+  await (await page.$('.tbox.tedit .tb-bar [aria-label="형광펜 지우기"]')).click();
+  await sleep(150);
+  const hlAfter = await boxHl();
+  check(hlBefore === '장점,단점' && hlAfter === '', `글상자 막대 × → 자동 형광펜까지 지움 (${hlBefore} → ${hlAfter || '없음'})`);
   await k.press('Escape');
   await sleep(150);
 

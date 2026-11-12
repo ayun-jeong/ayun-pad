@@ -1,10 +1,12 @@
 import { useEffect, useReducer, useState, type CSSProperties } from 'react';
 import type { Node } from 'prosemirror-model';
 import { TextSelection, type EditorState } from 'prosemirror-state';
-import type { EditorView } from 'prosemirror-view';
+import type { DecorationSet, EditorView } from 'prosemirror-view';
 import type * as Y from 'yjs';
 import { SHAPES, type Shape, type TextShape } from '../draw/model';
 import { textDoc, withEffects } from '../draw/TextBox';
+import { eraseHl } from '../editor/commands';
+import { autoHlSpans, autoKey, buildDecorations } from '../editor/decorations';
 import { pathOf, snippet, type Effect } from '../editor/find';
 import { halfLabel } from '../editor/layout';
 import { colorOf, isPenKey } from '../editor/model';
@@ -31,6 +33,7 @@ interface Emph {
   to: number;
   text: string;
   sid?: string; // 글상자 안이면 그 글상자 id(위치는 글상자 문서 안의 위치)
+  auto?: boolean; // 자동 형광펜(꺾쇠 줄 · 대제목 · 콜론 앞). 지우면 그 자리만 'none'으로 꺼진다
 }
 
 const TYPES: { k: Effect; name: string }[] = [
@@ -71,7 +74,13 @@ function scan(doc: Node, sid?: string): Emph[] {
     for (const e of Object.values(open)) if (e) out.push(e);
     return false;
   });
-  return out.sort((a, b) => a.from - b.from || a.type.localeCompare(b.type));
+  return out;
+}
+
+// 문서 하나(본문 또는 글상자)의 강조: 직접 칠한 것 + 자동 형광펜(장식에서 읽는다)
+function scanDoc(doc: Node, deco: DecorationSet | null | undefined, sid?: string): Emph[] {
+  const auto: Emph[] = deco ? autoHlSpans(deco, 0, doc.content.size).map((s) => ({ type: 'hl', c: s.c, from: s.from, to: s.to, text: doc.textBetween(s.from, s.to, ' ', ' '), sid, auto: true })) : [];
+  return [...scan(doc, sid), ...auto].sort((a, b) => a.from - b.from || a.type.localeCompare(b.type));
 }
 
 // 목록에서도 종이 위와 똑같이 보이게(같은 클래스)
@@ -101,18 +110,31 @@ export function EmphasisPanel({ view, state, ydoc, shapes, um, src, usable, toas
   }, [shapes]);
 
   const boxes = [...shapes.values()].filter((s): s is TextShape => s.t === 'text');
-  const all: Emph[] = [...scan(state.doc), ...boxes.flatMap((s) => scan(textDoc(s), s.id))];
-  const shown = filter === 'all' ? all : all.filter((e) => e.type === filter);
-  const count = (k: Effect | 'all') => (k === 'all' ? all.length : all.filter((e) => e.type === k).length);
+  const every: Emph[] = [
+    ...scanDoc(state.doc, autoKey.getState(state)?.deco),
+    ...boxes.flatMap((s) => {
+      const d = textDoc(s);
+      return scanDoc(d, buildDecorations(d), s.id);
+    }),
+  ];
+  // 전체 = 직접 칠한 것만(자동 형광펜까지 넣으면 꺾쇠 줄마다 떠서 묻힌다). 자동 형광펜은 '형광펜'에서 보고 지운다.
+  const all = every.filter((e) => !e.auto);
+  const autoCount = every.length - all.length;
+  const shown = filter === 'all' ? all : every.filter((e) => e.type === filter);
+  const count = (k: Effect | 'all') => (k === 'all' ? all.length : every.filter((e) => e.type === k).length);
 
-  // 본문(편집기 거래)과 글상자(그림 지도)를 한 되돌리기로 묶어 지운다
+  // 본문(편집기 거래)과 글상자(그림 지도)를 한 되돌리기로 묶어 지운다. 형광펜은 자동 형광펜까지(eraseHl).
   const remove = (list: Emph[]) => {
     if (!list.length) return;
     um?.stopCapturing();
     const body = list.filter((e) => !e.sid);
     if (body.length) {
       const tr = view.state.tr;
-      for (const e of body) tr.removeMark(e.from, e.to, schema.marks[e.type]);
+      for (const e of body) if (e.type !== 'hl') tr.removeMark(e.from, e.to, schema.marks[e.type]);
+      eraseHl(
+        tr,
+        body.filter((e) => e.type === 'hl'),
+      );
       view.dispatch(tr);
     }
     const bySid = new Map<string, Emph[]>();
@@ -204,9 +226,10 @@ export function EmphasisPanel({ view, state, ydoc, shapes, um, src, usable, toas
             const sn = snip(e);
             const lk = look(e);
             return (
-              <li key={`${e.sid ?? 'b'}:${e.type}:${e.from}:${e.to}`}>
+              <li key={`${e.sid ?? 'b'}:${e.type}:${e.auto ? 'a' : 'm'}:${e.from}:${e.to}`}>
                 <button type="button" onClick={() => go(e)}>
                   <span className="find-at">
+                    {e.auto ? '자동 ' : ''}
                     {NAME[e.type]} · {where(e)}
                   </span>
                   <span className="find-snip">
@@ -217,7 +240,7 @@ export function EmphasisPanel({ view, state, ydoc, shapes, um, src, usable, toas
                     {sn.post}
                   </span>
                 </button>
-                <button type="button" className="emph-x" title="이 강조만 지우기" aria-label={`${NAME[e.type]} 지우기: ${e.text}`} onClick={() => remove([e])}>
+                <button type="button" className="emph-x" title="이 강조만 지우기" aria-label={`${e.auto ? '자동 ' : ''}${NAME[e.type]} 지우기: ${e.text}`} onClick={() => remove([e])}>
                   ×
                 </button>
               </li>
@@ -226,7 +249,16 @@ export function EmphasisPanel({ view, state, ydoc, shapes, um, src, usable, toas
           {shown.length > LIST_MAX && <li className="find-more">… {shown.length - LIST_MAX}개 더(아래 단추는 전부 지웁니다)</li>}
         </ol>
       ) : (
-        <p className="note">{filter === 'all' ? '이 노트에는 강조 표시가 없어요.' : `${NAME[filter]} 표시가 없어요.`}</p>
+        <p className="note">{filter === 'all' ? (autoCount ? '직접 칠한 강조 표시가 없어요.' : '이 노트에는 강조 표시가 없어요.') : `${NAME[filter]} 표시가 없어요.`}</p>
+      )}
+      {filter === 'all' && autoCount > 0 && (
+        <p className="note">
+          꺾쇠 줄 · 대제목의 자동 형광펜 {autoCount}곳은{' '}
+          <button type="button" className="linkish" onClick={() => setFilter('hl')}>
+            형광펜
+          </button>
+          에서 보고 지울 수 있어요.
+        </p>
       )}
       <div className="fx-actions">
         <button

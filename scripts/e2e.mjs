@@ -579,6 +579,111 @@ try {
   check(R[0].bg !== R[1].bg, '다시 ┌─');
   if (await page.$('[aria-label="제목 없는 트리 첫 가지"]')) await alt('KeyT');
 
+  // 12) 형광펜 지우기: 강조 모아 보기 '형광펜'에 자동 형광펜(대제목 · 꺾쇠 줄 · 콜론 앞)도 나오고,
+  // 직접 칠한 것을 지워도 그 밑의 자동 형광펜이 다시 나오지 않는다
+  await page.click('.addnote');
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+  await page.click('.editor');
+  await k.type('경영학');
+  await k.press('Enter');
+  await k.type('- 마케팅');
+  await k.press('Enter');
+  await k.type('재무: 돈');
+  await k.press('Enter');
+  await k.type('인사');
+  await sleep(150);
+  const hlNow = () => page.$$eval('.editor > p', (ps) => ps.map((p) => [...p.querySelectorAll('.hl')].map((x) => x.textContent).join('')).join('|'));
+  check((await hlNow()) === '경영학|마케팅|재무|인사', `자동 형광펜 (${await hlNow()})`);
+  const hlAt = async (i) => {
+    const bb = await (await (await page.$$('.editor > p'))[i].$('.hl')).boundingBox();
+    await page.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2);
+  };
+  await hlAt(1);
+  await k.down('Alt');
+  await k.down('Shift');
+  await k.press('KeyG');
+  await k.up('Shift');
+  await k.up('Alt');
+  await sleep(700);
+  await k.down(meta);
+  await k.press('KeyK');
+  await k.up(meta);
+  await page.waitForSelector('.palette input');
+  await k.type('강조 모아');
+  await sleep(150);
+  await k.press('Enter');
+  await page.waitForSelector('.panel.emph');
+  await sleep(100);
+  const emChips = await page.$$eval('.panel.emph .chips button', (b) => b.map((x) => x.textContent).join(','));
+  const emHint = await page.$$eval('.panel.emph .note', (e) => e.map((x) => x.textContent).join(' '));
+  check(emChips === '전체 1,동그라미 0,밑줄 0,형광펜 4,글자색 0' && emHint.includes('자동 형광펜 3곳'), `전체는 직접 칠한 것만, 형광펜에는 자동 3곳도 (${emChips} · ${emHint})`);
+  for (const b of await page.$$('.panel.emph .chips button')) if ((await b.evaluate((x) => x.textContent)).startsWith('형광펜')) await b.click();
+  await sleep(100);
+  const emX = async (label) => {
+    for (const b of await page.$$('.panel.emph .emph-x')) if ((await b.evaluate((x) => x.getAttribute('aria-label'))) === label) return b.click();
+    throw new Error(`없는 단추: ${label}`);
+  };
+  await emX('형광펜 지우기: 마케팅');
+  await sleep(150);
+  check((await hlNow()) === '경영학||재무|인사', `직접 칠한 초록을 지우면 자동 노랑도 안 돌아옴 (${await hlNow()})`);
+  await emX('자동 형광펜 지우기: 재무');
+  await sleep(150);
+  check((await hlNow()) === '경영학|||인사', `× → 자동 형광펜 하나만 지움 (${await hlNow()})`);
+  await page.click('.panel.emph .fx-actions .primary');
+  await sleep(150);
+  check((await hlNow()) === '|||', `형광펜 전부 지우기 → 형광펜 하나도 없음 (${await hlNow()})`);
+  for (const b of await page.$$('.panel.emph .fx-actions button')) if ((await b.evaluate((x) => x.textContent)) === '↶') await b.click();
+  await sleep(150);
+  check((await hlNow()) === '경영학|||인사', `되돌리기 한 번 → 한꺼번에 지운 것만 돌아옴 (${await hlNow()})`);
+  await k.press('Escape');
+  await sleep(100);
+  await hlAt(3);
+  await k.down('Alt');
+  await k.down('Shift');
+  await k.press('KeyX');
+  await k.up('Shift');
+  await k.up('Alt');
+  await sleep(150);
+  check((await hlNow()) === '경영학|||', `⌥⇧X → 지금 줄 자동 형광펜 지움 (${await hlNow()})`);
+  await k.down('Alt');
+  await k.down('Shift');
+  await k.press('KeyA');
+  await k.up('Shift');
+  await k.up('Alt');
+  await sleep(150);
+  check((await hlNow()) === '경영학|||인사', `⌥⇧A → 자동 형광펜 돌아옴 (${await hlNow()})`);
+
+  // 12-1) 형광펜 색 이어지기: 제목에 칠한 색 다음 색으로 가지가 자동(빨 → 노 → 파 → 초 → 보, 보라 다음은 없음)
+  await k.press('End');
+  await k.press('Enter');
+  await k.press('Enter');
+  await k.press('Enter');
+  await k.type('회계');
+  await k.down('Alt');
+  await k.down('Shift');
+  await k.press('KeyB'); // 가지를 만들기 전에 제목을 파랑으로
+  await k.up('Shift');
+  await k.up('Alt');
+  await k.press('Enter');
+  await k.type('- 원가');
+  await k.press('Enter');
+  await k.press('Tab');
+  await k.type('변동비');
+  await k.press('Enter');
+  await k.press('Tab');
+  await k.type('단가');
+  await k.press('Enter');
+  await k.down('Shift');
+  await k.press('Tab');
+  await k.press('Tab');
+  await k.up('Shift');
+  await k.type('관리');
+  await sleep(200);
+  const chain = await page.$$eval('.editor > p', (ps) =>
+    ps.slice(-5).map((p) => `${p.textContent}:${[...p.querySelectorAll('.hl')].map((x) => x.className.match(/hl-([a-z])/)?.[1] ?? '').join('') || '-'}`).join(' '),
+  );
+  check(chain === '회계:b 원가:g 변동비:p 단가:- 관리:g', `제목 파랑 → 가지 초록 → 보라 → 없음, 형제는 같은 색 (${chain})`);
+
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();
 } catch (e) {

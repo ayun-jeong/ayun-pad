@@ -4,7 +4,7 @@ import { EditorState, Selection } from 'prosemirror-state';
 import { Transform } from 'prosemirror-transform';
 import { EditorView } from 'prosemirror-view';
 import type * as Y from 'yjs';
-import { penCmd } from '../editor/commands';
+import { eraseHl, penCmd } from '../editor/commands';
 import { engineNodeViews, enginePlugins, markComposing } from '../editor/createEditor';
 import { autoKey, lineText } from '../editor/decorations';
 import { searchDoc, type Effect } from '../editor/find';
@@ -48,8 +48,9 @@ export function withEffects(s: TextShape, hits: { from: number; to: number }[], 
   const tr = new Transform(textDoc(s));
   for (const h of hits) {
     for (const [k, c] of Object.entries(fx) as [Effect, string][]) if (c) tr.addMark(h.from, h.to, (schema.marks[k] as { create(a: object): Mark }).create({ c }));
-    for (const k of remove) tr.removeMark(h.from, h.to, schema.marks[k]);
+    for (const k of remove) if (k !== 'hl') tr.removeMark(h.from, h.to, schema.marks[k]);
   }
+  if (remove.includes('hl')) eraseHl(tr, hits); // 형광펜은 자동 형광펜까지 지운다
   return { ...s, doc: tr.doc.toJSON(), text: plainText(tr.doc) };
 }
 
@@ -110,8 +111,9 @@ function TbBar({ view, r, editing, onPatch }: { view: EditorView | null; r: Reso
     if (!v) return;
     const { from, to, empty } = v.state.selection;
     const [a, b] = !editing || empty ? [0, v.state.doc.content.size] : [from, to];
-    const tr = v.state.tr.removeMark(a, b, schema.marks.hl);
-    if (c) tr.addMark(a, b, schema.marks.hl.create({ c }));
+    const tr = v.state.tr;
+    if (c) tr.removeMark(a, b, schema.marks.hl).addMark(a, b, schema.marks.hl.create({ c }));
+    else eraseHl(tr, [{ from: a, to: b }]); // 지우기는 자동 형광펜(꺾쇠 줄 · 대제목)까지
     v.dispatch(tr);
   };
   const fs = r.fs ?? 1;

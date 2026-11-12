@@ -46,6 +46,20 @@ function blocked(node: Node): { pen: Span[]; hl: Span[] } {
   return { pen, hl };
 }
 
+// 줄 주제어(빨간 부분)에 직접 칠한 형광펜의 단계(빨강 0 · 노랑 1 · 파랑 2 · 초록 3 · 보라 4). 없거나 순서에 없는 색 · 지운 것이면 null.
+function manualLevel(node: Node, head: Span | null): number | null {
+  if (!head) return null;
+  let found: number | null = null;
+  node.forEach((child, offset) => {
+    if (found !== null || !child.isText) return;
+    if (offset + child.nodeSize <= head.from || offset >= head.to) return;
+    const c = child.marks.find((m) => m.type.name === 'hl')?.attrs.c as string | undefined;
+    const k = c ? HL_BY_DEPTH.indexOf(c as (typeof HL_BY_DEPTH)[number]) : -1;
+    if (k >= 0) found = k;
+  });
+  return found;
+}
+
 // 블록 하나의 트리 정보. 위젯(표 · 수직선 · 그래프)은 '자식 없는 보통 줄'로 세서 위 가지선이 위젯 옆으로 이어지게 한다.
 export function infoOf(n: Node): LineInfo {
   return { depth: (n.attrs.depth as number) ?? 1, kind: n.type.name === 'line' ? (n.attrs.kind as Kind) : 'plain' };
@@ -65,15 +79,21 @@ const isCell = (n: Node) => n.type.spec.tableRole === 'cell' || n.type.spec.tabl
 // 옆 가지(side): 부모 글 바로 옆 x에서 자식들이 시작한다. 첫 자식은 한 줄 위(부모와 같은 줄)로 올라가
 // 부모 글 뒤에 붙고(┬─ 또는 ──), 나머지 자식은 그 아래 같은 x에 줄을 맞춘다(├─ └─ │). 줄 높이는 그대로라 쪽 나눔이 안 흔들린다.
 // 제목 없는 트리(맨 바깥이 꺾쇠 줄)는 칸이 하나 더 있어서 글을 한 칸 더 들인다(깊이 1 꺾쇠 줄도 ┌─ ├─ └─ 뒤에서 시작).
+// 자동 형광펜 색은 부모 줄 형광펜 색의 다음 색(빨강 → 노랑 → 파랑 → 초록 → 보라, 보라 다음은 없음).
+// 부모가 없으면 깊이대로(깊이 1 = 빨강). 부모 주제어에 직접 칠한 색이 있으면 그 색에서 이어진다(제목을 파랑으로 칠하면 가지는 초록).
 function decorate(container: Node, base: number, decos: Decoration[], auto: boolean, sideX: SideX | null, treeTop: TreeTop) {
   const infos = lineInfos(container);
   const tree = computeTree(infos, treeTop);
   const stack: { d: number; x: number; first: number }[] = [];
+  const hlChain: { depth: number; level: number }[] = []; // 위 줄들의 형광펜 단계(부모 찾기)
   let i = 0;
   container.forEach((node, offset) => {
     const pos = base + offset;
     const row = tree[i];
     const d = infos[i].depth + (row.rootless ? 1 : 0); // 칸 수로 센 깊이
+    while (hlChain.length && hlChain[hlChain.length - 1].depth >= infos[i].depth) hlChain.pop();
+    const parentHl = hlChain[hlChain.length - 1];
+    const level = parentHl ? parentHl.level + 1 : infos[i].depth - 1; // 이 줄 자동 형광펜 단계
     while (stack.length && d <= stack[stack.length - 1].d) stack.pop();
     const colBase = (c: number) => {
       for (let k = stack.length - 1; k >= 0; k--) {
@@ -103,6 +123,7 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
       if (x !== undefined && x >= 0) stack.push({ d, x, first: i + 1 });
     }
     if (node.type.name !== 'line') {
+      hlChain.push({ depth: infos[i].depth, level });
       decos.push(Decoration.node(pos, pos + node.nodeSize, { style, class: 'blk', 'data-depth': String(node.attrs.depth ?? 1) }));
       if (node.type.name === 'table')
         node.descendants((child, p) => {
@@ -126,13 +147,25 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
     const block = blocked(node);
     if (st.red) for (const s of subtract(st.red, block.pen)) decos.push(Decoration.inline(start + s.from, start + s.to, { class: 'a-red' }));
     for (const blue of st.blue) for (const s of subtract(blue, block.pen)) decos.push(Decoration.inline(start + s.from, start + s.to, { class: 'a-blue' }));
-    const depth = node.attrs.depth as number;
-    if (st.hl && depth <= HL_BY_DEPTH.length) {
-      const cls = `hl hl-${HL_BY_DEPTH[depth - 1]} v${(i % 3) + 1}`;
-      for (const s of subtract(st.hl, block.hl)) decos.push(Decoration.inline(start + s.from, start + s.to, { class: cls }));
+    hlChain.push({ depth: infos[i].depth, level: manualLevel(node, st.hl) ?? level });
+    if (st.hl && level < HL_BY_DEPTH.length) {
+      const c = HL_BY_DEPTH[level];
+      const cls = `hl hl-${c} v${(i % 3) + 1}`;
+      for (const s of subtract(st.hl, block.hl)) decos.push(Decoration.inline(start + s.from, start + s.to, { class: cls }, { autoHl: c }));
     }
     i++;
   });
+}
+
+// 자동 형광펜이 칠해진 곳(문서 위치 · 색). 장식 묶음에서 from~to에 걸친 부분만.
+export function autoHlSpans(set: DecorationSet, from: number, to: number): (Span & { c: string })[] {
+  const out: (Span & { c: string })[] = [];
+  for (const d of set.find(from, to, (spec: { autoHl?: string }) => !!spec?.autoHl)) {
+    const a = Math.max(from, d.from);
+    const b = Math.min(to, d.to);
+    if (b > a) out.push({ from: a, to: b, c: (d.spec as { autoHl: string }).autoHl });
+  }
+  return out.sort((x, y) => x.from - y.from);
 }
 
 export function buildDecorations(doc: Node, auto = true, sideX: SideX = {}, top: TreeTop = 'corner'): DecorationSet {

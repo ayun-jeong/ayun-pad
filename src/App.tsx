@@ -707,6 +707,7 @@ export function App() {
       { name: '그리기', keys: '⌥D', alias: ['draw', '화살표', '도형'], run: () => act('draw') },
       { name: '찾기 · 일괄 강조', keys: '⌘F', alias: ['find', '바꾸기', '동그라미'], run: () => act('find') },
       { name: '강조 모아 보기 · 지우기', alias: ['강조 지우기', '동그라미 지우기', '밑줄 지우기', '형광펜 지우기'], run: () => act('emph') },
+      { name: '형광펜 지우기: 고른 글자(없으면 지금 줄), 자동 형광펜도', keys: '⌥⇧X', alias: ['형광펜 없애기', 'highlight'], run: () => withView((v) => hlCmd('none')(v.state, v.dispatch, v)) },
       { name: '글자 모양', keys: '⌥T', alias: ['글꼴', '행간', '자간', '여백', '폰트'], run: () => act('type') },
       { name: '행간 좁게', keys: '⌥⇧,', run: () => act('pitch-down') },
       { name: '행간 넓게', keys: '⌥⇧.', run: () => act('pitch-up') },
@@ -720,7 +721,7 @@ export function App() {
       { name: '자동 색 규칙 켜기 · 끄기', alias: ['자동 펜', '자동 형광펜'], run: () => typoRef.current && changeTypo({ auto: !typoRef.current.auto }) },
       { name: '화살표 자동 변환 켜기 · 끄기', run: () => typoRef.current && changeTypo({ arrows: !typoRef.current.arrows }) },
     ],
-    [act, changeTypo, onExport],
+    [act, changeTypo, onExport, withView],
   );
 
   const onUpload = async (file: File) => {
@@ -972,11 +973,14 @@ export function App() {
               <span className={`swatch hl-sw hl-${c}`} /> 형광 {PEN_NAME[c]}
             </button>
           ))}
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => hlCmd('none')(v.state, v.dispatch, v))}>
+            형광 지우기
+          </button>
           <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => circleCmd(v.state, v.dispatch, v))}>
             ◯ 동그라미
           </button>
           <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => penCmd(null)(v.state, v.dispatch, v))}>
-            색 지우기
+            글자색 지우기
           </button>
         </nav>
       )}
@@ -1008,6 +1012,18 @@ export function App() {
           >
             자동
           </button>
+          {subbar === 'hl' && (
+            <button
+              type="button"
+              onPointerDown={keepFocus}
+              onClick={() => {
+                withView((v) => hlCmd('none')(v.state, v.dispatch, v));
+                setSubbar(null);
+              }}
+            >
+              지우기
+            </button>
+          )}
           <button
             type="button"
             onPointerDown={keepFocus}

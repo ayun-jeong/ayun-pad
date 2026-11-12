@@ -6,6 +6,11 @@ import { branchDepth, emptyEnter, planIndent, planMove } from '../src/editor/rul
 import { parseTreeText, serializeTree, type TextLine } from '../src/editor/treeText';
 import type { LineInfo } from '../src/editor/model';
 import { arrowize } from '../src/editor/arrows';
+import { EditorState, TextSelection } from 'prosemirror-state';
+import type { Node } from 'prosemirror-model';
+import { schema } from '../src/editor/schema';
+import { autoHlSpans, buildDecorations } from '../src/editor/decorations';
+import { eraseHl, hlCmd } from '../src/editor/commands';
 
 const b = (depth: number): LineInfo => ({ depth, kind: 'branch' });
 const p = (depth: number): LineInfo => ({ depth, kind: 'plain' });
@@ -118,6 +123,62 @@ describe('자동 볼펜·형광펜', () => {
       { from: 0, to: 2 },
       { from: 4, to: 8 },
     ]);
+  });
+});
+
+describe('형광펜 지우기', () => {
+  // 경영학(대제목 → 자동 빨강 형광펜) › 마케팅(직접 칠한 초록) · 재무: 돈(콜론 앞 자동 노랑)
+  const docOf = () =>
+    schema.node('doc', null, [
+      schema.node('line', { depth: 1 }, schema.text('경영학')),
+      schema.node('line', { depth: 2, kind: 'branch' }, schema.text('마케팅', [schema.marks.hl.create({ c: 'g' })])),
+      schema.node('line', { depth: 2, kind: 'branch' }, schema.text('재무: 돈')),
+    ]);
+  // 보이는 형광펜: 자동(장식) 몇 곳, 직접 칠한 것('none' 제외) 몇 곳
+  const visible = (doc: Node) => {
+    let manual = 0;
+    doc.descendants((n) => {
+      if (n.isText && n.marks.some((m) => m.type.name === 'hl' && m.attrs.c !== 'none')) manual++;
+    });
+    return { auto: autoHlSpans(buildDecorations(doc), 0, doc.content.size).map((s) => s.c).join(''), manual };
+  };
+  it('지우면 직접 칠한 것도 자동 형광펜도 남지 않는다', () => {
+    const doc = docOf();
+    expect(visible(doc)).toEqual({ auto: 'ry', manual: 1 });
+    const tr = EditorState.create({ schema, doc }).tr;
+    eraseHl(tr, [{ from: 0, to: doc.content.size }]);
+    expect(visible(tr.doc)).toEqual({ auto: '', manual: 0 });
+  });
+  it('⌥⇧X(고른 것 없음)는 지금 줄 주제어만, ⌥⇧A면 자동 형광펜이 돌아온다', () => {
+    const doc = docOf();
+    let state = EditorState.create({ schema, doc, selection: TextSelection.create(doc, doc.content.size - 2) });
+    hlCmd('none')(state, (tr) => (state = state.apply(tr)));
+    expect(visible(state.doc)).toEqual({ auto: 'r', manual: 1 });
+    hlCmd(null)(state, (tr) => (state = state.apply(tr)));
+    expect(visible(state.doc)).toEqual({ auto: 'ry', manual: 1 });
+  });
+});
+
+describe('형광펜 색 이어지기(빨 → 노 → 파 → 초 → 보)', () => {
+  const ln = (depth: number, kind: 'plain' | 'branch', text: string, hl?: string) =>
+    schema.node('line', { depth, kind }, schema.text(text, hl ? [schema.marks.hl.create({ c: hl })] : []));
+  const colors = (lines: Node[]) => {
+    const doc = schema.node('doc', null, lines);
+    return autoHlSpans(buildDecorations(doc), 0, doc.content.size)
+      .map((s) => s.c)
+      .join('');
+  };
+  it('그냥 두면 깊이대로, 보라 다음은 없음', () => {
+    expect(colors([ln(1, 'plain', '경영학'), ln(2, 'branch', '마케팅'), ln(3, 'branch', 'STP'), ln(4, 'branch', '세분화'), ln(5, 'branch', '기준'), ln(6, 'branch', '사례')])).toBe('rybgp');
+  });
+  it('제목을 파랑으로 칠해 두면 가지는 초록 → 보라 → 없음', () => {
+    expect(colors([ln(1, 'plain', '경영학', 'b'), ln(2, 'branch', '마케팅'), ln(3, 'branch', 'STP'), ln(4, 'branch', '세분화'), ln(2, 'branch', '재무')])).toBe('gpg');
+  });
+  it('가지 하나를 직접 칠하면 그 아래만 이어서 바뀐다', () => {
+    expect(colors([ln(1, 'plain', '경영학'), ln(2, 'branch', '마케팅', 'g'), ln(3, 'branch', 'STP'), ln(2, 'branch', '재무'), ln(3, 'branch', '예산')])).toBe('rpyb');
+  });
+  it('지운 형광펜(none)은 이어지기에 안 쓴다(원래 단계대로)', () => {
+    expect(colors([ln(1, 'plain', '경영학', 'none'), ln(2, 'branch', '마케팅')])).toBe('y');
   });
 });
 
