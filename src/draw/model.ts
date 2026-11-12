@@ -232,12 +232,31 @@ export function handles(r: Resolved, textH: (id: string) => number): XY[] {
   if (r.t === 'path') return r.pts;
   if (r.t === 'text') return [{ x: r.a.x + r.bw, y: r.a.y + textH(r.id) / 2 }];
   const b = boxOf(r.a, r.b);
+  // 네 모서리(0~3) + 네 변 가운데(4 위 · 5 오른쪽 · 6 아래 · 7 왼쪽)
   return [
     { x: b.x, y: b.y },
     { x: b.x + b.w, y: b.y },
     { x: b.x + b.w, y: b.y + b.h },
     { x: b.x, y: b.y + b.h },
+    { x: b.x + b.w / 2, y: b.y },
+    { x: b.x + b.w, y: b.y + b.h / 2 },
+    { x: b.x + b.w / 2, y: b.y + b.h },
+    { x: b.x, y: b.y + b.h / 2 },
   ];
+}
+
+// 네모 · 동그라미의 변 하나(0 위 · 1 오른쪽 · 2 아래 · 3 왼쪽)를 p까지 옮긴 결과(그 방향으로만 늘고 줄어든다)
+export function moveSide(r: Resolved & { t: 'rect' | 'ellipse' }, side: number, p: XY): Resolved {
+  const b = boxOf(r.a, r.b);
+  let x0 = b.x;
+  let y0 = b.y;
+  let x1 = b.x + b.w;
+  let y1 = b.y + b.h;
+  if (side === 0) y0 = p.y;
+  else if (side === 1) x1 = p.x;
+  else if (side === 2) y1 = p.y;
+  else x0 = p.x;
+  return { ...r, a: { x: x0, y: y0 }, b: { x: x1, y: y1 } };
 }
 
 // 네모 · 동그라미의 모서리 i를 p로 옮긴 결과(맞은편 모서리는 그대로)

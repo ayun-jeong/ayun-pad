@@ -17,6 +17,7 @@ import {
   HEAD_NAME,
   hit,
   moveCorner,
+  moveSide,
   nextHead,
   resolve,
   route,
@@ -171,7 +172,7 @@ function ShapeHit({ r, onPick }: { r: Resolved; onPick(e: React.PointerEvent): v
 
 // 끌기: 고른 것 모두 옮기기(toggle · only는 끌지 않고 놓았을 때 고름을 고치는 것), 또는 하나의 점 · 모서리 · 폭
 type MoveDrag = { mode: 'move'; start: XY; bases: Resolved[]; moved: boolean; toggle?: string; only?: string };
-type EditDrag = { mode: 'point' | 'corner' | 'width'; id: string; i: number; start: XY; base: Resolved; moved: boolean };
+type EditDrag = { mode: 'point' | 'corner' | 'side' | 'width'; id: string; i: number; start: XY; base: Resolved; moved: boolean };
 
 interface Ix {
   sel: string[]; // 고른 그림(여러 개)
@@ -220,6 +221,15 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     e.stopPropagation();
     ix.sel = [id];
     ix.wsel = [];
+    // 누른 채 끌면 바로 옮기기, 곧 한 번 더 누르면 두 번 누르기(글상자는 고치기)
+    const r = byId(id);
+    const p = toMM(e);
+    ix.last = { t: performance.now(), p };
+    if (r && layer.current && e.button === 0) {
+      ix.pid = e.pointerId;
+      layer.current.setPointerCapture(e.pointerId);
+      ix.drag = { mode: 'move', start: p, bases: [r], moved: false };
+    }
     setDraw({ tool: 'select', picked: true });
     repaint();
   };
@@ -599,6 +609,27 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     repaint();
   };
 
+  // 고른 네모의 변(0 위 · 1 오른쪽 · 2 아래 · 3 왼쪽). 모서리 가까이는 모서리 손잡이에게.
+  const sideAt = (r: Resolved & { t: 'rect' | 'ellipse' }, p: XY, tol: number) => {
+    const b = boxOf(r.a, r.b);
+    const inX = p.x > b.x + tol && p.x < b.x + b.w - tol;
+    const inY = p.y > b.y + tol && p.y < b.y + b.h - tol;
+    if (inX && Math.abs(p.y - b.y) <= tol) return 0;
+    if (inY && Math.abs(p.x - (b.x + b.w)) <= tol) return 1;
+    if (inX && Math.abs(p.y - (b.y + b.h)) <= tol) return 2;
+    if (inY && Math.abs(p.x - b.x) <= tol) return 3;
+    return -1;
+  };
+  const hoverCursor = (p: XY, tol: number): string => {
+    const one = ix.sel.length === 1 && !ix.wsel.length ? byId(ix.sel[0]) : undefined;
+    if (!one || (one.t !== 'rect' && one.t !== 'ellipse')) return '';
+    const hi = handles(one, th).findIndex((h) => dist(h, p) <= tol * 1.3);
+    if (hi >= 0) return ['nwse-resize', 'nesw-resize', 'nwse-resize', 'nesw-resize', 'ns-resize', 'ew-resize', 'ns-resize', 'ew-resize'][hi];
+    const side = one.t === 'rect' ? sideAt(one, p, tol) : -1;
+    if (side >= 0) return side % 2 ? 'ew-resize' : 'ns-resize';
+    return inBox(p, boxOf(one.a, one.b)) ? 'move' : '';
+  };
+
   const topHit = (p: XY, tol: number) => {
     for (let i = resolved.length - 1; i >= 0; i--) if (hit(resolved[i], p, tol, th)) return resolved[i];
     return undefined;
@@ -678,11 +709,20 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
           put(unresolve({ ...one, pts: one.pts.filter((_, i) => i !== hi) }, lines));
           return repaint();
         }
-        ix.drag = { mode: one.t === 'path' ? 'point' : one.t === 'text' ? 'width' : 'corner', id: one.id, i: hi, start: p, base: one, moved: false };
+        ix.drag =
+          one.t === 'path' || one.t === 'text'
+            ? { mode: one.t === 'path' ? 'point' : 'width', id: one.id, i: hi, start: p, base: one, moved: false }
+            : { mode: hi >= 4 ? 'side' : 'corner', id: one.id, i: hi >= 4 ? hi - 4 : hi, start: p, base: one, moved: false };
+        return repaint();
+      }
+      // 고른 네모는 변 어디를 잡아도 그 변만 늘이고 줄인다
+      const side = one.t === 'rect' ? sideAt(one, p, tol) : -1;
+      if (side >= 0) {
+        ix.drag = { mode: 'side', id: one.id, i: side, start: p, base: one, moved: false };
         return repaint();
       }
     }
-    const target = topHit(p, tol);
+    const target = topHit(p, tol) ?? (one && (one.t === 'rect' || one.t === 'ellipse') && inBox(p, boxOf(one.a, one.b)) ? one : undefined);
     if (!target) {
       // 빈 곳: 끌면 영역 고르기(⇧는 더하기), 그냥 누르면 놓을 때 고름 풀기
       ix.marquee = { a: p, b: p, add: e.shiftKey, base: e.shiftKey ? [...ix.sel] : [], wbase: e.shiftKey ? [...ix.wsel] : [], moved: false };
@@ -720,6 +760,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     const d = drawRef.current;
     if (!d || !fromLayer(e) || (ix.pid !== null && e.pointerId !== ix.pid)) return;
     const p = toMM(e);
+    if (layer.current && d.tool === 'select' && !ix.drag && !ix.marquee) layer.current.style.cursor = hoverCursor(p, e.pointerType === 'touch' ? 2.4 : 1.2);
     if (ix.press && !ix.press.moved && dist(p, ix.press.p) > 2) ix.press.moved = true;
     if (ix.drawing) {
       ix.cursor = drawPoint(p, e);
@@ -775,6 +816,9 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       next = with_(q);
     } else if (g.mode === 'corner' && (b.t === 'rect' || b.t === 'ellipse')) {
       next = moveCorner(b, g.i, snapPt(p, skip, [], { x: true, y: true }, e, (n) => bboxOf(moveCorner(b, g.i, n), th)));
+    } else if (g.mode === 'side' && (b.t === 'rect' || b.t === 'ellipse')) {
+      // 위 · 아래 변은 세로로만, 왼쪽 · 오른쪽 변은 가로로만
+      next = moveSide(b, g.i, snapPt(p, skip, [], { x: g.i % 2 === 1, y: g.i % 2 === 0 }, e, (n) => bboxOf(moveSide(b, g.i, n), th)));
     } else if (g.mode === 'width' && b.t === 'text') {
       const q = snapPt({ x: p.x, y: b.a.y }, skip, [], { x: true, y: false }, e, (n) => ({ x: b.a.x, y: b.a.y, w: n.x - b.a.x, h: th(b.id) }));
       next = { ...b, bw: Math.max(6, q.x - b.a.x) };
@@ -1174,6 +1218,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
                 if (s?.t === 'text') put({ ...s, ...p } as Shape);
                 else if (pending?.id === r.id) setPending({ ...pending, ...p });
               }}
+              selected={!!draw && ix.sel.length === 1 && ix.sel[0] === r.id && !ix.wsel.length}
+              onPick={(e) => pickShape(r.id, e)}
             />
           ) : null,
         )}

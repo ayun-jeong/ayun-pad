@@ -86,13 +86,15 @@ interface BoxProps {
   onDrag(mode: 'move' | 'width', e: React.PointerEvent): void;
   onDelete(): void;
   onPatch(p: Partial<TextShape>): void; // 글상자 전체 색 · 글씨 크기 · 테두리
+  selected: boolean; // 골라져 있음(고치는 중은 아님): 꾸미기 막대를 보이고 끌면 옮겨진다
+  onPick(e: React.PointerEvent): void; // 글쓰기 화면에서 한 번 누르기 → 고르기(끌면 바로 옮기기)
 }
 
 const TB_COLORS: PenKey[] = ['r', 'b', 'k', 'p', 'y', 'g'];
 const TB_HL: PenKey[] = ['y', 'r', 'b', 'g'];
 
 // 글상자를 고치는 동안 바로 위에 뜨는 막대. 글자를 끌어 골랐으면 고른 글자만, 아니면 글상자 전체에.
-function TbBar({ view, r, onPatch }: { view: EditorView | null; r: Resolved & { t: 'text' }; onPatch(p: Partial<TextShape>): void }) {
+function TbBar({ view, r, editing, onPatch }: { view: EditorView | null; r: Resolved & { t: 'text' }; editing: boolean; onPatch(p: Partial<TextShape>): void }) {
   // 누를 때 글상자에서 커서 · 고른 글자가 빠지지 않게
   const keep = (e: React.SyntheticEvent) => {
     e.preventDefault();
@@ -100,14 +102,14 @@ function TbBar({ view, r, onPatch }: { view: EditorView | null; r: Resolved & { 
   };
   const color = (c: PenKey) => {
     const v = view;
-    if (v && !v.state.selection.empty) penCmd(c)(v.state, v.dispatch, v);
+    if (editing && v && !v.state.selection.empty) penCmd(c)(v.state, v.dispatch, v);
     else onPatch({ c });
   };
   const hl = (c: PenKey | null) => {
     const v = view;
     if (!v) return;
     const { from, to, empty } = v.state.selection;
-    const [a, b] = empty ? [0, v.state.doc.content.size] : [from, to];
+    const [a, b] = !editing || empty ? [0, v.state.doc.content.size] : [from, to];
     const tr = v.state.tr.removeMark(a, b, schema.marks.hl);
     if (c) tr.addMark(a, b, schema.marks.hl.create({ c }));
     v.dispatch(tr);
@@ -164,7 +166,7 @@ function TbBar({ view, r, onPatch }: { view: EditorView | null; r: Resolved & { 
 // 글상자 = 본문과 똑같은 필기 엔진의 또 하나의 편집기. 늘 살아 있어서 누르면 바로 쓰고,
 // 트리(- 스페이스 · Tab · ⌥Tab) · 자동 색 · 화살표 변환 · 기호 메뉴 · 분수 · 루트 · 펜이 본문과 같다.
 // 내용은 도형 지도(shapes)에 ProseMirror JSON으로 저장되고, 되돌리기는 노트와 같은 줄(⌘Z)이다.
-export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFocus, onBlur, onDrag, onDelete, onPatch }: BoxProps) {
+export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFocus, onBlur, onDrag, onDelete, onPatch, selected, onPick }: BoxProps) {
   const mount = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const [math, setMath] = useState<MathMenuState | null>(null);
@@ -231,11 +233,18 @@ export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFo
       onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) onBlur();
       }}
+      onPointerDown={(e) => {
+        // 한 번 누르기는 고르기(끌면 바로 옮김), 두 번 눌러야 고치기. 고치는 중이면 그대로 글을 고친다.
+        if (active || (e.target as Element).closest('.tb-bar')) return;
+        e.preventDefault();
+        onPick(e);
+      }}
     >
+      {selected && !active && <TbBar view={view.current} r={r} editing={false} onPatch={onPatch} />}
       <div ref={mount} className="tb-mount" />
       {active && (
         <>
-          <TbBar view={view.current} r={r} onPatch={onPatch} />
+          <TbBar view={view.current} r={r} editing onPatch={onPatch} />
           <span className="tb-grip" title="끌어서 옮기기" aria-label="글상자 옮기기" onPointerDown={(e) => onDrag('move', e)} />
           <span className="tb-width" title="끌어서 폭 바꾸기" aria-label="글상자 폭" onPointerDown={(e) => onDrag('width', e)} />
           <button

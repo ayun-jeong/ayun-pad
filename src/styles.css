@@ -554,3 +554,7 @@ body.drawing .toasts { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 104
 
 /* 글쓰기 화면에서 배경을 끌어 사각형으로 고르는 동안 */
 body.marqueeing, body.marqueeing * { user-select: none !important; -webkit-user-select: none !important; cursor: crosshair !important; }
+
+/* 글상자: 한 번 누르면 고르기 · 옮기기(손 모양), 두 번 눌러 고치기. 골라진 글상자의 꾸미기 막대는 그리기 중에도 눌린다. */
+.shapes-layer:not(.on) .tbox:not(.tedit) { cursor: move; }
+.shapes-layer.on .tbox .tb-bar { pointer-events: auto; }

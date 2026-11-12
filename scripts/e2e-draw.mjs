@@ -434,9 +434,20 @@ try {
   B = await boxes();
   check(B.length === 2 && B.some((b) => b.text === '둘째'), `⌥+클릭 → 그 자리에 글상자 (${B.map((b) => b.text).join('|')})`);
   const memo = B.find((b) => b.text === '메모 하나');
-  await page.click(`.tbox[data-sid="${memo.id}"]`);
-  await page.waitForSelector('.tbox.tedit .tb-grip');
-  check(true, '글쓰기 화면에서 글상자를 누르면 바로 고치기');
+  // 한 번 누른 채 끌기 → 고르면서 바로 옮기기(고치기는 아님), 위에 꾸미기 막대
+  const mb = await (await page.$(`.tbox[data-sid="${memo.id}"]`)).boundingBox();
+  await page.mouse.move(mb.x + mb.width / 2, mb.y + mb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(mb.x + mb.width / 2 + 10 * pxPerMm, mb.y + mb.height / 2 + 4 * pxPerMm, { steps: 6 });
+  await page.mouse.up();
+  await sleep(150);
+  const moved1 = (await boxes()).find((b) => b.id === memo.id);
+  check(Math.abs(moved1.a.x - memo.a.x - 10) < 0.6 && !(await page.$('.tbox.tedit')) && !!(await page.$('.tbox .tb-bar')), `글상자를 한 번 눌러 끌면 바로 옮기기 · 고치기는 아님 · 꾸미기 막대 (x ${memo.a.x.toFixed(1)} → ${moved1.a.x.toFixed(1)})`);
+  // 두 번 누르면 고치기
+  const mb2 = await (await page.$(`.tbox[data-sid="${memo.id}"]`)).boundingBox();
+  await page.mouse.click(mb2.x + mb2.width / 2, mb2.y + mb2.height / 2, { count: 2 });
+  const editing2 = await page.waitForSelector('.tbox.tedit .tb-grip', { timeout: 3000 }).then(() => true, () => false);
+  check(editing2, '글상자를 두 번 누르면 고치기');
   const grip = await (await page.$('.tbox.tedit .tb-grip')).boundingBox();
   await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
   await page.mouse.down();
@@ -444,7 +455,7 @@ try {
   await page.mouse.up();
   await sleep(120);
   const afterMove = (await boxes()).find((b) => b.id === memo.id);
-  check(Math.abs(afterMove.a.x - memo.a.x - 10) < 0.6, `손잡이로 끌어 옮기기 (x ${memo.a.x.toFixed(1)} → ${afterMove.a.x.toFixed(1)})`);
+  check(Math.abs(afterMove.a.x - moved1.a.x - 10) < 0.6, `고치는 중에는 손잡이로 끌어 옮기기 (x ${moved1.a.x.toFixed(1)} → ${afterMove.a.x.toFixed(1)})`);
   const wh = await (await page.$('.tbox.tedit .tb-width')).boundingBox();
   await page.mouse.move(wh.x + wh.width / 2, wh.y + wh.height / 2);
   await page.mouse.down();
@@ -815,10 +826,24 @@ try {
   check(Math.abs(R[4].x - 50) < 0.02 && g2.labels.length >= 2 && g2.labels.every((t) => t === '10.0mm'), `세 개 나란히: 같은 간격으로 붙고 간격 수치 (x ${R[4].x}, ${g2.labels.join(' ')})`);
   // ⌘(Ctrl)를 누르고 끌면 스냅 없이
   await page.keyboard.down(meta);
-  const g3 = await drag5([55, 70], [55.5, 70], guideNow);
+  const g3 = await drag5([55, 74], [55.5, 74], guideNow); // 골라 둔 네모는 안쪽을 잡아 옮긴다(변은 늘이기)
   await page.keyboard.up(meta);
   R = await rects();
   check(Math.abs(R[4].x - 50.5) < 0.1 && g3.lines === 0, `${meta}를 누르고 끌면 붙지 않음 (x ${R[4].x})`);
+
+  // 고른 네모의 변을 잡고 끌면 그 방향으로만 늘이고 줄이기(오른쪽 변 → 폭만, 아래 변 → 높이만)
+  const r3a = (await rects())[4];
+  const rsz = () => page.evaluate((id) => { const s = window.__ayunpad.doc().shapes.get(id); return { w: Math.abs(s.b.x - s.a.x), h: Math.abs(s.b.y - s.a.y), x: Math.min(s.a.x, s.b.x) }; }, r3a.id);
+  const s0 = await rsz();
+  await drag5([r3a.x + 10, 74], [r3a.x + 16, 74]); // 오른쪽 변(가운데쯤)
+  const s1 = await rsz();
+  await drag5([r3a.x + 5, 78], [r3a.x + 5, 82]); // 아래 변
+  const s2 = await rsz();
+  check(Math.abs(s1.w - s0.w - 6) < 0.5 && Math.abs(s1.h - s0.h) < 0.05 && Math.abs(s2.h - s1.h - 4) < 0.5 && Math.abs(s2.w - s1.w) < 0.05 && Math.abs(s2.x - s0.x) < 0.05,
+    `고른 네모의 변을 끌면 그 방향으로만 (폭 ${s0.w.toFixed(1)}→${s1.w.toFixed(1)}, 높이 ${s1.h.toFixed(1)}→${s2.h.toFixed(1)})`);
+  await combo([meta], 'KeyZ');
+  await combo([meta], 'KeyZ');
+  await sleep(120);
 
   // 영역 고르기: 빈 곳에서 끌어 R1 · R2(고르기 단추 없이, 그리고 나면 늘 고르기 상태)
   await drag5([5, 65], [45, 82]);
@@ -993,6 +1018,7 @@ try {
   await page.mouse.click(...at6(10, 70));
   await page.waitForSelector('.tbox.tedit .tb-edit');
   await k.type('가나다라마바사');
+  await sleep(200);
   const tb0 = await page.$eval('.tbox.tedit', (e) => e.getBoundingClientRect().left);
   const ed0 = await (await page.$('.tbox.tedit .tb-edit')).boundingBox();
   await page.mouse.move(ed0.x + 4, ed0.y + ed0.height / 2);
