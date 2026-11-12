@@ -70,7 +70,7 @@ export const shapesOf = (ydoc: Y.Doc) => ydoc.getMap<Shape>('shapes');
 export const W_STEPS = [0.2, 0.35, 0.5, 0.8];
 export const W_MIN = W_STEPS[0];
 export const W_MAX = W_STEPS[W_STEPS.length - 1];
-export const DEFAULT_W = 0.35;
+export const DEFAULT_W = W_MIN; // 새 화살표 · 선 · 네모 · 원은 가장 얇게(막대 · [ ] 로 굵게)
 
 export function stepW(w: number, dir: 1 | -1): number {
   if (dir > 0) return W_STEPS.find((x) => x > w + 1e-6) ?? W_MAX;

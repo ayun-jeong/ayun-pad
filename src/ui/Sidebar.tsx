@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { addNote, addSubject, deleteNote, notesOf, renameSubject, restoreNote, sortedSubjects, trashed, updateNote, type Library } from '../store/library';
+import { addNote, addSubject, deleteNote, deleteSubject, notesOf, renameSubject, restoreNote, sortedSubjects, trashed, updateNote, type Library } from '../store/library';
 import { purgeNote } from '../store/trash';
 
 interface Props {
@@ -10,7 +10,7 @@ interface Props {
   onClose(): void;
 }
 
-// 과목별 노트 목록. 이름은 두 번 눌러 바꾼다.
+// 과목별 노트 목록. 이름은 ✎(또는 두 번 누르기)로 바꾸고, 과목 ×는 노트째 휴지통으로.
 export function Sidebar({ lib, noteId, open, onOpen, onClose }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
@@ -45,11 +45,6 @@ export function Sidebar({ lib, noteId, open, onOpen, onClose }: Props) {
       {subjects.map((s) => (
         <div className="subject" key={s.id}>
           <div className="subject-name" onDoubleClick={() => setEditing(s.id)}>
-            {editing !== s.id && ![...lib.notes.values()].some((n) => n.subjectId === s.id) && (
-              <button type="button" className="mini subject-del" title="빈 과목 지우기" aria-label={`${s.name} 과목 지우기`} onClick={() => lib.subjects.delete(s.id)}>
-                ×
-              </button>
-            )}
             {editing === s.id ? (
               <input
                 autoFocus
@@ -63,9 +58,41 @@ export function Sidebar({ lib, noteId, open, onOpen, onClose }: Props) {
                 }}
               />
             ) : (
-              <span>{s.name}</span>
+              <>
+                <span className="sn">{s.name}</span>
+                <button type="button" className="mini" title="과목 이름 바꾸기" aria-label={`${s.name} 과목 이름 바꾸기`} onClick={() => setEditing(s.id)}>
+                  ✎
+                </button>
+                <button
+                  type="button"
+                  className="mini"
+                  title="과목 지우기(노트는 휴지통으로)"
+                  aria-label={`${s.name} 과목 지우기`}
+                  onClick={() => (notesOf(lib, s.id).length ? setConfirm(`subject:${s.id}`) : deleteSubject(lib, s.id))}
+                >
+                  ×
+                </button>
+              </>
             )}
           </div>
+          {confirm === `subject:${s.id}` && (
+            <div className="confirm">
+              ‘{s.name}’ 과목을 지울까요? 노트 {notesOf(lib, s.id).length}개는 휴지통으로 가요(30일 안에 되살리면 과목도 돌아와요).
+              <button
+                type="button"
+                className="mini"
+                onClick={() => {
+                  deleteSubject(lib, s.id);
+                  setConfirm(null);
+                }}
+              >
+                지우기
+              </button>
+              <button type="button" className="mini" onClick={() => setConfirm(null)}>
+                그대로
+              </button>
+            </div>
+          )}
           {notesOf(lib, s.id).map((n) =>
             confirm === n.id ? (
               <div className="confirm" key={n.id}>

@@ -242,7 +242,7 @@ try {
   check(z?.pts.length === 11, `꺾임 점 10개짜리 화살표 (점 ${z?.pts.length}개)`);
   await k.press('BracketRight');
   await sleep(80);
-  check((await shapes()).find((s) => s.id === z.id)?.w === 0.5, '] → 굵기 0.35 → 0.5mm');
+  check(z?.w === 0.2 && (await shapes()).find((s) => s.id === z.id)?.w === 0.35, `새 화살표는 가장 얇게(${z?.w}mm), ] → 0.35mm`);
   const p5 = [...zig[5]];
   await page.mouse.move(...at(...p5));
   await page.mouse.down();
@@ -706,10 +706,11 @@ try {
   check(!!(await page.$('.drawbar.has-sel')), '글쓰기 화면에서 화살표를 누르면 그 화살표가 골라짐');
   await press('.drawbar .swatches button', (b) => b.getAttribute('aria-label') === '파랑');
   await press('.drawbar button', (b) => b.textContent === '직각');
-  await press('.drawbar button', (b) => b.getAttribute('aria-label') === '가늘게');
+  const w0 = (await page.evaluate((id) => window.__ayunpad.doc().shapes.get(id), arrowId)).w;
+  await press('.drawbar button', (b) => b.getAttribute('aria-label') === '굵게');
   await sleep(120);
   const ed = await page.evaluate((id) => window.__ayunpad.doc().shapes.get(id), arrowId);
-  check(ed.c === 'b' && ed.o === true && ed.w < 0.35, `이미 그린 화살표 색 · 직각 · 굵기를 마우스로 바꾸기 (${ed.c}, 직각 ${ed.o}, ${ed.w}mm)`);
+  check(ed.c === 'b' && ed.o === true && ed.w > w0, `이미 그린 화살표 색 · 직각 · 굵기를 마우스로 바꾸기 (${ed.c}, 직각 ${ed.o}, ${ed.w}mm)`);
   check(!!(await page.$('.drawbar.has-sel')), '막대를 눌러도 고른 그림이 풀리지 않음');
   const paths = async () => (await shapes()).filter((s) => s.t === 'path');
   await press('.drawbar button', (b) => b.textContent === '복제');

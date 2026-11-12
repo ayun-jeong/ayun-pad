@@ -31,7 +31,8 @@ export function sampleDoc() {
 // 과목이 하나도 없으면 '경영학' 과목과 견본 노트를 만든다. 만든 노트 id를 돌려준다.
 export async function seedIfEmpty(lib: Library): Promise<string | null> {
   await lib.ready;
-  if (lib.subjects.size > 0) return null;
+  // 과목을 다 지운 뒤에는 견본을 다시 만들지 않는다(한 번 만든 적이 있으면 'seed' 표시가 남아 있다)
+  if (lib.subjects.size > 0 || lib.ydoc.getMap('meta').has('seed')) return null;
   const subject = addSubject(lib, '경영학');
   const note = addNote(lib, subject.id, '견본 · 경영학');
   lib.ydoc.getMap('meta').set('seed', { noteId: note.id, subjectId: subject.id });

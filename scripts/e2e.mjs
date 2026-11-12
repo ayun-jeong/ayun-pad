@@ -695,6 +695,52 @@ try {
   );
   check(chain2 === '회계:b 원가:y 변동비:b 단가:g 관리:y', `형제 하나를 칠하면 같은 가지 형제도 그 색, 아래는 다음 색 (${chain2})`);
 
+  // 13) 과목: ✎로 이름 바꾸기 · ×로 지우기(노트는 휴지통) · 노트를 되살리면 과목도 돌아옴 · 고른 노트 왼쪽에 빨간 줄 없음
+  {
+    const subjNames = () => page.$$eval('.side .subject .sn', (e) => e.map((x) => x.textContent));
+    const trashN = () => page.evaluate(() => Number(document.querySelector('.trash summary')?.textContent?.match(/\((\d+)\)/)?.[1] ?? 0));
+    await page.click('.side > .subject-name button.mini');
+    await page.waitForSelector('.side .subject-name input');
+    await k.type('시험 과목');
+    await k.press('Enter');
+    await sleep(100);
+    check((await subjNames()).includes('시험 과목'), '+ 과목 → 이름 넣기');
+    await page.click('button[aria-label="시험 과목 과목 이름 바꾸기"]');
+    await page.waitForSelector('.side .subject-name input');
+    await k.down(meta);
+    await k.press('KeyA');
+    await k.up(meta);
+    await k.type('바꾼 과목');
+    await k.press('Enter');
+    await sleep(100);
+    const names1 = await subjNames();
+    check(names1.includes('바꾼 과목') && !names1.includes('시험 과목'), `✎ → 과목 이름 바꾸기 (${names1.join(', ')})`);
+    // 노트 하나 더 → 노트 2개인 과목
+    const rows = await page.$$('.side .subject');
+    let target = null;
+    for (const r of rows) if ((await r.$eval('.sn', (e) => e.textContent).catch(() => '')) === '바꾼 과목') target = r;
+    await (await target.$('.addnote')).click();
+    await sleep(150);
+    const t0 = await trashN();
+    await page.click('button[aria-label="바꾼 과목 과목 지우기"]');
+    await page.waitForSelector('.side .confirm');
+    const msg = await page.$eval('.side .confirm', (e) => e.textContent);
+    check(msg.includes('노트 2개'), `과목 × → 확인(노트 2개는 휴지통으로) (${msg.slice(0, 40)})`);
+    await page.$$eval('.side .confirm button', (bs) => bs.find((b) => b.textContent === '지우기').click());
+    await sleep(200);
+    const names2 = await subjNames();
+    const curNote = await page.$eval('.crumb input', (e) => e.value);
+    check(!names2.includes('바꾼 과목') && (await trashN()) === t0 + 2 && curNote !== '새 노트', `지우기 → 과목은 목록에서 빠지고 노트 2개는 휴지통, 다른 노트가 열림 (${names2.join(', ')} · 휴지통 ${await trashN()} · ${curNote})`);
+    await page.click('.trash summary');
+    await sleep(100);
+    await page.$$eval('.trash .note-item', (items) => items[0].querySelector('button.mini').click());
+    await sleep(200);
+    const names3 = await subjNames();
+    check(names3.includes('바꾼 과목') && (await trashN()) === t0 + 1, `휴지통에서 노트 되살리기 → 과목도 그 이름 그대로 돌아옴 (${names3.join(', ')})`);
+    const bar = await page.$eval('.note-item.active', (e) => getComputedStyle(e).boxShadow);
+    check(bar === 'none', `고른 노트 왼쪽 빨간 줄 없음 (${bar})`);
+  }
+
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();
 } catch (e) {

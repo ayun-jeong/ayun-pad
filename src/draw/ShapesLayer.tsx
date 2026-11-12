@@ -156,7 +156,7 @@ function ShapeSvg({ r }: { r: Resolved }) {
   const b = boxOf(r.a, r.b);
   const fill = r.fill ? strokeOf(r.fill) : 'none';
   const common = { fill, fillOpacity: r.fill ? 0.18 : undefined, stroke, strokeWidth: r.w, strokeDasharray: dash, 'data-sid': r.id };
-  if (r.t === 'rect') return <rect x={b.x} y={b.y} width={b.w} height={b.h} rx={Math.min(0.6, b.w / 4, b.h / 4)} {...common} />;
+  if (r.t === 'rect') return <rect x={b.x} y={b.y} width={b.w} height={b.h} {...common} />; // 모서리는 직각
   return <ellipse cx={b.x + b.w / 2} cy={b.y + b.h / 2} rx={b.w / 2} ry={b.h / 2} {...common} />;
 }
 

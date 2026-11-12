@@ -99,15 +99,19 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
 .subject-name input, .note-item input { width: 100%; border: 1px solid var(--rule-2); border-radius: 5px; padding: 2px 5px; }
 .note-item { display: flex; align-items: center; gap: 4px; padding: 5px 8px 5px 14px; border-radius: 6px; cursor: pointer; color: var(--ink-2); }
 .note-item:hover { background: var(--bg); }
-.note-item.active { background: var(--bg); color: var(--ink); font-weight: 600; box-shadow: inset 2px 0 0 var(--accent); }
+.note-item.active { background: var(--bg); color: var(--ink); font-weight: 600; }
 .note-item .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 과목 줄: 이름 · ✎(이름 바꾸기) · ×(지우기). 마우스면 올렸을 때만, 터치면 늘 보인다 */
+.subject > .subject-name { justify-content: flex-start; gap: 2px; }
+.subject > .subject-name .sn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (hover: hover) { .subject > .subject-name:not(:hover) > .mini { visibility: hidden; } }
 /* 노트 지우기 ×는 마우스를 올렸을 때만(손가락 기기는 지금 노트에만) */
 @media (hover: hover) { .note-item:not(:hover) > .mini { visibility: hidden; } }
 @media (hover: none) { .note-item:not(.active) > .mini { visibility: hidden; } }
 .mini { border: 0; background: transparent; color: var(--ink-3); padding: 2px 5px; border-radius: 5px; font-size: 13px; }
 .mini:hover { background: var(--bg); color: var(--ink); }
 .addnote { text-align: left; padding: 4px 14px; }
-.confirm { display: flex; gap: 6px; align-items: center; padding: 4px 14px; font-size: 12.5px; color: var(--accent); }
+.confirm { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px 14px; font-size: 12.5px; color: var(--accent); }
 
 /* 종이 */
 .desk { overflow: auto; position: relative; padding: 24px 16px 200px; } /* 아래 여백은 그리기 막대 자리까지 늘 같게(그리기를 끌 때 화면이 밀려 누른 자리가 어긋나지 않게) */
@@ -341,7 +345,7 @@ textarea.tbox.tedit { pointer-events: auto; resize: none; overflow: hidden; outl
 /* / 넣기 메뉴 */
 .slash { position: fixed; z-index: 45; min-width: 230px; max-width: min(340px, calc(100vw - 16px)); max-height: 260px; overflow: auto; background: var(--surface); border: 1px solid var(--rule-2); border-radius: 10px; box-shadow: var(--shadow); padding: 4px; display: grid; }
 .slash button { border: 0; background: transparent; text-align: left; padding: 5px 9px; border-radius: 7px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: baseline; }
-.slash button.on { background: var(--bg); box-shadow: inset 2px 0 0 var(--accent); }
+.slash button.on { background: var(--bg); }
 .slash b { font-weight: 600; }
 .slash span { color: var(--ink-3); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -387,7 +391,7 @@ textarea.tbox.tedit { pointer-events: auto; resize: none; overflow: hidden; outl
 .pal-list ul { list-style: none; margin: 0; padding: 0; }
 .pal-group h4 { margin: 8px 10px 4px; font-size: 12px; color: var(--ink-3); font-weight: 600; }
 .pal-list button { width: 100%; border: 0; background: transparent; text-align: left; border-radius: 8px; padding: 7px 10px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; }
-.pal-list button.on { background: var(--bg); box-shadow: inset 2px 0 0 var(--accent); }
+.pal-list button.on { background: var(--bg); }
 .pal-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pal-sub { color: var(--ink-3); font-size: 12px; white-space: nowrap; grid-column: 2; grid-row: 1; }
 .pal-snip { grid-column: 1 / -1; color: var(--ink-2); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -529,7 +533,6 @@ body.drawing .toasts { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 104
 }
 .touchbar small { display: none; }
 @media (pointer: coarse), (max-width: 720px) { .touchbar small { display: block; } }
-.subject-name .subject-del { order: 2; }
 
 /* 찾기 판: 다른 노트에서 찾은 곳 */
 .find-others .find-list { max-height: 24vh; }
