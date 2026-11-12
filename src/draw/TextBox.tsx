@@ -91,6 +91,7 @@ interface BoxProps {
   onPatch(p: Partial<TextShape>): void; // 글상자 전체 색 · 글씨 크기 · 테두리
   selected: boolean; // 골라져 있음(고치는 중은 아님): 꾸미기 막대를 보이고 끌면 옮겨진다
   onPick(e: React.PointerEvent): void; // 글쓰기 화면에서 한 번 누르기 → 고르기(끌면 바로 옮기기)
+  reading?: boolean; // 읽기 모드(편집 칸 잠금은 settings.readOnly를 엔진이 읽는다)
 }
 
 const TB_COLORS: PenKey[] = ['r', 'b', 'k', 'p', 'y', 'g'];
@@ -170,7 +171,7 @@ function TbBar({ view, r, editing, onPatch }: { view: EditorView | null; r: Reso
 // 글상자 = 본문과 똑같은 필기 엔진의 또 하나의 편집기. 늘 살아 있어서 누르면 바로 쓰고,
 // 트리(- 스페이스 · Tab · ⌥Tab) · 자동 색 · 화살표 변환 · 기호 메뉴 · 분수 · 루트 · 펜이 본문과 같다.
 // 내용은 도형 지도(shapes)에 ProseMirror JSON으로 저장되고, 되돌리기는 노트와 같은 줄(⌘Z)이다.
-export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFocus, onBlur, onDrag, onDelete, onPatch, selected, onPick }: BoxProps) {
+export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFocus, onBlur, onDrag, onDelete, onPatch, selected, onPick, reading }: BoxProps) {
   const mount = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const [math, setMath] = useState<MathMenuState | null>(null);
@@ -212,6 +213,7 @@ export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFo
       dispatchTransaction(this: EditorView, tr) {
         markComposing(this, tr);
         const next = this.state.apply(tr);
+        if (next === this.state) return; // 막힌 거래(읽기 모드)
         this.updateState(next);
         if (tr.docChanged) cb.current.onSave(next.doc);
         const ms = mathKey.getState(next);
@@ -244,6 +246,12 @@ export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFo
     const v = view.current;
     if (v && !v.isDestroyed && autoKey.getState(v.state)?.top !== (settings.treeTop ?? 'corner')) v.dispatch(v.state.tr.setMeta(autoKey, { rebuild: true }));
   }, [settings.treeTop]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 읽기 모드를 켜고 끄면 편집 칸 잠금(contenteditable)을 다시 정한다
+  useEffect(() => {
+    const v = view.current;
+    if (v && !v.isDestroyed) v.setProps({});
+  }, [reading]);
 
   // 손잡이 · 폭 · 지우기 단추는 누를 때 커서가 빠지지 않게(preventDefault)
   return (

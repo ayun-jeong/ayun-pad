@@ -64,6 +64,19 @@ function initialZoom(): number {
   return Math.max(0.5, Math.min(1.5, (w - 24) / ((105 + GUTTER_MM) * PX_PER_MM)));
 }
 
+// 읽기 모드: 눌러도 노트가 안 바뀐다(확대 · 축소 · 스크롤 · 찾기 · 다른 노트 보기만). 기기마다 기억하고, 폰은 처음부터 읽기로 연다.
+const READ = 'ayunpad-read';
+function initialReading(): boolean {
+  const saved = lsGet(READ);
+  if (saved === '1' || saved === '0') return saved === '1';
+  return !!window.matchMedia?.('(pointer: coarse)').matches && Math.min(window.innerWidth, window.innerHeight) < 600;
+}
+const READ_HINT = '읽기 모드예요. 고치려면 위쪽 ‘읽기 중’을 눌러 끄세요 (⌥L)';
+// 읽기 모드에서 막는 것(노트를 고치는 판 · 도구)
+const EDIT_ACTIONS = new Set<AppAction>(['type', 'draw', 'draw-text', 'draw-arrow', 'draw-line', 'draw-rect', 'draw-ellipse', 'insert', 'emph', 'pitch-down', 'pitch-up', 'pen-picker', 'hl-picker']);
+// 사파리(gesture 이벤트)가 아닌 폰 · 태블릿(안드로이드 등)은 두 손가락 오므리기 · 벌리기를 직접 받아 노트 배율로
+const OWN_PINCH = !('GestureEvent' in window);
+
 const keepFocus = (e: { preventDefault(): void }) => e.preventDefault();
 const SNAP_EVERY = 10 * 60 * 1000;
 
@@ -95,6 +108,10 @@ export function App() {
   const [zoomBadge, setZoomBadge] = useState(false);
   const deskRef = useRef<HTMLElement>(null);
   useEffect(() => lsSet(ZOOM, String(zoom)), [zoom]);
+  const [reading, setReading] = useState(initialReading);
+  const readingRef = useRef(reading);
+  readingRef.current = reading;
+  useEffect(() => lsSet(READ, reading ? '1' : '0'), [reading]);
   // ⌘(Ctrl)+휠 · 트랙패드 오므리기/벌리기: 노트 배율(브라우저 전체 확대 대신). 마우스 아래 자리가 그대로 있게 스크롤도 맞춘다.
   useEffect(() => {
     const desk = deskRef.current;
@@ -140,13 +157,39 @@ export function App() {
       const g = e as Gesture;
       zoomTo(base * g.scale, g.clientX, g.clientY);
     };
+    // 그 밖의 폰(안드로이드 크롬 등): 두 손가락 오므리기 · 벌리기도 화면 전체 확대 대신 노트 배율로(두 손가락 가운데 자리는 그대로).
+    // 그리는 중(그림 층이 손가락을 받음)에는 하지 않는다.
+    let pinch: { d: number; z: number } | null = null;
+    const gap = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY) || 1;
+    const onTouchStart = (e: TouchEvent) => {
+      pinch = e.touches.length === 2 && !document.body.classList.contains('drawing') ? { d: gap(e.touches), z: zoomNow.current } : null;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      const [a, b] = [e.touches[0], e.touches[1]];
+      zoomTo((pinch.z * gap(e.touches)) / pinch.d, (a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2);
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) pinch = null;
+    };
     desk.addEventListener('wheel', onWheel, { passive: false });
     desk.addEventListener('gesturestart', onGestureStart);
     desk.addEventListener('gesturechange', onGesture);
+    if (OWN_PINCH) {
+      desk.addEventListener('touchstart', onTouchStart, { passive: true });
+      desk.addEventListener('touchmove', onTouchMove, { passive: false });
+      desk.addEventListener('touchend', onTouchEnd);
+      desk.addEventListener('touchcancel', onTouchEnd);
+    }
     return () => {
       desk.removeEventListener('wheel', onWheel);
       desk.removeEventListener('gesturestart', onGestureStart);
       desk.removeEventListener('gesturechange', onGesture);
+      desk.removeEventListener('touchstart', onTouchStart);
+      desk.removeEventListener('touchmove', onTouchMove);
+      desk.removeEventListener('touchend', onTouchEnd);
+      desk.removeEventListener('touchcancel', onTouchEnd);
       clearTimeout(hide);
     };
   }, []);
@@ -308,20 +351,48 @@ export function App() {
     return () => clearInterval(t);
   }, []);
 
-  const withView = useCallback((fn: (v: EditorView) => void) => {
-    const v = viewRef.current;
-    if (!v) return;
-    fn(v);
-    v.focus();
-  }, []);
+  // 편집기에 명령 하나(펜 · 형광펜 · 들여쓰기 · 되돌리기 …). 읽기 모드에서는 하지 않는다.
+  const withView = useCallback(
+    (fn: (v: EditorView) => void) => {
+      const v = viewRef.current;
+      if (!v) return;
+      if (readingRef.current) return toast(READ_HINT);
+      fn(v);
+      v.focus();
+    },
+    [toast],
+  );
 
-  const changeTypo = useCallback((patch: Partial<Typo>) => {
-    if (docRef.current) writeTypo(docRef.current, patch);
-  }, []);
+  const changeTypo = useCallback(
+    (patch: Partial<Typo>) => {
+      if (readingRef.current) return toast(READ_HINT);
+      if (docRef.current) writeTypo(docRef.current, patch);
+    },
+    [toast],
+  );
 
   const act = useCallback(
     (a: AppAction) => {
+      if (readingRef.current && EDIT_ACTIONS.has(a)) {
+        toast(READ_HINT);
+        return;
+      }
       switch (a) {
+        case 'read': {
+          const next = !readingRef.current;
+          readingRef.current = next;
+          setReading(next);
+          if (next) {
+            setDraw(null);
+            setInsert(false);
+            setPanel(false);
+            setEmph(false);
+            setColorPop(null);
+            setSubbar(null);
+          }
+          toast(next ? '읽기 모드: 눌러도 노트가 바뀌지 않아요(확대 · 축소 · 스크롤만)' : '고치기 모드');
+          break;
+        }
         case 'sidebar':
           setSidebar((s) => !s);
           break;
@@ -473,6 +544,7 @@ export function App() {
         'alt+Digit2': 'view-half',
         'alt+Digit3': 'view-a4',
         'alt+KeyD': 'draw',
+        'alt+KeyL': 'read',
         'mod+KeyF': 'find',
       };
       // 글을 쓰는 중이 아닐 때 / → 검색
@@ -486,6 +558,7 @@ export function App() {
       // 편집 칸 밖(판의 단추를 누른 뒤 등)에서도 ⌘Z · ⌘⇧Z로 노트를 되돌린다. 그리기 중에는 그림 층이 받는다.
       if (!typing && !drawRef.current && (id === 'mod+KeyZ' || id === 'mod+shift+KeyZ' || id === 'mod+KeyY')) {
         e.preventDefault();
+        if (readingRef.current) return toast(READ_HINT);
         if (id === 'mod+KeyZ') umRef.current?.undo();
         else umRef.current?.redo();
         return;
@@ -497,7 +570,7 @@ export function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [act]);
+  }, [act, toast]);
 
   // 인쇄: 브라우저가 인쇄를 시작하는 순간(⌘P든 메뉴든) A4 장을 만들어 넣고, 끝나면 비운다.
   useEffect(() => {
@@ -522,6 +595,7 @@ export function App() {
 
   // 보기 화면에서 줄을 누르면 편집 화면의 그 줄 맨 앞으로
   const pickLine = useCallback((i: number) => {
+    if (readingRef.current) return; // 읽기 모드: 눌러도 화면이 바뀌지 않게
     setMode('edit');
     requestAnimationFrame(() => {
       const v = viewRef.current;
@@ -699,6 +773,7 @@ export function App() {
   // ⌘K 명령 목록
   const commands = useMemo<PaletteCommand[]>(
     () => [
+      { name: '읽기 모드 켜기 · 끄기(눌러도 노트가 안 바뀌게, 확대 · 축소만)', keys: '⌥L', alias: ['읽기', 'read', '잠금', '보기 전용', 'lock'], run: () => act('read') },
       { name: '편집 화면', keys: '⌥1', run: () => act('view-edit') },
       { name: '반쪽 보기', keys: '⌥2', run: () => act('view-half') },
       { name: 'A4 합침 보기', keys: '⌥3', run: () => act('view-a4') },
@@ -745,7 +820,7 @@ export function App() {
   const penText = pen ? (isPenKey(pen) ? `${PEN_NAME[pen]} 펜` : '고른 색 펜') : '자동 펜';
 
   return (
-    <div className="app">
+    <div className={`app${reading ? ' reading' : ''}`}>
       <header className="top">
         <button type="button" className="tbtn" onClick={() => setSidebar((s) => !s)} aria-label="과목 목록 열고 닫기">
           ☰
@@ -756,12 +831,13 @@ export function App() {
           <input
             aria-label="노트 이름"
             value={note?.title ?? ''}
+            readOnly={reading}
             onFocus={(e) => (titleAtFocus.current = e.currentTarget.value)}
             onChange={(e) => note && updateNote(lib, note.id, { title: e.currentTarget.value })}
             onBlur={(e) => note && !e.currentTarget.value.trim() && updateNote(lib, note.id, { title: titleAtFocus.current.trim() || '새 노트' })}
           />
         </div>
-        {pen && (
+        {pen && !reading && (
           <button type="button" className="tbtn pen-now" onClick={() => withView((v) => penCmd(null)(v.state, v.dispatch, v))} title="지금 든 펜 · 누르면 자동 펜으로 (⌥A)">
             <i className="pen-dot" style={{ background: colorOf(pen) }} />
             <span className="wide-only">{penText}</span>
@@ -790,12 +866,25 @@ export function App() {
             A4
           </button>
         </div>
-        <button type="button" className={`tbtn tb-draw${draw ? ' on' : ''}`} onClick={() => act('draw')} title="그리기: 화살표 · 선 · 네모 · 원 · 글상자, 끌어서 여러 개 고르기 (⌥D)">
-          ✎<span className="wide-only"> 그리기</span>
+        <button
+          type="button"
+          className={`tbtn read-btn${reading ? ' on' : ''}`}
+          aria-pressed={reading}
+          onClick={() => act('read')}
+          title={reading ? '읽기 모드: 눌러도 노트가 바뀌지 않아요. 누르면 고치기로 (⌥L)' : '읽기 모드: 눌러도 노트가 바뀌지 않게, 확대 · 축소 · 스크롤만 (⌥L)'}
+        >
+          {reading ? '읽기 중' : '읽기'}
         </button>
-        <button type="button" className={`tbtn${insert ? ' on' : ''}`} onClick={() => act('insert')} title="표 · 수직선 · 연표 · 그래프 · 분수 · 글상자 · 도형 넣기 (본문에서 / 도 됨)">
-          ＋<span className="wide-only"> 넣기</span>
-        </button>
+        {!reading && (
+          <button type="button" className={`tbtn tb-draw${draw ? ' on' : ''}`} onClick={() => act('draw')} title="그리기: 화살표 · 선 · 네모 · 원 · 글상자, 끌어서 여러 개 고르기 (⌥D)">
+            ✎<span className="wide-only"> 그리기</span>
+          </button>
+        )}
+        {!reading && (
+          <button type="button" className={`tbtn${insert ? ' on' : ''}`} onClick={() => act('insert')} title="표 · 수직선 · 연표 · 그래프 · 분수 · 글상자 · 도형 넣기 (본문에서 / 도 됨)">
+            ＋<span className="wide-only"> 넣기</span>
+          </button>
+        )}
         <button type="button" className={`tbtn${find ? ' on' : ''}`} onClick={() => (find ? closeFind() : act('find'))} title="찾기: 찾은 곳에 동그라미 · 밑줄 · 형광펜, 강조 지우기, 다른 노트 결과도 (⌘F) · 전체 검색 · 명령은 ⌘K" aria-label="찾기">
           ⌕<span className="wide-only"> 찾기</span>
         </button>
@@ -807,6 +896,7 @@ export function App() {
         <MoreMenu
           mode={mode}
           zoom={zoom}
+          reading={reading}
           syncText={sync.state === 'local' ? '로그인 · 동기화' : statusText(sync)}
           act={act}
           onZoom={(d) => setZoom((z) => clampZoom(Math.round((z + d * 0.1) * 10) / 10))}
@@ -833,7 +923,7 @@ export function App() {
         onClose={() => setSidebar(false)}
       />
 
-      <main ref={deskRef} className={`desk${draw ? ' drawing' : ''}`}>
+      <main ref={deskRef} className={`desk${draw ? ' drawing' : ''}${OWN_PINCH ? ' own-pinch' : ''}`}>
         {zoomBadge && <div className="zoom-badge">{Math.round(zoom * 100)}%</div>}
         {ready && noteId ? (
           <>
@@ -842,6 +932,7 @@ export function App() {
                 key={noteId}
                 noteId={noteId}
                 zoom={zoom}
+                reading={reading}
                 draw={mode === 'edit' ? draw : null}
                 setDraw={setDraw}
                 toast={toast}
@@ -882,7 +973,7 @@ export function App() {
         />
       )}
       {versions && docRef.current && viewRef.current && (
-        <Versions docId={`note:${docRef.current.id}`} ydoc={docRef.current.ydoc} view={viewRef.current} toast={toast} onClose={() => setVersions(false)} />
+        <Versions docId={`note:${docRef.current.id}`} ydoc={docRef.current.ydoc} view={viewRef.current} toast={toast} reading={reading} onClose={() => setVersions(false)} />
       )}
       {help && <Help onClose={() => setHelp(false)} />}
       {insert && viewRef.current && <InsertPanel view={viewRef.current} app={act} onClose={() => setInsert(false)} />}
@@ -903,6 +994,7 @@ export function App() {
           onOpenNote={openFromSearch}
           onEmph={() => act('emph')}
           onClose={closeFind}
+          reading={reading}
         />
       )}
       {emph && viewRef.current && edState && docRef.current && (
@@ -961,7 +1053,7 @@ export function App() {
 
       <div className="print-root" ref={printRef} aria-hidden="true" />
 
-      {mode === 'edit' && !draw && hasSel && (
+      {mode === 'edit' && !draw && !reading && hasSel && (
         <nav className="touchbar selbar" aria-label="고른 글자 꾸미기">
           {(['r', 'b', 'k'] as const).map((c) => (
             <button key={c} type="button" onPointerDown={keepFocus} onClick={() => withView((v) => penCmd(c)(v.state, v.dispatch, v))}>
@@ -984,7 +1076,7 @@ export function App() {
           </button>
         </nav>
       )}
-      {mode === 'edit' && !draw && !hasSel && subbar && (
+      {mode === 'edit' && !draw && !reading && !hasSel && subbar && (
         <nav className="touchbar subbar" aria-label={subbar === 'pen' ? '펜 색' : '형광펜 색'}>
           {(subbar === 'pen' ? (['r', 'b', 'k', 'p', 'y', 'g'] as const) : (['r', 'y', 'b', 'g', 'p'] as const)).map((c) => (
             <button
@@ -1036,7 +1128,7 @@ export function App() {
           </button>
         </nav>
       )}
-      {mode === 'edit' && !draw && !hasSel && (
+      {mode === 'edit' && !draw && !reading && !hasSel && (
         <nav className="touchbar" aria-label="편집 도구">
           <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => indentCmd(-1)(v.state, v.dispatch, v))} aria-label="내어쓰기">
             ⇤<small>내어</small>

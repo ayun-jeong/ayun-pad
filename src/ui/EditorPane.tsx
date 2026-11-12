@@ -28,6 +28,7 @@ export const GUTTER_MM = 7;
 interface Props {
   noteId: string;
   zoom: number;
+  reading: boolean; // 읽기 모드: 눌러도 · 쳐도 노트가 안 바뀐다(확대 · 축소 · 스크롤만)
   draw: DrawState | null;
   setDraw(patch: Partial<DrawState> | null): void;
   toast(msg: string): void;
@@ -70,7 +71,7 @@ function pushWidgets(editor: HTMLElement, usablePx: number, lhPx: number, zoom: 
 
 // 노트 하나를 105mm 칼럼에 연다. 반쪽이 끝나는 곳마다 점선과 쪽 번호(1-1, 1-2 …)를 그린다.
 // 칼럼(.sheet-src) = 편집 칸 + 그림 층. 반쪽 보기 · A4 보기 · 인쇄는 이 칼럼을 그대로 복제한다.
-export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, onEdit, onDoc }: Props) {
+export function EditorPane({ noteId, zoom, reading, draw, setDraw, toast, app, onState, onEdit, onDoc }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const srcRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
@@ -135,6 +136,7 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
   const settings = useRef<RuleSettings>({ arrows: true, math: true }).current;
   // 가지선 모양은 그리는 동안(자식 글상자 효과보다 먼저) 바뀌어 있어야 해서 여기서 바로 넣는다
   settings.treeTop = typo.treeTop;
+  settings.readOnly = reading;
   const frame = useRef(0);
   const liveRef = useRef<Live | null>(null);
   liveRef.current = live;
@@ -182,6 +184,11 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
         trackedOrigins: new Set<unknown>([ySyncPluginKey, SHAPES]),
         deleteFilter: (item) => defaultDeleteFilter(item, defaultProtectedNodes),
       });
+      // 읽기 모드에서는 되돌리기 · 다시 하기도 안 한다(⌘Z가 본문 · 위젯 칸 · 판 · 전역 어디서 눌려도 이 관리자를 거친다)
+      const undo0 = um.undo.bind(um);
+      const redo0 = um.redo.bind(um);
+      um.undo = () => (settings.readOnly ? null : undo0());
+      um.redo = () => (settings.readOnly ? null : redo0());
       const hooks: EditorHooks = {
         toast: (m) => cb.current.toast(m),
         app: (a) => cb.current.app(a),
@@ -237,6 +244,30 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
   useEffect(() => {
     if (typo.font.startsWith('u-')) void ensureFont(typo.font);
   }, [typo.font]);
+
+  // 읽기 모드를 켜고 끄면 편집 칸 잠금(contenteditable)을 다시 정한다. 켤 때 커서가 노트 안에 있으면 빼서 폰 자판도 내린다.
+  // 고른 범위는 풀고 바꾼다: 읽는 동안 끌어 고른 범위가 남아 있으면 고치기로 돌아와 처음 친 글자가 그 범위를 덮어쓴다.
+  useEffect(() => {
+    const v = live?.view;
+    if (!v || v.isDestroyed) return;
+    const dom = getSelection();
+    if (dom && dom.rangeCount && srcRef.current?.contains(dom.anchorNode)) dom.removeAllRanges();
+    const sel = v.state.selection;
+    if (!sel.empty) v.dispatch(v.state.tr.setSelection(TextSelection.near(sel.$head)));
+    v.setProps({});
+    const a = document.activeElement as HTMLElement | null;
+    if (reading && a && srcRef.current?.contains(a)) a.blur();
+  }, [reading, live]);
+  // 읽기 모드: 위젯 글칸(그래프 · 연표 이름표 · 분수 칸)처럼 따로 고칠 수 있는 칸에도 글자가 들어가지 않게
+  useEffect(() => {
+    const s = srcRef.current;
+    if (!s) return;
+    const stop = (e: Event) => {
+      if (settings.readOnly) e.preventDefault();
+    };
+    s.addEventListener('beforeinput', stop, true);
+    return () => s.removeEventListener('beforeinput', stop, true);
+  }, [settings]);
 
   useLayoutEffect(() => {
     const paper = paperRef.current;
@@ -354,6 +385,7 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
                   }}
                   host={hostRef.current!}
                   settings={settings}
+                  reading={reading}
                 />
               )}
             </div>

@@ -28,6 +28,7 @@ interface Props {
   onOpenNote(noteId: string, target: JumpTarget): void;
   onClose(): void;
   onEmph(): void;
+  reading?: boolean; // 읽기 모드: 찾아서 옮겨 다니기만(강조 · 바꾸기 · 되돌리기 없음)
 }
 
 const OTHER_MAX = 40;
@@ -55,7 +56,7 @@ type Row =
 
 // ⌘F: 이 노트(본문 · 표 · 글상자 · 위젯 이름표)에서 찾고, 고른 곳에만 동그라미 · 밑줄 · 형광펜 · 글자색을 한 번에.
 // 고름은 적용할 때까지 그대로 남고, 판을 닫았다 열어도 · 그 사이 글을 고쳐도 남는다. 검색어를 바꿀 때만 다시 전부 고름.
-export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial, onQuery, toast, lib, noteId, onOpenNote, onClose, onEmph }: Props) {
+export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial, onQuery, toast, lib, noteId, onOpenNote, onClose, onEmph, reading }: Props) {
   const fs = findKey.getState(state);
   const [q, setQ] = useState(initial);
   const [rep, setRep] = useState('');
@@ -209,6 +210,7 @@ export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial,
 
   // 본문(편집기 거래)과 글상자(그림 지도)를 한 되돌리기로 묶는다
   const commit = (bodyTr: ReturnType<typeof applyEffects>, boxFn: ((s: TextShape, hits: { from: number; to: number }[]) => TextShape) | null, done: string) => {
+    if (reading) return toast('읽기 모드에서는 강조 · 바꾸기를 하지 않아요');
     const byBox = new Map<string, { from: number; to: number }[]>();
     for (const r of rows) if (r.kind === 'box' && r.on) byBox.set(r.sid, [...(byBox.get(r.sid) ?? []), r]);
     if (!bodyTr && (!boxFn || !byBox.size)) return;
@@ -289,7 +291,7 @@ export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial,
         }
       }}
     >
-      <h3>찾기 · 일괄 강조</h3>
+      <h3>{reading ? '찾기' : '찾기 · 일괄 강조'}</h3>
       <button type="button" className="mini close" onClick={onClose} aria-label="닫기">
         ×
       </button>
@@ -313,7 +315,7 @@ export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial,
       </div>
       {rows.length > 0 && (
         <>
-          <div className="find-sel">
+          <div className="find-sel" hidden={reading}>
             <button type="button" onClick={() => setAll(true)}>
               모두 선택
             </button>
@@ -330,7 +332,7 @@ export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial,
               const key = r.kind === 'body' ? `b${r.from}:${r.to}` : r.kind === 'box' ? `t${r.key}` : `l${r.pos}:${r.at}:${r.text}`;
               return (
                 <li key={key} className={k === ci ? 'cur' : ''}>
-                  {r.kind === 'label' ? (
+                  {r.kind === 'label' || reading ? (
                     <span className="find-nobox" aria-hidden="true" />
                   ) : (
                     <input type="checkbox" checked={r.on} aria-label={`${k + 1}번째 고르기`} onChange={() => toggle(r)} />
@@ -339,7 +341,7 @@ export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial,
                     type="button"
                     onClick={() => go(k)}
                     onKeyDown={(e) => {
-                      if (e.key === ' ') {
+                      if (e.key === ' ' && !reading) {
                         e.preventDefault();
                         toggle(r);
                       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -364,7 +366,7 @@ export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial,
           </ol>
         </>
       )}
-      <div className="sub find-fx">
+      <div className="sub find-fx" hidden={reading}>
         <label>강조할 효과 (여러 개 함께 가능)</label>
         {EFFECTS.map((e) => (
           <div key={e.k} className="fx-row">
@@ -403,7 +405,7 @@ export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial,
           </button>
         </div>
       </div>
-      <div className="sub find-rep">
+      <div className="sub find-rep" hidden={reading}>
         <label>바꾸기</label>
         <div className="find-q">
           <input value={rep} placeholder="바꿀 말" aria-label="바꿀 말" onChange={(e) => setRep(e.currentTarget.value)} />
@@ -412,7 +414,7 @@ export function FindPanel({ view, state, ydoc, shapes, um, src, usable, initial,
           </button>
         </div>
       </div>
-      <div className="find-undo">
+      <div className="find-undo" hidden={reading}>
         <button type="button" onClick={() => um?.undo()} title="되돌리기 (⌘Z)" aria-label="되돌리기">
           ↶
         </button>

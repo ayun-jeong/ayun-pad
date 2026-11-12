@@ -81,6 +81,7 @@ interface Props {
   onTextMarquee?(first: number, last: number, shapeIds: string[]): void;
   host: ShortcutHost;
   settings: RuleSettings;
+  reading?: boolean; // 읽기 모드: 그림 · 글상자를 눌러도 아무 일 없음(고르기 · 옮기기 · 만들기 · 붙여넣기 안 함)
 }
 
 // 편집 칸 위에 얹힌 그림 층. 평소에는 그림만 보여 주고(누르면 글로 지나감), 그리기(⌥D) 중에는 누르기를 받는다.
@@ -197,7 +198,7 @@ const snapOff = (e: Mods) => e.metaKey || e.ctrlKey; // ⌘(Ctrl)를 누르고 �
 // 직각 · 45°로 묶인 점은 묶인 방향을 빼고만 맞춘다
 const freeOf = (q: XY, last: XY | null, ortho: boolean) => ({ x: !(ortho && last && q.x === last.x), y: !(ortho && last && q.y === last.y) });
 
-export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, setDraw, onExtent, onCaret, caretXY, widgets, caught, onTextMarquee, host, settings }: Props) {
+export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, setDraw, onExtent, onCaret, caretXY, widgets, caught, onTextMarquee, host, settings, reading }: Props) {
   const [, repaint] = useReducer((x: number) => x + 1, 0);
   const layer = useRef<HTMLDivElement>(null);
   const ix = useRef<Ix>({ sel: [], wsel: [], drawing: null, cursor: null, press: null, box: null, drag: null, drafts: new Map(), marquee: null, guides: null, last: null, pid: null }).current;
@@ -210,6 +211,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   const autoFocusId = useRef<string | null>(null);
   const drawRef = useRef(draw);
   drawRef.current = draw;
+  const readRef = useRef(false);
+  readRef.current = !!reading;
   const pasted = useRef(false);
 
   useEffect(() => {
@@ -220,6 +223,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
 
   // 글쓰기 화면에서 그림(화살표 · 선 · 네모 · 원)을 누르면 → 그 그림을 고른 채 그리기 막대로(색 · 굵기 · 직각 · 지우기)
   const pickShape = (id: string, e: React.PointerEvent) => {
+    if (readRef.current) return;
     e.preventDefault();
     e.stopPropagation();
     ix.sel = [id];
@@ -240,7 +244,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   // 글쓰기 화면에서 종이 빈 곳(글이 없는 자리)을 두 번 누르면 → 그 자리에 글상자
   const dblRef = useRef<(e: MouseEvent) => void>(() => undefined);
   dblRef.current = (e: MouseEvent) => {
-    if (drawRef.current || !layer.current) return;
+    if (drawRef.current || !layer.current || readRef.current) return;
     const t = e.target as HTMLElement | null;
     if (!t || t.closest('.tbox, .wg, .tblw, .mi, .sh-hit')) return;
     const line = t.closest('.editor > p') as HTMLElement | null;
@@ -265,7 +269,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   // 글쓰기 화면에서 ⌥(Alt)+클릭 → 그 자리에 글상자
   const altRef = useRef<(e: PointerEvent) => void>(() => undefined);
   altRef.current = (e: PointerEvent) => {
-    if (drawRef.current || !e.altKey || e.button !== 0 || !layer.current) return;
+    if (drawRef.current || !e.altKey || e.button !== 0 || !layer.current || readRef.current) return;
     // 아무 데나(표 · 그래프 · 연표 위, 글칸 위도). 이미 있는 글상자를 누른 것만 그 글상자 고치기로
     if ((e.target as HTMLElement | null)?.closest?.('.tbox')) return;
     e.preventDefault();
@@ -285,6 +289,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   deskDown.current = (e: PointerEvent) => {
     const d = drawRef.current;
     const host = layer.current;
+    if (readRef.current) return; // 읽기 모드: 배경을 끌어도 고르지 않는다
     if (!d) return writingMarquee(e);
     if (d.tool !== 'select' || d.quick || e.button !== 0 || !host) return;
     const t = e.target as Element | null;
@@ -463,8 +468,10 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     if (changed) repaint();
   });
 
+  // 그림 지도에 쓰기. 읽기 모드에서는 쓰지 않는다(어디서 불려도).
   const write = useCallback(
     (fn: () => void) => {
+      if (readRef.current) return;
       um?.stopCapturing();
       ydoc.transact(fn, SHAPES);
       um?.stopCapturing();
@@ -474,7 +481,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
 
   const put = useCallback((s: Shape) => write(() => shapes.set(s.id, clean(s))), [write, shapes]);
   // 글상자에 글을 치는 동안은 되돌리기를 끊지 않는다(타자처럼 0.5초씩 묶임)
-  const putTyping = useCallback((s: Shape) => ydoc.transact(() => shapes.set(s.id, clean(s)), SHAPES), [ydoc, shapes]);
+  const putTyping = useCallback((s: Shape) => !readRef.current && ydoc.transact(() => shapes.set(s.id, clean(s)), SHAPES), [ydoc, shapes]);
   const nextZ = () => all.reduce((m, s) => Math.max(m, s.z), 0) + 1;
   const pickOnly = (ids: string[]) => {
     ix.sel = ids;
@@ -1145,6 +1152,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   // 그림이 아니면 그리기 중 종이에 붙인 글만 새 글상자로, 나머지는 원래대로(본문 · 입력 칸).
   const pasteRef = useRef<(e: ClipboardEvent) => void>(() => undefined);
   pasteRef.current = (e: ClipboardEvent) => {
+    if (readRef.current) return; // 읽기 모드: 노트에 붙이지 않는다(입력 칸에는 원래대로)
     const t = e.target as HTMLElement | null;
     if (t?.closest?.('.tb-edit')) return;
     const editable = !!t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.isContentEditable);
@@ -1176,6 +1184,20 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       forget();
     };
   }, []);
+
+  // 읽기 모드로 바뀌면 고치던 글상자 · 고른 그림 · 그리기를 끝낸다
+  useEffect(() => {
+    if (!reading) return;
+    setEditing(null);
+    setPending(null);
+    ix.sel = [];
+    ix.wsel = [];
+    ix.marquee = null;
+    ix.drag = null;
+    ix.pid = null;
+    if (drawRef.current) setDraw(null);
+    repaint();
+  }, [reading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 글상자에서 커서가 빠지면: 빈 글상자는 지운다
   const doneText = (id: string) => {
@@ -1220,7 +1242,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
         {resolved.map((r) => (
           <ShapeSvg key={r.id} r={r} />
         ))}
-        {!draw && resolved.map((r) => (r.t === 'text' ? null : <ShapeHit key={`hit-${r.id}`} r={r} onPick={(e) => pickShape(r.id, e)} />))}
+        {!draw && !reading && resolved.map((r) => (r.t === 'text' ? null : <ShapeHit key={`hit-${r.id}`} r={r} onPick={(e) => pickShape(r.id, e)} />))}
         {preview && preview.length >= 2 && (
           <polyline className="sh-ui" points={pts(preview)} fill="none" stroke={strokeOf(draw?.c ?? 'r')} strokeWidth={draw?.w ?? DEFAULT_W} strokeLinejoin="round" strokeLinecap="round" strokeOpacity={0.75} />
         )}
@@ -1293,6 +1315,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
               }}
               selected={!!draw && ix.sel.length === 1 && ix.sel[0] === r.id && !ix.wsel.length}
               onPick={(e) => pickShape(r.id, e)}
+              reading={!!reading}
             />
           ) : null,
         )}

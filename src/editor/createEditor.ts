@@ -1,10 +1,10 @@
 import { baseKeymap, chainCommands, deleteSelection, joinBackward, joinForward, selectNodeBackward, selectNodeForward, toggleMark } from 'prosemirror-commands';
 import { undoInputRule } from 'prosemirror-inputrules';
 import { keymap } from 'prosemirror-keymap';
-import { EditorState, type Command, type Plugin, type Transaction } from 'prosemirror-state';
+import { EditorState, Plugin, type Command, type Transaction } from 'prosemirror-state';
 import { columnResizing, tableEditing } from 'prosemirror-tables';
 import { EditorView } from 'prosemirror-view';
-import { redo, undo, ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
+import { redo, undo, ySyncPlugin, ySyncPluginKey, yUndoPlugin } from 'y-prosemirror';
 import type * as Y from 'yjs';
 import { clipboardTextParser, clipboardTextSerializer } from './clipboard';
 import { enterCmd, insertBr, selectWidgetAfter, selectWidgetBefore, unbranchAtStart } from './commands';
@@ -36,8 +36,17 @@ export interface EngineOptions {
   keys?: Record<string, Command>; // 글상자: Esc로 빠져나가기 등
 }
 
+// 읽기 모드(settings.readOnly): 편집 칸을 잠근다(커서 · 폰 자판 없음). 그래도 들어오는 변경(붙여넣기 · 명령 · 단추)은 버리고,
+// 다른 기기에서 온 것 · 처음 불러온 내용(ySync가 보낸 거래)만 들인다.
+function readOnlyPlugin(settings: RuleSettings): Plugin {
+  return new Plugin({
+    props: { editable: () => !settings.readOnly },
+    filterTransaction: (tr) => !settings.readOnly || !tr.docChanged || tr.getMeta(ySyncPluginKey) !== undefined,
+  });
+}
+
 export function enginePlugins(o: EngineOptions): Plugin[] {
-  const plugins: Plugin[] = [];
+  const plugins: Plugin[] = [readOnlyPlugin(o.settings)];
   if (o.main) plugins.push(ySyncPlugin(o.main.fragment), yUndoPlugin(o.main.undoManager ? { undoManager: o.main.undoManager } : undefined), slashPlugin(o.host));
   plugins.push(mathMenuPlugin(o.settings), shortcutPlugin(o.host), rulesPlugin(o.settings));
   if (o.main) plugins.push(columnResizing({ View: TableViewClass, cellMinWidth: 24 }), tableEditing({ allowTableNodeSelection: true }), tableCursorPlugin());
@@ -89,6 +98,7 @@ export function createEditor(mount: HTMLElement, fragment: Y.XmlFragment, hooks:
     dispatchTransaction(this: EditorView, tr) {
       markComposing(this, tr);
       const next = this.state.apply(tr);
+      if (next === this.state) return; // 막힌 거래(읽기 모드): 아무것도 안 바뀌었다
       this.updateState(next);
       hooks.onChange(next, tr);
     },

@@ -17,6 +17,7 @@ interface Props {
   view: EditorView;
   toast(msg: string): void;
   onClose(): void;
+  reading?: boolean; // 읽기 모드: 미리 보기만(되돌리지 않음)
 }
 
 interface Item {
@@ -36,7 +37,7 @@ function versionDoc(state: string) {
 }
 
 // 버전 기록: 10분마다 · 노트를 닫을 때 저장된 상태를 보고 되돌린다. 되돌리기도 ⌘Z로 취소할 수 있다.
-export function Versions({ docId, ydoc, view, toast, onClose }: Props) {
+export function Versions({ docId, ydoc, view, toast, onClose, reading }: Props) {
   const [items, setItems] = useState<Item[] | null>(null);
   const [preview, setPreview] = useState<{ id: number; text: string; state: string } | null>(null);
 
@@ -120,7 +121,7 @@ export function Versions({ docId, ydoc, view, toast, onClose }: Props) {
             {preview ? (
               <>
                 <pre>{preview.text}</pre>
-                <button type="button" className="primary" onClick={() => void restore()}>
+                <button type="button" className="primary" onClick={() => void restore()} disabled={reading} title={reading ? '읽기 모드에서는 되돌리지 않아요(위쪽 ‘읽기’를 끄면 됨)' : undefined}>
                   이 버전으로 되돌리기
                 </button>
               </>

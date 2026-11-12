@@ -593,7 +593,11 @@ try {
   m.on('pageerror', (e) => errors.push(`mobile: ${e}`));
   await m.goto(URL, { waitUntil: 'networkidle0' });
   await m.waitForSelector('.editor > p');
-  check(!!(await m.$('.touchbar:not(.selbar)')), '폰: 평소에는 들여쓰기 · 꺾쇠 막대');
+  // 폰은 처음부터 읽기 모드(아래 편집 막대 없음) → 위쪽 ‘읽기 중’을 눌러 고치기로
+  check(!!(await m.$('.app.reading')) && !(await m.$('.touchbar')), '폰: 처음엔 읽기 모드(아래 편집 막대 없음)');
+  await m.tap('.read-btn');
+  await m.waitForSelector('.touchbar:not(.selbar)', { timeout: 3000 }).catch(() => undefined);
+  check(!!(await m.$('.touchbar:not(.selbar)')), '폰: 고치기로 바꾸면 들여쓰기 · 꺾쇠 막대');
   await m.evaluate(() => {
     const v = window.__ayunpad.view();
     v.focus();

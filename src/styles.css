@@ -42,6 +42,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--ink); font-family: var(--ui); font-size: 14px; line-height: 1.5; word-break: keep-all; -webkit-font-smoothing: antialiased; }
 button, input, select { font: inherit; color: inherit; }
@@ -558,3 +559,13 @@ body.marqueeing, body.marqueeing * { user-select: none !important; -webkit-user-
 /* 글상자: 한 번 누르면 고르기 · 옮기기(손 모양), 두 번 눌러 고치기. 골라진 글상자의 꾸미기 막대는 그리기 중에도 눌린다. */
 .shapes-layer:not(.on) .tbox:not(.tedit) { cursor: move; }
 .shapes-layer.on .tbox .tb-bar { pointer-events: auto; }
+
+/* 읽기 모드(위쪽 ‘읽기’ · ⌥L): 눌러도 노트가 안 바뀐다. 고치는 손잡이 · 막대는 숨기고, 위젯 글칸 · 분수 칸 · 글상자 · 그림은 누르기를 받지 않는다(확대 · 축소 · 스크롤 · 글 고르기만) */
+.top .tbtn.read-btn.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.reading .sheet-src .wg-ed, .reading .sheet-src .mi, .reading .sheet-src .tbox, .reading .sheet-src .sh-hit { pointer-events: none !important; }
+.reading .sheet-src .wg-ctl, .reading .sheet-src .tbl-ctl, .reading .sheet-src .wg-size, .reading .sheet-src .column-resize-handle, .reading .sheet-src .tb-bar, .reading .sheet-src .tb-grip, .reading .sheet-src .tb-width, .reading .sheet-src .tb-del { display: none !important; }
+.reading .sheet-src .wg-ed:empty::before { content: none; }
+.reading .sheet-src .mi .wg-ed:empty { outline: none; }
+.reading .pages .pcol .editor { cursor: auto; }
+/* 사파리 gesture 이벤트가 없는 폰(안드로이드 등): 두 손가락 오므리기 · 벌리기는 노트 배율이 받는다(App.tsx) */
+.desk.own-pinch { touch-action: pan-x pan-y; }
