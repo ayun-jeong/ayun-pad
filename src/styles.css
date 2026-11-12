@@ -551,3 +551,6 @@ body.drawing .toasts { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 104
 
 /* 글쓰기 화면에서 본문을 끌어 고를 때 같이 잡힌 그림 · 글상자 */
 .sh-caught { fill: rgba(0, 100, 232, 0.07); stroke: rgba(0, 100, 232, 0.6); stroke-width: 1px; vector-effect: non-scaling-stroke; stroke-dasharray: 4 3; }
+
+/* 글쓰기 화면에서 배경을 끌어 사각형으로 고르는 동안 */
+body.marqueeing, body.marqueeing * { user-select: none !important; -webkit-user-select: none !important; cursor: crosshair !important; }

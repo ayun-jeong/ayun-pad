@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react';
-import { TextSelection, type EditorState } from 'prosemirror-state';
+import { NodeSelection, TextSelection, type EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { defaultDeleteFilter, defaultProtectedNodes, prosemirrorToYXmlFragment, ySyncPluginKey } from 'y-prosemirror';
 import * as Y from 'yjs';
@@ -80,6 +80,8 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
   // 본문을 끌어 고른 범위에 붙은 그림 · 글상자(같이 잡힘)
   const [caught, setCaught] = useState<string[]>([]);
   const caughtRef = useRef<string[]>([]);
+  // 배경을 끌어 잡은 범위: 그 고름이 그대로인 동안은 사각형에 걸친 그림도 같이 잡힌 것으로
+  const marqueeSel = useRef<{ from: number; to: number; ids: string[] } | null>(null);
   // 그림 층에서 본문 위젯(표 · 그래프 · 연표)을 골라 지우기 · 글씨 크기
   const widgets = useMemo<WidgetApi | undefined>(() => {
     if (!live) return undefined;
@@ -187,7 +189,10 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
           // 고른 글이 지워지거나 바뀌면 같이 잡혀 있던 그림도(같은 되돌리기 칸)
           if (local && tr!.docChanged && state.selection.empty && caughtRef.current.length) dropCaught(doc.ydoc, doc.shapes, caughtRef.current);
           if (local && tr!.getMeta('uiEvent') === 'paste') pasteClip(tr!, state, doc.ydoc, doc.shapes);
-          const ids = doc.shapes.size ? caughtIds(state, doc.shapes.values()) : [];
+          let ids = doc.shapes.size ? caughtIds(state, doc.shapes.values()) : [];
+          const mq = marqueeSel.current;
+          if (mq && state.selection.from === mq.from && state.selection.to === mq.to) ids = [...new Set([...ids, ...mq.ids.filter((id) => doc.shapes.has(id))])];
+          else if (mq) marqueeSel.current = null;
           if (ids.join() !== caughtRef.current.join()) {
             caughtRef.current = ids;
             setCaught(ids);
@@ -302,6 +307,28 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
                   onExtent={onExtent}
                   widgets={widgets}
                   caught={draw ? undefined : caught}
+                  onTextMarquee={(first, last, ids) => {
+                    const v = live.view;
+                    const d = v.state.doc;
+                    let from = -1;
+                    let to = -1;
+                    let widgetAt = -1;
+                    d.forEach((n, p, i) => {
+                      if (i < first || i > last) return;
+                      if (n.isTextblock) {
+                        if (from < 0) from = p + 1;
+                        to = p + n.nodeSize - 1;
+                      } else if (widgetAt < 0) widgetAt = p;
+                    });
+                    v.focus();
+                    if (from >= 0) {
+                      marqueeSel.current = { from, to, ids };
+                      v.dispatch(v.state.tr.setSelection(TextSelection.create(d, from, to)));
+                    } else if (widgetAt >= 0) {
+                      marqueeSel.current = null;
+                      v.dispatch(v.state.tr.setSelection(NodeSelection.create(d, widgetAt)));
+                    }
+                  }}
                   onCaret={(x, y) => {
                     const v = live.view;
                     const hit = v.posAtCoords({ left: x, top: y });

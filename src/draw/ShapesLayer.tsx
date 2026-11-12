@@ -72,6 +72,8 @@ interface Props {
   onCaret?(clientX: number, clientY: number): void; // 그 화면 자리에 글 커서 놓기
   widgets?: WidgetApi;
   caught?: string[]; // 글쓰기 화면에서 본문을 끌어 고를 때 같이 잡힌 그림
+  // 글쓰기 화면에서 배경을 끌어 사각형에 걸친 글 줄(first~last 번째 맨 바깥 블록)과 그림을 한꺼번에 잡는다
+  onTextMarquee?(first: number, last: number, shapeIds: string[]): void;
   host: ShortcutHost;
   settings: RuleSettings;
 }
@@ -180,7 +182,7 @@ interface Ix {
   box: { a: XY; b: XY } | null;
   drag: MoveDrag | EditDrag | null;
   drafts: Map<string, Resolved>; // 끄는 중인 모양
-  marquee: { a: XY; b: XY; add: boolean; base: string[]; wbase: string[]; moved: boolean } | null;
+  marquee: { a: XY; b: XY; add: boolean; base: string[]; wbase: string[]; moved: boolean; writing?: boolean; hits?: string[] } | null;
   guides: Guides | null; // 스마트 보조선(맞춘 줄 · 같은 간격)
   last: { t: number; p: XY } | null;
   pid: number | null; // 지금 받는 포인터(두 번째 손가락 · 손바닥은 무시)
@@ -191,7 +193,7 @@ const snapOff = (e: Mods) => e.metaKey || e.ctrlKey; // ⌘(Ctrl)를 누르고 �
 // 직각 · 45°로 묶인 점은 묶인 방향을 빼고만 맞춘다
 const freeOf = (q: XY, last: XY | null, ortho: boolean) => ({ x: !(ortho && last && q.x === last.x), y: !(ortho && last && q.y === last.y) });
 
-export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, setDraw, onExtent, onCaret, widgets, caught, host, settings }: Props) {
+export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, setDraw, onExtent, onCaret, widgets, caught, onTextMarquee, host, settings }: Props) {
   const [, repaint] = useReducer((x: number) => x + 1, 0);
   const layer = useRef<HTMLDivElement>(null);
   const ix = useRef<Ix>({ sel: [], wsel: [], drawing: null, cursor: null, press: null, box: null, drag: null, drafts: new Map(), marquee: null, guides: null, last: null, pid: null }).current;
@@ -269,7 +271,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   deskDown.current = (e: PointerEvent) => {
     const d = drawRef.current;
     const host = layer.current;
-    if (!d || d.tool !== 'select' || d.quick || e.button !== 0 || !host) return;
+    if (!d) return writingMarquee(e);
+    if (d.tool !== 'select' || d.quick || e.button !== 0 || !host) return;
     const t = e.target as Element | null;
     if (!t || host.contains(t) || t.closest('.drawbar, .panel, .menu, .tbox, .zoom-badge')) return;
     if (ix.pid !== null) return;
@@ -279,6 +282,77 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     host.setPointerCapture(e.pointerId);
     ix.marquee = { a: p, b: p, add: e.shiftKey, base: e.shiftKey ? [...ix.sel] : [], wbase: e.shiftKey ? [...ix.wsel] : [], moved: false };
     repaint();
+  };
+  // 글쓰기 화면: 배경(회색 바깥 · 종이 여백 · 글 아래 빈 곳)에서 끌면 사각형으로 글 줄 · 표 · 그래프 · 그림 · 글상자를 한꺼번에.
+  // 글 위에서 끌면 원래대로 글 고르기, 그냥 누르기 · 두 번 누르기(글상자 만들기)도 그대로.
+  const writingMarquee = (e: PointerEvent) => {
+    const host = layer.current;
+    const t = e.target as Element | null;
+    if (!host || !t || e.button !== 0 || e.pointerType === 'touch' || ix.marquee) return;
+    if (t.closest('.editor, .tbox, .sh-hit, .wg, .tblw, .zoom-badge, .drawbar, .panel, .menu, input, button, select, textarea')) return;
+    const p = toMM(e);
+    ix.marquee = { a: p, b: p, add: false, base: [], wbase: [], moved: false, writing: true, hits: [] };
+    // 브라우저가 배경에서부터 글자 고르기를 시작하지 않게(두 번 누르기 · 누르기는 그대로 온다)
+    window.addEventListener('mousedown', (ev) => ev.preventDefault(), { once: true, capture: true });
+    const move = (ev: PointerEvent) => {
+      const m = ix.marquee;
+      if (!m) return;
+      m.b = toMM(ev);
+      if (!m.moved && dist(m.a, m.b) * pxPerMm() < MARQUEE_PX) return;
+      if (!m.moved) document.body.classList.add('marqueeing');
+      m.moved = true;
+      getSelection()?.removeAllRanges();
+      const rect = boxOf(m.a, m.b);
+      m.hits = resolved.filter((r) => touches(r, rect, th)).map((r) => r.id);
+      repaint();
+    };
+    const end = (ok: boolean) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+      document.body.classList.remove('marqueeing');
+      const m = ix.marquee;
+      ix.marquee = null;
+      repaint();
+      if (!ok || !m?.moved) return;
+      const rect = boxOf(m.a, m.b);
+      const ids = resolved.filter((r) => touches(r, rect, th)).map((r) => r.id);
+      const wids = wboxes().filter((w) => intersects(w.b, rect)).map((w) => w.id);
+      // 사각형에 걸친 글 줄(맨 바깥 블록, 표 · 그래프도)
+      const Lr = host.getBoundingClientRect();
+      const s = Lr.width / W;
+      let first = -1;
+      let last = -1;
+      Array.from(editor.children).forEach((el, i) => {
+        const r = el.getBoundingClientRect();
+        const y0 = (r.top - Lr.top) / s;
+        const y1 = (r.bottom - Lr.top) / s;
+        const x0 = (r.left - Lr.left) / s;
+        const x1 = (r.right - Lr.left) / s;
+        // 스치기만 한 줄은 빼고: 줄 높이의 절반(또는 3mm) 넘게 걸쳐야
+        const over = Math.min(y1, rect.y + rect.h) - Math.max(y0, rect.y);
+        if (over >= Math.min((y1 - y0) * 0.5, 3) && x1 > rect.x && x0 < rect.x + rect.w) {
+          if (first < 0) first = i;
+          last = i;
+        }
+      });
+      // 손을 뗀 뒤(브라우저가 누르기 처리를 끝낸 다음)에 고른다
+      setTimeout(() => {
+        if (first >= 0) onTextMarquee?.(first, last, ids);
+        else if (ids.length || wids.length) {
+          // 글 없이 그림만: 바로 옮기기 · 색 · 지우기를 할 수 있게 고른 채 그리기 막대로
+          ix.sel = ids;
+          ix.wsel = wids;
+          setDraw({ tool: 'select', picked: true });
+          repaint();
+        }
+      }, 0);
+    };
+    const up = () => end(true);
+    const cancel = () => end(false);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
   };
   useEffect(() => {
     const desk = src.closest('.desk');
@@ -875,7 +949,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   const finishOrCancel = () => {
     if (ix.drawing) finishPath();
     ix.box = null;
-    ix.marquee = null;
+    if (!ix.marquee?.writing) ix.marquee = null; // 글쓰기 화면의 사각형 고르기는 그대로(화면을 다시 그릴 때마다 불린다)
     ix.guides = null;
   };
 
@@ -1041,7 +1115,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
           <SelBox key={i} b={b} />
         ))}
         {!draw &&
-          caught?.map((id) => {
+          [...new Set([...(caught ?? []), ...(ix.marquee?.writing ? (ix.marquee.hits ?? []) : [])])].map((id) => {
             const r = byId(id);
             if (!r) return null;
             const b = bboxOf(r, th);

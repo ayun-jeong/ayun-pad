@@ -1192,6 +1192,76 @@ try {
   await sleep(100);
   check((await page.$$('.shapes-layer .sh-caught')).length === 0, '한 줄 안 낱말만 고르면 그림은 안 잡힘');
 
+  // 22) 글쓰기 화면에서 배경(회색 바깥)부터 끌면 사각형에 걸친 글 줄 · 그림 · 글상자가 한꺼번에
+  await page.click('.addnote');
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+  await page.click('.editor');
+  for (const t of ['배경 첫 줄', '배경 둘째 줄', '배경 셋째 줄', '배경 넷째 줄']) {
+    await k.type(t);
+    await k.press('Enter');
+  }
+  const L8 = await page.$eval('.shapes-layer', (e) => {
+    const r = e.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, mmW: e.offsetWidth / (96 / 25.4) };
+  });
+  const rows8 = await page.$$eval('.editor > p', (ps) => ps.map((p) => { const r = p.getBoundingClientRect(); return { t: r.top, b: r.bottom }; }));
+  // 둘째~셋째 줄에 붙은 화살표, 셋째 줄 옆 글상자
+  await combo(['Alt'], 'KeyD');
+  await page.waitForSelector('.drawbar');
+  await press('.drawbar button', (b) => b.textContent.startsWith('화살표'));
+  await page.mouse.click(L8.x + 60, (rows8[1].t + rows8[1].b) / 2);
+  await sleep(420);
+  await page.mouse.click(L8.x + 200, (rows8[2].t + rows8[2].b) / 2, { count: 2 });
+  await sleep(150);
+  await press('.drawbar .ddone', () => true);
+  await sleep(150);
+  await page.mouse.click(L8.x + L8.w - 120, (rows8[2].t + rows8[2].b) / 2, { count: 2 });
+  await page.waitForSelector('.tbox.tedit .tb-edit');
+  await k.type('옆 메모');
+  await page.click('.editor > p');
+  await sleep(200);
+  // 회색 바깥(종이 왼쪽)에서 둘째 줄 위부터 셋째 줄 아래까지 끌기
+  const gx = L8.x - 60;
+  await page.mouse.move(gx, rows8[1].t - 3);
+  await page.mouse.down();
+  await page.mouse.move(L8.x + L8.w - 10, rows8[2].b + 3, { steps: 10 });
+  const mqShown = !!(await page.$('.shapes-layer .sh-marquee'));
+  await page.mouse.up();
+  await sleep(200);
+  const grabbed = await page.evaluate(() => {
+    const v = window.__ayunpad.view();
+    return { text: v.state.doc.textBetween(v.state.selection.from, v.state.selection.to, '|'), caught: document.querySelectorAll('.shapes-layer .sh-caught').length };
+  });
+  check(mqShown && grabbed.text === '배경 둘째 줄|배경 셋째 줄' && grabbed.caught === 2, `회색 배경부터 끌면 사각형에 걸친 줄 · 화살표 · 글상자가 한꺼번에 (${JSON.stringify(grabbed)})`);
+  const n8 = () => page.evaluate(() => Object.keys(window.__ayunpad.doc().shapes.toJSON()).length);
+  await k.press('Backspace');
+  await sleep(200);
+  const del8 = { n: await n8(), text: await docTextOf(page) };
+  await combo([meta], 'KeyZ');
+  await sleep(250);
+  const undo8 = { n: await n8(), text: await docTextOf(page) };
+  check(del8.n === 0 && !del8.text.includes('둘째') && undo8.n === 2 && undo8.text.includes('둘째'), `잡힌 것 ⌫ 한 번에 지움, ⌘Z로 다 돌아옴 (${JSON.stringify(del8)} → ${undo8.n})`);
+  // 글 아래 빈 종이에서 그림만 잡으면 → 바로 고른 채 그리기 막대(옮기기 · 색)
+  await combo(['Alt'], 'KeyD');
+  await page.waitForSelector('.drawbar');
+  await press('.drawbar button', (b) => b.textContent.startsWith('네모'));
+  const lastB = (await page.$$eval('.editor > p', (ps) => ps[ps.length - 1].getBoundingClientRect().bottom));
+  await page.mouse.move(L8.x + 40, lastB + 60);
+  await page.mouse.down();
+  await page.mouse.move(L8.x + 160, lastB + 120, { steps: 5 });
+  await page.mouse.up();
+  await sleep(120);
+  await press('.drawbar .ddone', () => true);
+  await sleep(150);
+  await page.mouse.move(gx, lastB + 40);
+  await page.mouse.down();
+  await page.mouse.move(L8.x + 220, lastB + 150, { steps: 8 });
+  await page.mouse.up();
+  await sleep(200);
+  check(!!(await page.$('.drawbar.has-sel')) && (await page.$$('.shapes-layer .sh-selbox')).length === 1, '글 없는 빈 곳에서 그림만 잡으면 바로 고른 상태(옮기기 · 색 · 지우기)');
+  await k.press('Escape');
+  await sleep(100);
+
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();
 } catch (e) {
