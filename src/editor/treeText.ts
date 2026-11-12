@@ -1,5 +1,5 @@
 import { clampDepth, type Kind } from './model';
-import { cellsToText, computeTree } from './tree';
+import { cellsToText, computeTree, type TreeTop } from './tree';
 
 export interface TextLine {
   depth: number;
@@ -7,16 +7,14 @@ export interface TextLine {
   text: string;
 }
 
-// 복사할 때: 가지선을 ├─ └─ │ 글자로 바꿔 카톡·메모장에도 그 모양대로 붙게 한다.
-// 맨 바깥 꺾쇠 줄은 앞에 칸이 없어서 '- '를 붙여 다시 붙여넣을 때 꺾쇠 줄로 돌아오게 한다.
-export function serializeTree(lines: TextLine[]): string {
+// 복사할 때: 가지선을 ┌─ ├─ └─ │ 글자로 바꿔 카톡·메모장에도 그 모양대로 붙게 한다.
+// 맨 바깥 꺾쇠 줄(제목 없는 트리)도 ┌─ ├─ └─ 가 붙어서, 다시 붙여넣으면 꺾쇠 줄로 돌아온다.
+export function serializeTree(lines: TextLine[], top: TreeTop = 'corner'): string {
   if (!lines.length) return '';
   const min = Math.min(...lines.map((l) => l.depth));
   const norm = lines.map((l) => ({ depth: l.depth - min + 1, kind: l.kind }));
-  const rows = computeTree(norm);
-  return lines
-    .map((l, i) => (norm[i].depth === 1 && l.kind === 'branch' ? '- ' : cellsToText(rows[i].cells)) + l.text)
-    .join('\n');
+  const rows = computeTree(norm, top);
+  return lines.map((l, i) => cellsToText(rows[i].cells) + l.text).join('\n');
 }
 
 function gcd(a: number, b: number): number {
@@ -33,11 +31,12 @@ function spaceUnit(lines: string[]): number {
   return unit < 2 ? 2 : Math.min(unit, 4);
 }
 
-// 붙여넣을 때: ├─ └─ │ 트리 글, '- ' 목록, 탭·스페이스 들여쓰기 글을 깊이와 꺾쇠로 읽는다.
+// 붙여넣을 때: ┌─ ├─ └─ │ 트리 글, '- ' 목록, 탭·스페이스 들여쓰기 글을 깊이와 꺾쇠로 읽는다.
+// 맨 위 줄들이 다 들여 있으면(제목 없는 트리 · 통째로 들인 글) 그만큼 빼고 센다.
 export function parseTreeText(text: string): TextLine[] {
   const raw = text.replace(/\r\n?/g, '\n').split('\n');
   while (raw.length && !raw[raw.length - 1].trim()) raw.pop();
-  const glyph = /[│├└]/.test(text);
+  const glyph = /[│├└┌]/.test(text);
   const unit = glyph ? 3 : spaceUnit(raw);
   const parsed = raw.map((line) => {
     let s = line.replace(/ /g, ' ');
@@ -50,7 +49,7 @@ export function parseTreeText(text: string): TextLine[] {
         s = s.slice(1);
         continue;
       }
-      const conn = /^[├└]─*\s?/.exec(s);
+      const conn = /^[├└┌]─*\s?/.exec(s);
       if (conn) {
         level++;
         kind = 'branch';
@@ -81,6 +80,8 @@ export function parseTreeText(text: string): TextLine[] {
     }
     return { level, kind, text: s, viaGlyph };
   });
+  const minLevel = Math.min(...parsed.map((p) => p.level));
+  for (const p of parsed) p.level -= minLevel;
 
   const out: TextLine[] = [];
   let list: { level: number; offset: number } | null = null;

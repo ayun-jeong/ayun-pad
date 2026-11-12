@@ -490,6 +490,95 @@ try {
   check(Math.abs((await scaleNow()) - z2) < 0.001, `바꾼 배율을 기억 (${await scaleNow()})`);
   void anchorLine;
 
+  // 11) 제목 없는 트리: 첫 줄 · 빈 줄 아래에서 '- ' 나 Tab → 바로 ┌─ ├─ └─ (Tab · ⇧Tab · │ · 자동 색 그대로), 제목 아래는 여전히 자식
+  await page.click('.addnote');
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+  await page.click('.editor');
+  await k.type('- 첫 번째 항목');
+  await k.press('Enter');
+  await k.type('두 번째 항목');
+  await k.press('Enter');
+  await k.press('Tab');
+  await k.type('하위 항목 A');
+  await k.press('Enter');
+  await k.type('하위 항목 B');
+  await k.press('Enter');
+  await k.down('Shift');
+  await k.press('Tab');
+  await k.up('Shift');
+  await k.type('세 번째 항목');
+  await k.press('Enter');
+  await k.press('Enter'); // 빈 꺾쇠 줄 Enter → 트리에서 나옴
+  await k.press('Enter'); // 빈 줄 하나 두고
+  await k.type('- 빈 줄 아래');
+  await k.press('Enter');
+  await k.press('Enter');
+  await k.type('경영학');
+  await k.press('Enter');
+  await k.type('- 마케팅');
+  await k.press('Enter');
+  await k.press('Enter');
+  await k.press('Enter');
+  await k.press('Tab'); // 빈 줄 아래 빈 줄에서 Tab
+  await k.type('Tab 시작');
+  await sleep(200);
+  const rootRows = () =>
+    page.$$eval('.editor > p', (ps) =>
+      ps.map((p) => {
+        const cs = getComputedStyle(p);
+        return {
+          s: `${p.dataset.depth}${p.dataset.kind === 'branch' ? 'b' : 'p'}`,
+          cols: Math.round(parseFloat(cs.paddingLeft) / (parseFloat(cs.fontSize) * 1.2)),
+          bg: (p.getAttribute('style') || '').replace(/^.*background:/, ''),
+          red: [...p.querySelectorAll('.a-red')].map((x) => x.textContent).join(''),
+          hl: [...p.querySelectorAll('.hl')].map((x) => x.className.match(/hl-[a-z]/)?.[0] ?? '').join(' '),
+        };
+      }),
+    );
+  let R = await rootRows();
+  const rshape = R.map((r) => r.s).join(' ');
+  check(rshape === '1b 1b 2b 2b 1b 1p 1b 1p 2b 1p 1b', `제목 없이 '- ' · Enter · Tab · ⇧Tab · 빈 줄 아래 '- ' · 제목 아래 '- ' · 빈 줄 아래 Tab (${rshape})`);
+  const cols = R.map((r) => r.cols).join('');
+  check(cols === '11221010101', `제목 없는 트리는 글이 한 칸 더 안으로(가지 칸), 제목 있는 트리는 그대로 (${cols})`);
+  check([0, 1, 2, 3, 4, 6, 10].every((i) => R[i]?.bg.includes('gradient')), '제목 없는 트리 줄마다 가지선');
+  check(R[0]?.red === '첫 번째 항목' && R[0]?.hl === 'hl-r' && R[2]?.hl === 'hl-y', `자동 빨강 · 깊이별 형광펜도 그대로 (${R[0]?.hl}, ${R[2]?.hl})`);
+  const copyAll = () =>
+    page.evaluate(() => {
+      const v = window.__ayunpad.view();
+      return v.someProp('clipboardTextSerializer', (f) => f(v.state.selection.content(), v));
+    });
+  await k.down(meta);
+  await k.press('KeyA');
+  await k.up(meta);
+  await sleep(80);
+  const treeText = await copyAll();
+  const want = ['┌─ 첫 번째 항목', '├─ 두 번째 항목', '│  ├─ 하위 항목 A', '│  └─ 하위 항목 B', '└─ 세 번째 항목', '', '┌─ 빈 줄 아래', '경영학', '└─ 마케팅', '', '┌─ Tab 시작'].join('\n');
+  check(treeText === want, `모양 그대로 ┌─ ├─ └─ │ 로 복사됨 (${JSON.stringify(treeText)})`);
+  // 설정 '├─': 첫 가지도 ├─(하나뿐이면 └─)
+  await k.press('ArrowRight');
+  await alt('KeyT');
+  await page.waitForSelector('[aria-label="제목 없는 트리 첫 가지"]');
+  const topBtn = async (label) => {
+    for (const b of await page.$$('[aria-label="제목 없는 트리 첫 가지"] button')) if ((await b.evaluate((x) => x.textContent)) === label) await b.click();
+    await sleep(150);
+  };
+  await topBtn('├─');
+  R = await rootRows();
+  check(R[0].bg === R[1].bg && R[0].bg !== R[4].bg, '설정 ├─ → 첫 가지가 둘째 가지와 같은 ├─');
+  await page.click('.editor');
+  await k.down(meta);
+  await k.press('KeyA');
+  await k.up(meta);
+  const teeText = (await copyAll()).split('\n');
+  check(teeText[0] === '├─ 첫 번째 항목' && teeText[6] === '└─ 빈 줄 아래', `설정 ├─ 로 복사 (${teeText[0]} / ${teeText[6]})`);
+  await k.press('ArrowRight');
+  if (!(await page.$('[aria-label="제목 없는 트리 첫 가지"]'))) await alt('KeyT');
+  await page.waitForSelector('[aria-label="제목 없는 트리 첫 가지"]');
+  await topBtn('┌─');
+  R = await rootRows();
+  check(R[0].bg !== R[1].bg, '다시 ┌─');
+  if (await page.$('[aria-label="제목 없는 트리 첫 가지"]')) await alt('KeyT');
+
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();
 } catch (e) {

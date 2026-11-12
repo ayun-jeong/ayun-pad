@@ -3,6 +3,7 @@ import type { Plugin } from 'prosemirror-state';
 import { ctxOf, prevInfo } from './commands';
 import { ARROW_RULES } from './arrows';
 import { branchDepth } from './rules';
+import type { TreeTop } from './tree';
 
 // 줄 맨 앞에서 '-' + 스페이스 → 꺾쇠 줄. '-'는 지우고 줄 종류만 바꾼다. 바로 ⌫를 누르면 '- '로 돌아간다.
 const branchRule = new InputRule(/^-\s$/, (state, _match, start, end) => {
@@ -23,6 +24,7 @@ const branchRule = new InputRule(/^-\s$/, (state, _match, start, end) => {
 export interface RuleSettings {
   arrows: boolean;
   math?: boolean; // = + - 기호 퀵 메뉴(mathMenu.ts)
+  treeTop?: TreeTop; // 제목 없는 트리 첫 가지 ┌─ / ├─(decorations.ts가 칠할 때 읽는다)
 }
 
 // 바꿀 글은 맞은 부분에 그대로 규칙을 적용해 만든다(+) → ⊕ 처럼 앞의 띄어쓰기를 남기는 규칙도 있어서)

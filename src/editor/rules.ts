@@ -1,12 +1,18 @@
 import { MAX_DEPTH, type LineInfo } from './model';
 
+// 바로 위 블록. noTitle: 제목이 될 수 없는 줄(빈 줄 · 표 · 그래프 · 연표)
+export interface PrevLine extends LineInfo {
+  noTitle?: boolean;
+}
+
 // '-' + 스페이스를 쳤을 때 이 줄의 깊이.
 // 위 줄이 제목·보통 줄이면 그 아래 자식, 위 줄이 꺾쇠 줄이면 같은 깊이(형제).
+// 위에 제목이 없으면(첫 줄 · 빈 줄 · 위젯 아래) 그 깊이 그대로 → 맨 바깥이면 제목 없는 트리가 시작된다(┌─).
 // 이미 Tab으로 더 깊게 들여 둔 줄이면 그 깊이를 지킨다(위 줄 + 1까지).
-export function branchDepth(cur: number, prev: LineInfo | null): number {
+export function branchDepth(cur: number, prev: PrevLine | null): number {
   if (!prev) return cur;
   if (cur > prev.depth) return Math.min(cur, prev.depth + 1);
-  if (cur === prev.depth) return prev.kind === 'branch' ? cur : Math.min(MAX_DEPTH, cur + 1);
+  if (cur === prev.depth) return prev.kind === 'branch' || prev.noTitle ? cur : Math.min(MAX_DEPTH, cur + 1);
   return cur;
 }
 

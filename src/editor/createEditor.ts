@@ -56,7 +56,7 @@ export function enginePlugins(o: EngineOptions): Plugin[] {
       'Mod-Shift-x': toggleMark(schema.marks.s),
     }),
     keymap(baseKeymap),
-    autoPlugin(),
+    autoPlugin(o.settings),
     penPlugin(),
     idPlugin(),
     undoPlugin(o.undo, o.redo),

@@ -18,6 +18,7 @@ export interface Typo {
   auto: boolean; // 자동 색 규칙(꺾쇠 줄 빨강 · 깊이별 형광펜 · 예시 파랑)
   arrows: boolean; // <- -> <| |> 화살표 자동 변환
   math: boolean; // = + - 기호 퀵 메뉴
+  treeTop: 'corner' | 'tee'; // 제목 없는 트리(맨 바깥 꺾쇠 줄)의 첫 가지 ┌─ / ├─
 }
 
 export const DEFAULT_TYPO: Typo = {
@@ -32,6 +33,7 @@ export const DEFAULT_TYPO: Typo = {
   auto: true,
   arrows: true,
   math: true,
+  treeTop: 'corner',
 };
 
 export const PRESETS: Record<'normal' | 'dense' | 'ultra', { name: string; fontPt: number; pitchMm: number; wordBreak: Typo['wordBreak'] }> = {
@@ -83,6 +85,7 @@ export function normalizeTypo(raw: Partial<Typo> | undefined): Typo {
     auto: t.auto !== false,
     arrows: t.arrows !== false,
     math: t.math !== false,
+    treeTop: t.treeTop === 'tee' ? 'tee' : 'corner',
   };
 }
 

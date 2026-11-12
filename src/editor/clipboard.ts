@@ -1,17 +1,20 @@
 import { Fragment, Slice, type ResolvedPos } from 'prosemirror-model';
+import type { EditorView } from 'prosemirror-view';
+import { autoKey } from './decorations';
 import { mathText } from './mathNodes';
 import { clampDepth, type Kind } from './model';
 import { schema } from './schema';
 import { parseTreeText, serializeTree, type TextLine } from './treeText';
 
-// 여러 줄을 복사하면 ├─ └─ │ 글자가 붙은 트리 글이 된다.
-export function clipboardTextSerializer(slice: Slice): string {
+// 여러 줄을 복사하면 ┌─ ├─ └─ │ 글자가 붙은 트리 글이 된다. 한 줄(안의 글자)만 복사하면 글자만.
+export function clipboardTextSerializer(slice: Slice, view?: EditorView): string {
   const lines: TextLine[] = [];
   slice.content.forEach((n) => {
     if (n.type === schema.nodes.line) lines.push({ depth: n.attrs.depth, kind: n.attrs.kind as Kind, text: n.textBetween(0, n.content.size, undefined, (leaf) => mathText(leaf) ?? ' ') });
   });
   if (!lines.length) return slice.content.textBetween(0, slice.content.size, '\n', ' ');
-  return serializeTree(lines);
+  if (lines.length === 1 && slice.content.childCount === 1) return lines[0].text;
+  return serializeTree(lines, view ? autoKey.getState(view.state)?.top : undefined);
 }
 
 // 트리 글 · '- ' 목록 · 들여쓰기 글을 붙여넣으면 깊이와 꺾쇠로 읽는다. 붙여넣는 줄의 깊이를 기준으로 맞춘다.

@@ -569,6 +569,28 @@ try {
   await page.keyboard.up('Alt');
   await sleep(150);
 
+  // 17-1) 글상자 첫 줄에서 바로 '- ' → 제목 없는 트리(┌─ └─), 글이 한 칸 안으로
+  await page.keyboard.down('Alt');
+  await page.mouse.click(L3.x + 10 * px3, L3.y + 100 * px3);
+  await page.keyboard.up('Alt');
+  await page.waitForSelector('.tbox.tedit .tb-edit');
+  await k.type('- 장점');
+  await k.press('Enter');
+  await k.type('단점');
+  await sleep(200);
+  const rootBox = await page.$$eval('.tbox.tedit .tb-edit > p', (ps) =>
+    ps.map((p) => {
+      const cs = getComputedStyle(p);
+      return { k: p.dataset.kind, d: p.dataset.depth, cols: Math.round(parseFloat(cs.paddingLeft) / (parseFloat(cs.fontSize) * 1.2)), bg: (p.getAttribute('style') || '').replace(/^.*background:/, '') };
+    }),
+  );
+  check(
+    rootBox.length === 2 && rootBox.every((l) => l.k === 'branch' && l.d === '1' && l.cols === 1 && l.bg.includes('gradient')) && rootBox[0].bg !== rootBox[1].bg,
+    `글상자 첫 줄 '- ' → 제목 없는 트리 ┌─ └─ (${JSON.stringify(rootBox.map((l) => [l.k, l.d, l.cols]))})`,
+  );
+  await k.press('Escape');
+  await sleep(150);
+
   // 18) 지우기 · 고치기: 표(막대 · ⌫⌫) · 그래프 · 이미 그린 화살표, 줄여도 꺾쇠 자리 그대로, 빈 곳 두 번 누르기 글상자
   await page.click('.addnote');
   await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');

@@ -169,6 +169,19 @@ export function TypePanel({ typo, fonts, hasSelection, onChange, onUpload, onSel
           <input type="checkbox" checked={typo.math} onChange={() => onChange({ math: !typo.math })} />
           기호 퀵 메뉴: = 뒤 ≤ ≥ ≠ 분수 루트, + 뒤 ⊕ ±, - 뒤 ⊖ ±
         </label>
+        <div className="row">
+          <span className="note" style={{ color: 'var(--ink-2)' }}>
+            제목 없는 트리 첫 가지
+          </span>
+          <div className="chips" role="group" aria-label="제목 없는 트리 첫 가지">
+            <button type="button" className={typo.treeTop === 'corner' ? 'on' : ''} onClick={() => onChange({ treeTop: 'corner' })}>
+              ┌─
+            </button>
+            <button type="button" className={typo.treeTop === 'tee' ? 'on' : ''} onClick={() => onChange({ treeTop: 'tee' })}>
+              ├─
+            </button>
+          </div>
+        </div>
         <p className="note">가지선은 규칙을 꺼도 그대로 그립니다. 직접 칠한 색은 언제나 남습니다.</p>
       </div>
     </section>

@@ -6,7 +6,7 @@ import { EditorView } from 'prosemirror-view';
 import type * as Y from 'yjs';
 import { penCmd } from '../editor/commands';
 import { engineNodeViews, enginePlugins, markComposing } from '../editor/createEditor';
-import { lineText } from '../editor/decorations';
+import { autoKey, lineText } from '../editor/decorations';
 import { searchDoc, type Effect } from '../editor/find';
 import type { RuleSettings } from '../editor/inputRules';
 import { mathKey, type MathMenuState } from '../editor/mathMenu';
@@ -222,6 +222,12 @@ export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFo
     const pos = Math.min(v.state.selection.head, ext.content.size);
     v.updateState(EditorState.create({ schema, doc: ext, plugins: v.state.plugins, selection: Selection.near(ext.resolve(pos)) }));
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 노트 설정 '제목 없는 트리 첫 가지'(┌─ / ├─)가 바뀌면 가지선을 다시 그린다
+  useEffect(() => {
+    const v = view.current;
+    if (v && !v.isDestroyed && autoKey.getState(v.state)?.top !== (settings.treeTop ?? 'corner')) v.dispatch(v.state.tr.setMeta(autoKey, { rebuild: true }));
+  }, [settings.treeTop]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 손잡이 · 폭 · 지우기 단추는 누를 때 커서가 빠지지 않게(preventDefault)
   return (

@@ -132,6 +132,8 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
   const hostRef = useRef<EditorHooks | null>(null);
   // 노트 설정(화살표 자동 변환 등). 편집기 규칙이 이 객체를 그때그때 읽는다.
   const settings = useRef<RuleSettings>({ arrows: true, math: true }).current;
+  // 가지선 모양은 그리는 동안(자식 글상자 효과보다 먼저) 바뀌어 있어야 해서 여기서 바로 넣는다
+  settings.treeTop = typo.treeTop;
   const frame = useRef(0);
   const liveRef = useRef<Live | null>(null);
   liveRef.current = live;
@@ -256,7 +258,8 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
     settings.math = typo.math;
     const v = live?.view;
     if (v && !v.isDestroyed && autoKey.getState(v.state)?.auto !== typo.auto) v.dispatch(v.state.tr.setMeta(autoKey, { auto: typo.auto }));
-  }, [typo.arrows, typo.auto, typo.math, live, settings]);
+    if (v && !v.isDestroyed && autoKey.getState(v.state)?.top !== typo.treeTop) v.dispatch(v.state.tr.setMeta(autoKey, { rebuild: true }));
+  }, [typo.arrows, typo.auto, typo.math, typo.treeTop, live, settings]);
   useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
   const fit = fitPitch(typo);

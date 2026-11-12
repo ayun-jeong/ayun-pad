@@ -29,6 +29,46 @@ describe('가지선', () => {
   });
 });
 
+describe('제목 없는 트리', () => {
+  it('맨 바깥 꺾쇠 줄끼리 ┌─ ├─ └─ 로 잇고, 자식 앞에는 │', () => {
+    const rows = computeTree([b(1), b(1), b(2), b(2), b(1)]);
+    expect(rows.map((r) => r.cells.map((c) => c || '_').join(''))).toEqual(['d', 't', 'vt', 'vl', 'l']);
+    expect(rows.every((r) => r.rootless)).toBe(true);
+  });
+  it("첫 가지는 하나뿐이어도 ┌─, 설정 '├─'면 첫 가지도 ├─(하나뿐이면 └─)", () => {
+    expect(computeTree([b(1)]).map((r) => r.cells.join(''))).toEqual(['d']);
+    expect(computeTree([b(1), b(1), b(1)], 'tee').map((r) => r.cells.join(''))).toEqual(['t', 't', 'l']);
+    expect(computeTree([b(1)], 'tee').map((r) => r.cells.join(''))).toEqual(['l']);
+  });
+  it('깊이 1 보통 줄(빈 줄)에서 끊기고, 위 트리의 가지와 섞이지 않는다', () => {
+    // 경영학 › 마케팅 / (제목 없이) A, B / 빈 줄 / C
+    const rows = computeTree([p(1), b(2), b(1), b(1), p(1), b(1)]);
+    expect(rows.map((r) => r.cells.join(','))).toEqual(['', 'l', 'd', 'l', '', 'd']);
+    expect(rows.map((r) => r.rootless)).toEqual([false, false, true, true, false, true]);
+    expect(rows[0].hasBranchChild).toBe(true);
+    expect(rows[4].hasBranchChild).toBe(false);
+  });
+  it("'-' + 스페이스: 위가 빈 줄 · 위젯이면 자식이 아니라 그 깊이 그대로(제목 아래는 여전히 자식)", () => {
+    expect(branchDepth(1, { ...p(1), noTitle: true })).toBe(1);
+    expect(branchDepth(3, { ...p(3), noTitle: true })).toBe(3);
+    expect(branchDepth(1, p(1))).toBe(2);
+  });
+  it('복사하면 ┌─ ├─ └─ 글, 붙여넣으면 맨 바깥 꺾쇠 줄로 돌아온다', () => {
+    const lines: TextLine[] = [
+      { depth: 1, kind: 'branch', text: '첫 번째 항목' },
+      { depth: 1, kind: 'branch', text: '두 번째 항목' },
+      { depth: 2, kind: 'branch', text: '하위 항목 A' },
+      { depth: 2, kind: 'branch', text: '하위 항목 B' },
+      { depth: 1, kind: 'branch', text: '세 번째 항목' },
+    ];
+    const text = ['┌─ 첫 번째 항목', '├─ 두 번째 항목', '│  ├─ 하위 항목 A', '│  └─ 하위 항목 B', '└─ 세 번째 항목'].join('\n');
+    expect(serializeTree(lines)).toBe(text);
+    expect(parseTreeText(text)).toEqual(lines);
+    expect(serializeTree(lines, 'tee').split('\n')[0]).toBe('├─ 첫 번째 항목');
+    expect(parseTreeText(serializeTree(lines, 'tee'))).toEqual(lines);
+  });
+});
+
 describe('자동 볼펜·형광펜', () => {
   it('꺾쇠 줄은 콜론 앞이 빨강, 괄호 속 예시는 파랑', () => {
     const t = 'STP 전략: 세분화 → 표적 → 포지셔닝 (예: 나이키 러닝족)';

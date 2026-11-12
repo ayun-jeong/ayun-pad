@@ -1,11 +1,11 @@
 import type { Mark, MarkType, Node, ResolvedPos } from 'prosemirror-model';
 import { NodeSelection, TextSelection, type Command, type EditorState, type Selection, type Transaction } from 'prosemirror-state';
 import { CellSelection } from 'prosemirror-tables';
-import { headRange, infoOf, lineInfos } from './decorations';
+import { headRange, infoOf, lineInfos, lineText } from './decorations';
 import { clamp } from './layout';
-import { MAX_DEPTH, type LineInfo } from './model';
+import { MAX_DEPTH } from './model';
 import { penKey } from './pen';
-import { branchDepth, emptyEnter, planIndent, planMove } from './rules';
+import { branchDepth, emptyEnter, planIndent, planMove, type PrevLine } from './rules';
 import { schema } from './schema';
 
 // 줄을 담는 그릇(문서 또는 표 칸)과 그 안에서 커서 줄의 번호
@@ -48,12 +48,20 @@ export function indentCmd(delta: 1 | -1): Command {
     const sel = selectedLines(state);
     if (!sel) return true;
     const { c, a, b } = sel;
+    // 빈 보통 줄에서 Tab → 꺾쇠 자식 줄(새 항목을 시작하는 자리라서). 글이 있는 줄은 깊이만 바꾼다.
+    const fresh = delta > 0 && state.selection.empty && a === b && c.container.child(a).content.size === 0 && c.container.child(a).attrs.kind === 'plain';
+    // 들이면 제목이 될 수 없는 줄(첫 줄 앞 · 빈 줄 · 위젯)의 자식이 될 자리면 들이지 않고 그 자리에서 꺾쇠 줄로
+    // → 맨 바깥이면 제목 없는 트리 시작(┌─). '-' + 스페이스와 같다.
+    const line = c.container.child(a);
+    const prev = fresh ? prevInfo(c) : null;
+    if (fresh && (!prev || (prev.noTitle && (line.attrs.depth as number) >= prev.depth))) {
+      dispatch?.(state.tr.setNodeMarkup(positions(c)[a], undefined, { ...line.attrs, kind: 'branch' }).scrollIntoView());
+      return true;
+    }
     const plan = planIndent(lineInfos(c.container), a, b, delta);
     if (!plan || !dispatch) return true;
     const pos = positions(c);
     const tr = state.tr;
-    // 빈 보통 줄에서 Tab → 꺾쇠 자식 줄(새 항목을 시작하는 자리라서). 글이 있는 줄은 깊이만 바꾼다.
-    const fresh = delta > 0 && state.selection.empty && a === b && c.container.child(a).content.size === 0 && c.container.child(a).attrs.kind === 'plain';
     for (let i = plan.from; i <= plan.to; i++) {
       const attrs = { ...c.container.child(i).attrs, depth: plan.depths[i - plan.from] };
       tr.setNodeMarkup(pos[i], undefined, fresh && i === a ? { ...attrs, kind: 'branch' } : attrs);
@@ -315,9 +323,11 @@ export function sideCmd(report?: (side: boolean, created: boolean) => void): Com
   };
 }
 
-// 같은 그릇에서 바로 위 블록의 깊이 · 종류('-' + 스페이스 규칙에 쓴다)
-export function prevInfo(c: Ctx): LineInfo | null {
-  return c.index > 0 ? infoOf(c.container.child(c.index - 1)) : null;
+// 같은 그릇에서 바로 위 블록의 깊이 · 종류, 제목이 될 수 있는지('-' + 스페이스 · Tab 규칙에 쓴다)
+export function prevInfo(c: Ctx): PrevLine | null {
+  if (c.index <= 0) return null;
+  const n = c.container.child(c.index - 1);
+  return { ...infoOf(n), noTitle: n.type !== schema.nodes.line || !lineText(n).trim() };
 }
 
 // 글자 모양 판에서 '선택한 글자에만' 글꼴 바꾸기

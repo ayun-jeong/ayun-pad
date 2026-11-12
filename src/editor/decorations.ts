@@ -3,7 +3,7 @@ import { Plugin, PluginKey, type EditorState } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { autoStyle, subtract, type Span } from './autoStyle';
 import { HL_BY_DEPTH, type Kind, type LineInfo } from './model';
-import { computeTree, type Cell } from './tree';
+import { computeTree, type Cell, type TreeTop } from './tree';
 
 // 줄 글자. 줄바꿈(br) 같은 칸 하나짜리 노드도 글자 하나로 세서 위치가 문서와 맞게 한다.
 export function lineText(node: Node): string {
@@ -11,7 +11,7 @@ export function lineText(node: Node): string {
 }
 
 // 가지선은 줄 앞 여백(padding)에 배경 그림으로 그린다. 글자 사이에 아무것도 끼우지 않아서 커서·한글 입력에 영향이 없다.
-// 칸 모양: '' 빈칸, 'v' │, 't' ├─, 'l' └─, 그리고 옆 가지(글 바로 옆 ┬─)의 첫 칸 'f' ┬─ · 'h' ──
+// 칸 모양: '' 빈칸, 'v' │, 't' ├─, 'l' └─, 'd' ┌─(제목 없는 트리의 첫 가지), 그리고 옆 가지(글 바로 옆 ┬─)의 첫 칸 'f' ┬─ · 'h' ──
 export type TreeCell = Cell | 'f' | 'h';
 const LINE = 'linear-gradient(var(--tree),var(--tree))';
 // base(c): 칸 c의 왼쪽 끝. 보통은 var(--ind) × c, 옆 가지 안에서는 부모 글 끝에서부터 센다.
@@ -24,8 +24,8 @@ export function treeBackground(cells: TreeCell[], base: (c: number) => string = 
     const x = `calc(${b} + var(--ind) / 2 - var(--tw) / 2)`;
     if (t === 'v' || t === 't') layers.push(`${LINE} ${x} 0 / var(--tw) 100% no-repeat`);
     if (t === 'l') layers.push(`${LINE} ${x} 0 / var(--tw) calc(var(--lh) / 2 + var(--tw) / 2) no-repeat`);
-    if (t === 't' || t === 'l') layers.push(`${LINE} calc(${b} + var(--ind) / 2) ${midY} / calc(var(--ind) / 2 - var(--tgap)) var(--tw) no-repeat`);
-    if (t === 'f') layers.push(`${LINE} ${x} ${midY} / var(--tw) 100% no-repeat`); // ┬ 의 아래로 내려가는 줄
+    if (t === 't' || t === 'l' || t === 'd') layers.push(`${LINE} calc(${b} + var(--ind) / 2) ${midY} / calc(var(--ind) / 2 - var(--tgap)) var(--tw) no-repeat`);
+    if (t === 'f' || t === 'd') layers.push(`${LINE} ${x} ${midY} / var(--tw) 100% no-repeat`); // ┬ ┌ 의 아래로 내려가는 줄
     if (t === 'f' || t === 'h') layers.push(`${LINE} ${b} ${midY} / calc(var(--ind) - var(--tgap)) var(--tw) no-repeat`); // 부모 글 바로 옆부터 가로줄
   });
   return layers.join(',');
@@ -64,15 +64,16 @@ const isCell = (n: Node) => n.type.spec.tableRole === 'cell' || n.type.spec.tabl
 // 표 칸도 그릇이라 칸 안에서 '- '로 만든 꺾쇠 줄도 똑같이 칠해진다.
 // 옆 가지(side): 부모 글 바로 옆 x에서 자식들이 시작한다. 첫 자식은 한 줄 위(부모와 같은 줄)로 올라가
 // 부모 글 뒤에 붙고(┬─ 또는 ──), 나머지 자식은 그 아래 같은 x에 줄을 맞춘다(├─ └─ │). 줄 높이는 그대로라 쪽 나눔이 안 흔들린다.
-function decorate(container: Node, base: number, decos: Decoration[], auto: boolean, sideX: SideX | null) {
+// 제목 없는 트리(맨 바깥이 꺾쇠 줄)는 칸이 하나 더 있어서 글을 한 칸 더 들인다(깊이 1 꺾쇠 줄도 ┌─ ├─ └─ 뒤에서 시작).
+function decorate(container: Node, base: number, decos: Decoration[], auto: boolean, sideX: SideX | null, treeTop: TreeTop) {
   const infos = lineInfos(container);
-  const tree = computeTree(infos);
+  const tree = computeTree(infos, treeTop);
   const stack: { d: number; x: number; first: number }[] = [];
   let i = 0;
   container.forEach((node, offset) => {
     const pos = base + offset;
     const row = tree[i];
-    const d = infos[i].depth;
+    const d = infos[i].depth + (row.rootless ? 1 : 0); // 칸 수로 센 깊이
     while (stack.length && d <= stack[stack.length - 1].d) stack.pop();
     const colBase = (c: number) => {
       for (let k = stack.length - 1; k >= 0; k--) {
@@ -92,9 +93,12 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
     } else if (top) {
       bg = treeBackground(row.cells, colBase);
       layout = `padding-left:${colBase(d - 1)};`;
-    } else bg = treeBackground(row.cells);
+    } else {
+      bg = treeBackground(row.cells);
+      if (row.rootless) layout = `padding-left:calc(var(--ind) * ${d - 1});`;
+    }
     const style = layout + (bg ? `background:${bg}` : '');
-    if (sideX && node.type.name === 'line' && node.attrs.side && i + 1 < infos.length && infos[i + 1].depth === d + 1) {
+    if (sideX && node.type.name === 'line' && node.attrs.side && i + 1 < infos.length && infos[i + 1].depth === infos[i].depth + 1) {
       const x = node.attrs.id ? sideX[node.attrs.id as string] : undefined;
       if (x !== undefined && x >= 0) stack.push({ d, x, first: i + 1 });
     }
@@ -103,7 +107,7 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
       if (node.type.name === 'table')
         node.descendants((child, p) => {
           if (!isCell(child)) return true;
-          decorate(child, pos + 1 + p + 1, decos, auto, null);
+          decorate(child, pos + 1 + p + 1, decos, auto, null, treeTop);
           return false;
         });
       i++;
@@ -131,9 +135,9 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
   });
 }
 
-export function buildDecorations(doc: Node, auto = true, sideX: SideX = {}): DecorationSet {
+export function buildDecorations(doc: Node, auto = true, sideX: SideX = {}, top: TreeTop = 'corner'): DecorationSet {
   const decos: Decoration[] = [];
-  decorate(doc, 0, decos, auto, sideX);
+  decorate(doc, 0, decos, auto, sideX, top);
   return DecorationSet.create(doc, decos);
 }
 
@@ -158,26 +162,30 @@ interface AutoState {
   composing: boolean;
   auto: boolean; // 노트 설정 '자동 색'
   sideX: SideX; // 옆 가지 부모 글 끝 위치(화면에서 잰 값)
+  top: TreeTop; // 노트 설정 '제목 없는 트리 첫 가지'(┌─ / ├─)
 }
 
 export const autoKey = new PluginKey<AutoState>('auto');
 
 // 한글 조합 중에는 장식을 새로 만들지 않고 위치만 옮긴다(조합 중인 글자 주변 DOM이 바뀌면 입력이 깨진다).
-export function autoPlugin(): Plugin<AutoState> {
+// settings.treeTop: 노트 설정을 그때그때 읽는다(바뀌면 rebuild 표시로 다시 칠한다).
+export function autoPlugin(settings?: { treeTop?: TreeTop }): Plugin<AutoState> {
+  const topOf = () => settings?.treeTop ?? 'corner';
   return new Plugin<AutoState>({
     key: autoKey,
     state: {
-      init: (_, state) => ({ deco: buildDecorations(state.doc), composing: false, auto: true, sideX: {} }),
+      init: (_, state) => ({ deco: buildDecorations(state.doc, true, {}, topOf()), composing: false, auto: true, sideX: {}, top: topOf() }),
       apply(tr, prev, _old, next) {
         const meta = tr.getMeta(autoKey) as { composing?: boolean; rebuild?: boolean; auto?: boolean; sideX?: SideX } | undefined;
         const composing = meta?.composing ?? prev.composing;
         const auto = meta?.auto ?? prev.auto;
         const sideX = meta?.sideX ?? prev.sideX;
-        if (composing) return { deco: prev.deco.map(tr.mapping, tr.doc), composing, auto, sideX };
+        if (composing) return { ...prev, deco: prev.deco.map(tr.mapping, tr.doc), composing, auto, sideX };
         // 조합이 끝난 첫 거래는 글이 안 바뀌었어도 다시 칠한다(조합 중에 미뤄 둔 색)
         const ended = prev.composing;
-        if (!tr.docChanged && !meta?.rebuild && !meta?.sideX && !ended && auto === prev.auto) return { deco: prev.deco, composing, auto, sideX };
-        return { deco: buildDecorations(next.doc, auto, sideX), composing, auto, sideX };
+        const top = topOf();
+        if (!tr.docChanged && !meta?.rebuild && !meta?.sideX && !ended && auto === prev.auto && top === prev.top) return { ...prev, composing, auto, sideX };
+        return { deco: buildDecorations(next.doc, auto, sideX, top), composing, auto, sideX, top };
       },
     },
     // 옆 가지 부모 줄의 글이 어디서 끝나는지 그릴 때마다 재서(글을 고치면 자식도 따라 옮겨진다) 바뀌었으면 다시 칠한다

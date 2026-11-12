@@ -165,7 +165,7 @@ try {
   lp = await lastP();
   check(lp.kind === 'branch' && lp.text === '공급', `⌥- 한 번 더 → 꺾쇠 줄 (${JSON.stringify(lp)})`);
   await k.press('End');
-  // 빈 보통 줄에서 Tab → 꺾쇠 자식 줄
+  // 빈 보통 줄에서 Tab → 꺾쇠 줄. 바로 위가 빈 줄(제목 없음)이라 들이지 않고 그 자리에서 제목 없는 트리(┌─)
   await k.press('Enter');
   await k.press('Enter');
   await k.press('Enter');
@@ -174,7 +174,7 @@ try {
   await k.press('Tab');
   await sleep(80);
   lp = await lastP();
-  check(before === 'plain1' && lp.kind === 'branch' && lp.depth === '2', `빈 보통 줄에서 Tab → 꺾쇠 자식 줄 (${before} → ${lp.kind}${lp.depth})`);
+  check(before === 'plain1' && lp.kind === 'branch' && lp.depth === '1', `빈 줄 아래 빈 줄에서 Tab → 제목 없는 트리 꺾쇠 줄 (${before} → ${lp.kind}${lp.depth})`);
   // Enter 3번 = 빈 줄 2개(빈 꺾쇠 줄에서 Enter는 줄을 늘리지 않고 한 단계 위로) → ⌫ 3번이면 '공급' 끝
   await k.press('Backspace'); // 꺾쇠 풀기
   await k.press('Backspace'); // 빈 줄 합치기
