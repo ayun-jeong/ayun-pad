@@ -191,6 +191,8 @@ interface Ix {
 }
 
 type Mods = { metaKey: boolean; ctrlKey: boolean };
+// 그림 층 누르기(React 이벤트)와 회색 바깥 누르기(브라우저 이벤트)를 같이 받는다
+type Press = Mods & { clientX: number; clientY: number; pointerId: number; pointerType: string; button: number; shiftKey: boolean; target: EventTarget | null; preventDefault(): void };
 const snapOff = (e: Mods) => e.metaKey || e.ctrlKey; // ⌘(Ctrl)를 누르고 끌면 스냅 없이
 // 직각 · 45°로 묶인 점은 묶인 방향을 빼고만 맞춘다
 const freeOf = (q: XY, last: XY | null, ortho: boolean) => ({ x: !(ortho && last && q.x === last.x), y: !(ortho && last && q.y === last.y) });
@@ -277,7 +279,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     return () => src.removeEventListener('pointerdown', on, true);
   }, [src]);
 
-  // 그리기(고르기)에서는 글 칸 바깥(종이 여백 · 회색 바깥)에서 끌기 시작해도 영역 고르기
+  // 그리기(고르기)에서는 글 칸 바깥(종이 여백 · 회색 바깥)을 눌러도 글 칸을 누른 것과 같다:
+  // 거기까지 삐져나간 그림 · 손잡이(글상자 폭 · 모서리)도 잡히고, 빈 곳이면 끌어서 영역 고르기
   const deskDown = useRef<(e: PointerEvent) => void>(() => undefined);
   deskDown.current = (e: PointerEvent) => {
     const d = drawRef.current;
@@ -287,12 +290,18 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     const t = e.target as Element | null;
     if (!t || host.contains(t) || t.closest('.drawbar, .panel, .menu, .tbox, .zoom-badge')) return;
     if (ix.pid !== null) return;
-    e.preventDefault();
-    const p = toMM(e);
-    ix.pid = e.pointerId;
-    host.setPointerCapture(e.pointerId);
-    ix.marquee = { a: p, b: p, add: e.shiftKey, base: e.shiftKey ? [...ix.sel] : [], wbase: e.shiftKey ? [...ix.wsel] : [], moved: false };
-    repaint();
+    onDown(e, true);
+  };
+  // 바깥에 걸친 손잡이 위에서도 커서 모양(↔ · ↘)
+  const deskHover = useRef<(e: PointerEvent) => void>(() => undefined);
+  deskHover.current = (e: PointerEvent) => {
+    const desk = e.currentTarget as HTMLElement | null;
+    const host = layer.current;
+    const t = e.target as Element | null;
+    if (!desk || ix.drag || ix.marquee) return;
+    const out = drawRef.current?.tool === 'select' && !!host && !!t && !host.contains(t);
+    const c = out ? hoverCursor(toMM(e), e.pointerType === 'touch' ? 2.4 : 1.2) : '';
+    if (desk.style.cursor !== c) desk.style.cursor = c;
   };
   // 글쓰기 화면: 배경(회색 바깥 · 종이 여백 · 글 아래 빈 곳)에서 끌면 사각형으로 글 줄 · 표 · 그래프 · 그림 · 글상자를 한꺼번에.
   // 글 위에서 끌면 원래대로 글 고르기, 그냥 누르기 · 두 번 누르기(글상자 만들기)도 그대로.
@@ -376,8 +385,13 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     const desk = src.closest('.desk');
     if (!desk) return;
     const on = (e: Event) => deskDown.current(e as PointerEvent);
+    const hover = (e: Event) => deskHover.current(e as PointerEvent);
     desk.addEventListener('pointerdown', on);
-    return () => desk.removeEventListener('pointerdown', on);
+    desk.addEventListener('pointermove', hover);
+    return () => {
+      desk.removeEventListener('pointerdown', on);
+      desk.removeEventListener('pointermove', hover);
+    };
   }, [src]);
 
   // 그리기를 시작하면 편집 칸에서 커서를 뺀다(도구 글자가 노트에 쳐지지 않게). 그리기를 끝내면 고름도 푼다.
@@ -630,6 +644,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   };
   const hoverCursor = (p: XY, tol: number): string => {
     const one = ix.sel.length === 1 && !ix.wsel.length ? byId(ix.sel[0]) : undefined;
+    if (one?.t === 'text') return handles(one, th).some((h) => dist(h, p) <= tol * 1.3) ? 'ew-resize' : '';
     if (!one || (one.t !== 'rect' && one.t !== 'ellipse')) return '';
     const hi = handles(one, th).findIndex((h) => dist(h, p) <= tol * 1.3);
     if (hi >= 0) return ['nwse-resize', 'nesw-resize', 'nwse-resize', 'nesw-resize', 'ns-resize', 'ew-resize', 'ns-resize', 'ew-resize'][hi];
@@ -645,10 +660,10 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
 
   // 그리기 막대 · 기호 메뉴는 화면(body)에 붙지만(React 포털) React 안에서는 이 층의 자식이라 누름이 여기까지 올라온다.
   // 그걸 종이 누름으로 받으면 고른 그림이 풀리고 포인터를 이 층이 붙잡아서 막대 단추가 클릭을 못 받는다 → 층 안에서 난 것만.
-  const fromLayer = (e: React.PointerEvent) => !!layer.current && layer.current.contains(e.target as Node);
+  const fromLayer = (e: { target: EventTarget | null }) => !!layer.current && layer.current.contains(e.target as Node);
 
   // 그리는 점: 직각 · 45°로 묶고, 남은 방향은 다른 것들 · 앞서 찍은 점에 맞춘다
-  const drawPoint = (p: XY, e: React.PointerEvent): XY => {
+  const drawPoint = (p: XY, e: Press): XY => {
     const d = drawRef.current;
     const prev = ix.drawing?.pts ?? [];
     const last = prev[prev.length - 1] ?? null;
@@ -657,9 +672,10 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     return snapPt(q, new Set(), prev, freeOf(q, last, !!d?.ortho), e);
   };
 
-  const onDown = (e: React.PointerEvent) => {
+  // outside: 글 칸 바깥(종이 여백 · 회색 바깥)을 누른 것(deskDown이 넘겨준다)
+  const onDown = (e: Press, outside = false) => {
     const d = drawRef.current;
-    if (!d || !fromLayer(e) || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    if (!d || !(outside || fromLayer(e)) || (e.pointerType === 'mouse' && e.button !== 0)) return;
     if ((e.target as Element | null)?.closest?.('.tbox.tedit')) return; // 고치고 있는 글상자 안은 글상자에게(커서 · 글자 고르기)
     if (ix.pid !== null && e.pointerId !== ix.pid) return; // 끄는 중에 닿은 두 번째 손가락 · 손바닥
     ix.pid = e.pointerId;

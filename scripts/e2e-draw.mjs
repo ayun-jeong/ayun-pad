@@ -1465,6 +1465,73 @@ try {
   await k.press('Escape');
   }
 
+  // 26) 종이 밖(회색 바깥)으로 삐져나간 글상자: 한 번 눌러 고르면 바깥에 있는 폭 손잡이로 줄이기(↔ 커서),
+  //     그리기 화면에서도 바깥에 걸친 몸통 · 손잡이가 잡히고, 빈 회색은 그대로 고름 풀기
+  {
+    await page.click('.addnote');
+    await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+    await page.click('.editor');
+    for (let i = 0; i < 8; i++) {
+      await k.type(`줄 ${i + 1}`);
+      await k.press('Enter');
+    }
+    const La = await page.$eval('.shapes-layer', (e) => {
+      const r = e.getBoundingClientRect();
+      return { x: r.left, y: r.top, w: r.width, mmW: e.offsetWidth / (96 / 25.4) };
+    });
+    const ppm = La.w / La.mmW;
+    const paperR = await page.$eval('.paper', (e) => e.getBoundingClientRect().right);
+    const handlesNow = () => page.$$eval('.sh-handle', (es) => es.map((e) => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }));
+    await page.keyboard.down('Alt');
+    await page.mouse.click(La.x + 60 * ppm, La.y + 12 * ppm);
+    await page.keyboard.up('Alt');
+    await page.waitForSelector('.tbox.tedit .tb-edit');
+    await k.type('밖으로 나간 글상자');
+    await k.press('Escape');
+    await sleep(150);
+    const o0 = (await boxes())[0];
+    // 한 번 눌러 오른쪽으로 끌어 종이 밖으로 걸치게
+    let ob = await (await page.$('.tbox')).boundingBox();
+    await page.mouse.move(ob.x + 8, ob.y + ob.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(ob.x + 8 + 30 * ppm, ob.y + ob.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await sleep(200);
+    const o1 = (await boxes())[0];
+    ob = await (await page.$('.tbox')).boundingBox();
+    let hs = await handlesNow();
+    check(ob.x + ob.width > paperR + 10 && hs.length === 1 && hs[0].x > paperR, `글상자가 회색 바깥으로 삐져나감 · 폭 손잡이도 바깥 (x ${o0.a.x.toFixed(0)} → ${o1.a.x.toFixed(0)}mm, 손잡이 ${hs.length}개)`);
+    await page.mouse.move(hs[0].x + 4, hs[0].y + 3);
+    await page.mouse.move(hs[0].x, hs[0].y);
+    check((await page.$eval('.desk', (e) => e.style.cursor)) === 'ew-resize', '바깥 손잡이 위 커서 ↔');
+    await page.mouse.down();
+    await page.mouse.move(hs[0].x - 10 * ppm, hs[0].y, { steps: 6 });
+    await page.mouse.up();
+    await sleep(200);
+    const o2 = (await boxes())[0];
+    check(o2.bw < o1.bw - 7 && Math.abs(o2.a.x - o1.a.x) < 0.1 && !!(await page.$('.shapes-layer.on')), `회색 바깥 손잡이로 폭 줄이기 (${o1.bw.toFixed(1)} → ${o2.bw.toFixed(1)}mm, 고른 채)`);
+    // 그리기 화면: 바깥에 걸친 몸통을 눌러 고르고 끌어 옮기기
+    await k.press('Escape');
+    await sleep(150);
+    await combo(['Alt'], 'KeyD');
+    await page.waitForSelector('.shapes-layer.on');
+    ob = await (await page.$('.tbox')).boundingBox();
+    const outX = Math.max(ob.x + 4, paperR + 4);
+    check(outX < ob.x + ob.width, '글상자 일부가 종이 밖');
+    await page.mouse.move(outX, ob.y + ob.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(outX - 10 * ppm, ob.y + ob.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await sleep(200);
+    const o3 = (await boxes())[0];
+    check(Math.abs(o3.a.x - (o2.a.x - 10)) < 0.6 && (await handlesNow()).length === 1, `그리기 화면: 바깥에 걸친 몸통을 눌러 고르고 옮기기 (x ${o2.a.x.toFixed(1)} → ${o3.a.x.toFixed(1)})`);
+    await page.mouse.click(paperR + 150, ob.y + 40);
+    await sleep(150);
+    check((await handlesNow()).length === 0, '그리기 화면: 빈 회색 누르기 → 고름 풀림');
+    await combo(['Alt'], 'KeyD');
+    await sleep(150);
+  }
+
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();
 } catch (e) {
