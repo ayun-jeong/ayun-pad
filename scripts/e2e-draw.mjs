@@ -29,11 +29,13 @@ async function waitServer() {
 try {
   await waitServer();
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-first-run'] });
+  await browser.defaultBrowserContext().overridePermissions(new globalThis.URL(URL).origin, ['clipboard-read', 'clipboard-write', 'clipboard-sanitized-write']);
   const page = await browser.newPage();
   await page.setViewport({ width: 1400, height: 1000 });
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  page.on('requestfailed', (r) => process.env.E2E_DEBUG && console.log('REQFAIL', r.url().slice(0, 120), r.failure()?.errorText));
   await page.goto(URL, { waitUntil: 'networkidle0' });
   await page.waitForSelector('.editor > p');
   const k = page.keyboard;
@@ -1288,6 +1290,22 @@ try {
     return { text: v.state.doc.textBetween(v.state.selection.from, v.state.selection.to, '|'), caught: document.querySelectorAll('.shapes-layer .sh-caught').length };
   });
   check(mqShown && grabbed.text === '배경 둘째 줄|배경 셋째 줄' && grabbed.caught === 2, `회색 배경부터 끌면 사각형에 걸친 줄 · 화살표 · 글상자가 한꺼번에 (${JSON.stringify(grabbed)})`);
+  // 잡힌 채 회색 배경을 그냥 누르면 → 다 풀리고 누른 줄에 커서
+  const caretState = () =>
+    page.evaluate(() => {
+      const v = window.__ayunpad.view();
+      const sel = v.state.selection;
+      return { empty: sel.empty, line: sel.$head.parent.textContent, caught: document.querySelectorAll('.shapes-layer .sh-caught').length, bar: !!document.querySelector('.drawbar'), boxes: document.querySelectorAll('.shapes-layer .sh-selbox').length };
+    });
+  await page.mouse.click(gx, (rows8[3].t + rows8[3].b) / 2);
+  await sleep(200);
+  const freed = await caretState();
+  check(freed.empty && freed.caught === 0 && freed.line === '배경 넷째 줄', `잡힌 채 회색 배경 누르기 → 고른 글 · 그림 풀리고 누른 줄에 커서 (${JSON.stringify(freed)})`);
+  await page.mouse.move(gx, rows8[1].t - 3);
+  await page.mouse.down();
+  await page.mouse.move(L8.x + L8.w - 10, rows8[2].b + 3, { steps: 10 });
+  await page.mouse.up();
+  await sleep(200);
   const n8 = () => page.evaluate(() => Object.keys(window.__ayunpad.doc().shapes.toJSON()).length);
   await k.press('Backspace');
   await sleep(200);
@@ -1314,8 +1332,136 @@ try {
   await page.mouse.up();
   await sleep(200);
   check(!!(await page.$('.drawbar.has-sel')) && (await page.$$('.shapes-layer .sh-selbox')).length === 1, '글 없는 빈 곳에서 그림만 잡으면 바로 고른 상태(옮기기 · 색 · 지우기)');
+  // 고른 상태에서 회색 배경을 그냥 누르면 → 풀리고 글쓰기로, 누른 줄에 커서(화면이 밀려 다른 줄로 가지 않게)
+  const rowsNow = await page.$$eval('.editor > p', (ps) => ps.map((p) => { const r = p.getBoundingClientRect(); return { t: r.top, b: r.bottom }; }));
+  await page.mouse.click(gx, (rowsNow[0].t + rowsNow[0].b) / 2);
+  await sleep(250);
+  const freed2 = await caretState();
+  check(!freed2.bar && freed2.boxes === 0 && freed2.line === '배경 첫 줄', `고른 그림이 있을 때 배경 누르기 → 풀리고 누른 줄에 커서 (${JSON.stringify(freed2)})`);
+  // 그리기 화면에서 여러 개 고른 채 배경 누르기 → 고름만 풀림(그리기는 그대로)
+  await combo(['Alt'], 'KeyD');
+  await page.waitForSelector('.drawbar');
+  await combo([meta], 'KeyA');
+  await sleep(150);
+  const many = (await page.$$('.shapes-layer .sh-selbox')).length;
+  await page.mouse.click(gx, (rowsNow[1].t + rowsNow[1].b) / 2);
+  await sleep(200);
+  const freed3 = await caretState();
+  check(many >= 2 && freed3.boxes === 0 && freed3.bar && !(await page.$('.drawbar.has-sel')), `그리기 화면에서 여러 개 고른 채 배경 누르기 → 고름 풀림 (${many}개 → ${freed3.boxes}개)`);
+  await combo(['Alt'], 'KeyD');
+  await sleep(150);
+
+  // 25) 복사 · 붙여넣기(진짜 클립보드 · 붙여넣기 명령): 글상자 ⌘C → 클립보드엔 읽을 글(트리 모양, 'ayunpad-shapes:' 같은 글 없음).
+  // 붙이면 그림으로 딱 하나: 고른 채 → 원래 자리 옆(안 보이면 보이는 곳), 본문 커서 → 그 줄, 글상자 안 → 내용으로. 예전 표시 글도 그림으로.
+  {
+  const realKey = async (code, cmd) => {
+    await k.down(meta);
+    await k.press(code, { commands: [cmd] });
+    await k.up(meta);
+    await sleep(300);
+  };
+  await page.click('.addnote');
+  await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+  await page.click('.editor');
+  for (let i = 1; i <= 60; i++) {
+    await k.type(`본문 ${i}`);
+    await k.press('Enter');
+  }
+  await page.$eval('.desk', (d) => (d.scrollTop = 0));
+  await sleep(150);
+  const L9 = await page.$eval('.shapes-layer', (e) => {
+    const r = e.getBoundingClientRect();
+    return { x: r.left, y: r.top, px: r.width / (e.offsetWidth / (96 / 25.4)) };
+  });
+  await k.down('Alt');
+  await page.mouse.click(L9.x + 50 * L9.px, L9.y + 6 * L9.px);
+  await k.up('Alt');
+  await page.waitForSelector('.tbox.tedit .tb-edit');
+  await k.type('에너지 신사업');
+  await k.press('Enter');
+  await k.type('- 전기차');
+  await k.press('Enter');
+  await k.type('마이크로그리드');
   await k.press('Escape');
-  await sleep(100);
+  await sleep(200);
+  const tboxes = () => page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).filter((s) => s.t === 'text').map((s) => ({ id: s.id, text: s.text, l: s.a.l })));
+  const bodyOf = () => page.evaluate(() => window.__ayunpad.view().state.doc.textBetween(0, window.__ayunpad.view().state.doc.content.size, '|'));
+  const body0 = await bodyOf();
+  const [orig] = await tboxes();
+  const ob = await (await page.$(`.tbox[data-sid="${orig.id}"]`)).boundingBox();
+  await page.mouse.click(ob.x + ob.width / 2, ob.y + 4);
+  await sleep(150);
+  await realKey('KeyC', 'Copy');
+  const clipText = await page.evaluate(() => navigator.clipboard.readText());
+  check(clipText === '에너지 신사업\n├─ 전기차\n└─ 마이크로그리드', `글상자 ⌘C → 클립보드엔 읽을 글(트리 모양) (${JSON.stringify(clipText)})`);
+  const fresh = async (pre) => (await tboxes()).filter((b) => !pre.some((x) => x.id === b.id));
+  let pre = await tboxes();
+  await realKey('KeyV', 'Paste');
+  let got = await fresh(pre);
+  const nb = got[0] && (await (await page.$(`.tbox[data-sid="${got[0].id}"]`)).boundingBox());
+  check(got.length === 1 && nb && Math.abs(nb.y - ob.y - 3 * L9.px) < 3, `고른 채 ⌘V → 딱 하나, 원래 자리에서 3mm 옆 (${got.length}개)`);
+  // 원본이 안 보이게 내려가서 붙이면 → 지금 보이는 곳에(안 보이는 데 붙어서 여러 번 누르게 되지 않게)
+  await page.$eval('.desk', (d) => (d.scrollTop = d.scrollHeight));
+  await sleep(200);
+  pre = await tboxes();
+  await realKey('KeyV', 'Paste');
+  got = await fresh(pre);
+  const vis = got[0] && (await page.evaluate((id) => {
+    const r = document.querySelector(`.tbox[data-sid="${id}"]`).getBoundingClientRect();
+    const d = document.querySelector('.desk').getBoundingClientRect();
+    return r.top >= d.top && r.top < d.bottom - 10;
+  }, got[0].id));
+  check(got.length === 1 && vis, `원본이 화면 밖이면 보이는 곳에 붙음 (${got.length}개, 보임 ${vis})`);
+  // 본문 줄을 눌러 커서를 두고 ⌘V → 그 줄에 글상자 하나, 본문 글은 그대로
+  const ps = await page.$$('.editor > p');
+  const target = ps[ps.length - 5];
+  const tid = await target.evaluate((p) => p.dataset.id);
+  const tb = await target.boundingBox();
+  await page.mouse.click(tb.x + 15, tb.y + tb.height / 2);
+  await sleep(150);
+  pre = await tboxes();
+  await realKey('KeyV', 'Paste');
+  got = await fresh(pre);
+  const body1 = await bodyOf();
+  check(got.length === 1 && got[0].l === tid && body1 === body0 && !body1.includes('ayunpad'), `본문 커서에서 ⌘V → 그 줄에 글상자 하나, 본문엔 아무 글도 안 붙음 (${got.length}개, 줄 ${got[0]?.l === tid}, 본문 ${body1 === body0 ? '그대로' : JSON.stringify(body1.slice(-80))})`);
+  // 글상자 안(고치는 중)에서 ⌘V → 새 글상자 없이 그 글상자에 내용으로
+  await page.$eval('.desk', (d) => (d.scrollTop = 0));
+  await sleep(150);
+  const ob2 = await (await page.$(`.tbox[data-sid="${orig.id}"]`)).boundingBox();
+  await page.mouse.click(ob2.x + ob2.width / 2, ob2.y + 4, { count: 2 });
+  await page.waitForSelector(`.tbox[data-sid="${orig.id}"].tedit`);
+  await k.down(meta);
+  await k.press('ArrowDown');
+  await k.up(meta);
+  await k.press('Enter');
+  pre = await tboxes();
+  await realKey('KeyV', 'Paste');
+  const inside = (await tboxes()).find((b) => b.id === orig.id)?.text ?? '';
+  check((await tboxes()).length === pre.length && (inside.match(/에너지 신사업/g) || []).length === 2 && !inside.includes('ayunpad'), `글상자 안에서 ⌘V → 그 글상자에 내용으로 (${JSON.stringify(inside)})`);
+  await k.press('Escape');
+  await sleep(150);
+  // 예전에 복사해 둔 'ayunpad-shapes:' 글 → 본문에 붙여도 글이 아니라 그림으로
+  await page.evaluate(() => navigator.clipboard.writeText('ayunpad-shapes:' + JSON.stringify([{ id: 'legacy1', t: 'text', a: { x: 5, y: 20 }, bw: 40, text: '옛 복사', c: 'k', w: 0.35, z: 1 }])));
+  const p3 = await (await page.$$('.editor > p'))[3].boundingBox();
+  await page.mouse.click(p3.x + 15, p3.y + p3.height / 2);
+  await sleep(150);
+  pre = await tboxes();
+  await realKey('KeyV', 'Paste');
+  got = await fresh(pre);
+  const body2 = await bodyOf();
+  check(got.length === 1 && got[0].text === '옛 복사' && body2 === body0, `예전 'ayunpad-shapes:' 글 → 글상자로, 본문은 그대로 (${got.length}개)`);
+  // 다른 앱에서 복사한 그냥 글 → 본문에 글로(그림 없음)
+  await page.evaluate(() => navigator.clipboard.writeText('그냥 글'));
+  const p8 = await (await page.$$('.editor > p'))[8].boundingBox(); // 붙인 글상자가 없는 줄
+  await page.mouse.click(p8.x + 15, p8.y + p8.height / 2);
+  await sleep(150);
+  pre = await tboxes();
+  await realKey('KeyV', 'Paste');
+  const plainGot = await fresh(pre);
+  const body3 = await bodyOf();
+  check(plainGot.length === 0 && body3.includes('그냥 글'), `다른 앱 글은 본문에 글로, 그림은 안 생김 (${plainGot.length}개, ${JSON.stringify(body3.slice(0, 60))}, active ${await page.evaluate(() => document.activeElement?.className)})`);
+  await k.press('Escape');
+  }
 
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();

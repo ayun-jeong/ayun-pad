@@ -3,9 +3,10 @@ import { NodeSelection, TextSelection, type EditorState } from 'prosemirror-stat
 import type { EditorView } from 'prosemirror-view';
 import { defaultDeleteFilter, defaultProtectedNodes, prosemirrorToYXmlFragment, ySyncPluginKey } from 'y-prosemirror';
 import * as Y from 'yjs';
-import { caughtIds, dropCaught, pasteClip, rememberClip } from '../draw/caught';
+import { caughtIds, dropCaught, notePaste, pasteClip, rememberClip } from '../draw/caught';
 import { SHAPES } from '../draw/model';
 import { ShapesLayer, type DrawState, type WidgetApi } from '../draw/ShapesLayer';
+import { clipboardTextSerializer } from '../editor/clipboard';
 import { createEditor, type EditorHooks } from '../editor/createEditor';
 import { newId } from '../editor/ids';
 import { autoKey } from '../editor/decorations';
@@ -209,10 +210,11 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
       hostRef.current = hooks;
       view = createEditor(mountRef.current, doc.fragment, hooks, um, settings);
       const ed = view;
-      const remember = () => rememberClip(ed.state, doc.shapes, caughtRef.current);
+      const remember = () => rememberClip(ed.state, doc.shapes, caughtRef.current, clipboardTextSerializer(ed.state.selection.content(), ed));
       // ProseMirror가 잘라내며 지우기 전에 기억해야 해서 capture로 먼저 듣는다
       ed.dom.addEventListener('copy', remember, true);
       ed.dom.addEventListener('cut', remember, true);
+      ed.dom.addEventListener('paste', notePaste, true);
       setLive({ doc, view, um });
       cb.current.onDoc(doc, view, srcRef.current, um);
       hub.attach(`note:${noteId}`, doc.ydoc);
@@ -303,6 +305,15 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
                   um={live.um}
                   src={srcRef.current}
                   editor={live.view.dom}
+                  caretXY={() => {
+                    const v = live.view;
+                    try {
+                      const c = v.coordsAtPos(v.state.selection.head);
+                      return { x: c.left, y: c.top };
+                    } catch {
+                      return null;
+                    }
+                  }}
                   pitch={fit.pitch}
                   tick={tick}
                   draw={draw}
@@ -333,10 +344,13 @@ export function EditorPane({ noteId, zoom, draw, setDraw, toast, app, onState, o
                     }
                   }}
                   onCaret={(x, y) => {
+                    // 글 칸 밖(회색 바깥 · 여백)을 눌렀어도 가장 가까운 줄로. 못 찾으면 고른 것만 푼다.
                     const v = live.view;
-                    const hit = v.posAtCoords({ left: x, top: y });
+                    const r = v.dom.getBoundingClientRect();
+                    const hit = v.posAtCoords({ left: Math.min(Math.max(x, r.left + 2), r.right - 2), top: Math.min(Math.max(y, r.top + 2), r.bottom - 2) });
                     v.focus();
-                    if (hit) v.dispatch(v.state.tr.setSelection(TextSelection.near(v.state.doc.resolve(hit.pos))));
+                    const doc = v.state.doc;
+                    v.dispatch(v.state.tr.setSelection(TextSelection.near(doc.resolve(hit ? hit.pos : v.state.selection.head))));
                   }}
                   host={hostRef.current!}
                   settings={settings}

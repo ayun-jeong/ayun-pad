@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { Node, type Mark } from 'prosemirror-model';
+import { Fragment, Node, Slice, type Mark } from 'prosemirror-model';
 import { EditorState, Selection } from 'prosemirror-state';
 import { Transform } from 'prosemirror-transform';
 import { EditorView } from 'prosemirror-view';
 import type * as Y from 'yjs';
+import { clipboardTextParser, clipboardTextSerializer } from '../editor/clipboard';
 import { eraseHl, penCmd } from '../editor/commands';
 import { engineNodeViews, enginePlugins, markComposing } from '../editor/createEditor';
 import { autoKey, lineText } from '../editor/decorations';
@@ -14,6 +15,7 @@ import { schema } from '../editor/schema';
 import type { ShortcutHost } from '../editor/shortcuts';
 import { PEN_NAME, type PenKey } from '../editor/model';
 import { MathMenu } from '../ui/Menus';
+import { shapesIn } from './clip';
 import { strokeOf, type Resolved, type TextShape } from './model';
 
 // 글상자 내용: ProseMirror 문서(JSON). 옛 글상자(text만 있음)는 줄마다 나눠 읽는다.
@@ -194,6 +196,18 @@ export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFo
         }),
       }),
       nodeViews: engineNodeViews,
+      // 본문과 같은 트리 글 복사 · 붙여넣기(├─ └─ 글 ↔ 깊이 · 꺾쇠)
+      clipboardTextSerializer,
+      clipboardTextParser,
+      // 복사한 그림(글상자)을 글상자 안에 붙이면 그 글상자들의 내용(색 · 트리 그대로)을 여기에
+      handlePaste(view, event) {
+        const list = shapesIn(event.clipboardData);
+        if (!list) return false;
+        const lines: Node[] = [];
+        for (const s of list) if (s.t === 'text') textDoc(s).forEach((n) => lines.push(n));
+        if (lines.length) view.dispatch(view.state.tr.replaceSelection(new Slice(Fragment.from(lines), 1, 1)).scrollIntoView());
+        return true;
+      },
       attributes: { class: 'pad-text tb-edit', spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off', 'aria-label': '글상자' },
       dispatchTransaction(this: EditorView, tr) {
         markComposing(this, tr);

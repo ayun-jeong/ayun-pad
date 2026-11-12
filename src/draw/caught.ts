@@ -29,16 +29,24 @@ export function caughtIds(state: EditorState, shapes: Iterable<Shape>): string[]
   return out;
 }
 
-// 복사 · 잘라내기 때 잡힌 그림을 기억해 두었다가 붙여넣기 때 새 줄에 다시 붙인다(다른 노트에 붙여도)
-let clip: { lines: { id: string; text: string }[]; shapes: Shape[] } | null = null;
+// 복사 · 잘라내기 때 잡힌 그림을 기억해 두었다가 붙여넣기 때 새 줄에 다시 붙인다(다른 노트에 붙여도).
+// text: 그때 클립보드에 들어간 글. 붙여넣는 글이 바로 그 복사본일 때만 그림을 붙인다(나중에 같은 글을 다른 데서 붙여도 그림이 또 생기지 않게).
+let clip: { lines: { id: string; text: string }[]; shapes: Shape[]; text: string } | null = null;
+let lastPaste: { text: string; pm: boolean } = { text: '', pm: false };
+const norm = (s: string) => s.replace(/\r\n?/g, '\n').trim();
 
-export function rememberClip(state: EditorState, shapes: Y.Map<Shape>, ids: string[]) {
-  clip = ids.length ? { lines: coveredLines(state), shapes: ids.map((id) => shapes.get(id)).filter((s): s is Shape => !!s).map((s) => JSON.parse(JSON.stringify(s)) as Shape) } : null;
+export function rememberClip(state: EditorState, shapes: Y.Map<Shape>, ids: string[], text: string) {
+  clip = ids.length ? { lines: coveredLines(state), shapes: ids.map((id) => shapes.get(id)).filter((s): s is Shape => !!s).map((s) => JSON.parse(JSON.stringify(s)) as Shape), text } : null;
+}
+
+// 본문에 붙여넣을 때(ProseMirror보다 먼저) 무엇을 붙이는지 적어 둔다. pm: ayun pad 본문에서 복사한 것(ProseMirror 표시가 있음)
+export function notePaste(e: ClipboardEvent) {
+  lastPaste = { text: e.clipboardData?.getData('text/plain') ?? '', pm: (e.clipboardData?.getData('text/html') ?? '').includes('data-pm-slice') };
 }
 
 // 붙여넣기로 새로 생긴 줄을 글이 같은 순서로 맞춰서, 기억해 둔 그림을 그 줄들에 붙인다
 export function pasteClip(tr: Transaction, state: EditorState, ydoc: Y.Doc, shapes: Y.Map<Shape>) {
-  if (!clip) return;
+  if (!clip || !lastPaste.pm || norm(lastPaste.text) !== norm(clip.text)) return;
   const before = new Set<string>();
   tr.before.forEach((n: Node) => n.attrs.id && before.add(n.attrs.id as string));
   const fresh: { id: string; text: string }[] = [];

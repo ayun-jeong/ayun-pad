@@ -1,7 +1,7 @@
 import type { Node } from 'prosemirror-model';
 import { Plugin, PluginKey, type EditorState } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
-import { autoStyle, subtract, type Span } from './autoStyle';
+import { autoStyle, subtract, type AutoStyle, type Span } from './autoStyle';
 import { HL_BY_DEPTH, type Kind, type LineInfo } from './model';
 import { computeTree, type Cell, type TreeTop } from './tree';
 
@@ -60,6 +60,38 @@ function manualLevel(node: Node, head: Span | null): number | null {
   return found;
 }
 
+// 그릇 하나의 줄마다 자동 형광펜 단계(빨강 0 · 노랑 1 · 파랑 2 · 초록 3 · 보라 4, 5부터는 없음).
+// · 부모 줄 형광펜 색의 다음 색. 부모가 없으면 깊이대로(깊이 1 = 빨강). 부모 주제어에 직접 칠한 색이 있으면 거기서 이어진다.
+// · 같은 가지의 형제 꺾쇠 줄('-'로 이어진 줄)은 같은 색: 형제 중 하나라도 직접 칠한 색이 있으면(맨 앞 것) 나머지도 그 색.
+//   제목 없는 트리의 맨 바깥 꺾쇠 줄끼리도 형제. 보통 줄(대제목 · 콜론 줄)은 저마다.
+function hlLevels(nodes: Node[], infos: LineInfo[], styles: (AutoStyle | null)[]): number[] {
+  const n = nodes.length;
+  const manual = nodes.map((node, i) => (styles[i] ? manualLevel(node, styles[i]!.hl) : null));
+  const parent: number[] = new Array(n).fill(-1);
+  const group: string[] = new Array(n);
+  const stack: number[] = [];
+  let run = -1; // 제목 없는 트리(맨 바깥 꺾쇠 줄 묶음)가 시작된 줄
+  for (let i = 0; i < n; i++) {
+    const d = infos[i].depth;
+    while (stack.length && infos[stack[stack.length - 1]].depth >= d) stack.pop();
+    parent[i] = stack.length ? stack[stack.length - 1] : -1;
+    if (d <= 1) run = infos[i].kind === 'branch' ? (run >= 0 ? run : i) : -1;
+    const sib = parent[i] >= 0 ? `${parent[i]}:${d}` : d <= 1 ? (run >= 0 ? `r${run}` : '') : `o${d}`;
+    group[i] = infos[i].kind === 'branch' && sib ? sib : `s${i}`;
+    stack.push(i);
+  }
+  const shared = new Map<string, number>();
+  for (let i = 0; i < n; i++) if (manual[i] !== null && !shared.has(group[i])) shared.set(group[i], manual[i]!);
+  const level: number[] = new Array(n);
+  const eff: number[] = new Array(n); // 아래 가지가 이어받을 색(직접 칠한 색이 먼저)
+  for (let i = 0; i < n; i++) {
+    const p = parent[i];
+    level[i] = shared.get(group[i]) ?? (p >= 0 ? eff[p] + 1 : infos[i].depth - 1);
+    eff[i] = manual[i] ?? level[i];
+  }
+  return level;
+}
+
 // 블록 하나의 트리 정보. 위젯(표 · 수직선 · 그래프)은 '자식 없는 보통 줄'로 세서 위 가지선이 위젯 옆으로 이어지게 한다.
 export function infoOf(n: Node): LineInfo {
   return { depth: (n.attrs.depth as number) ?? 1, kind: n.type.name === 'line' ? (n.attrs.kind as Kind) : 'plain' };
@@ -79,21 +111,22 @@ const isCell = (n: Node) => n.type.spec.tableRole === 'cell' || n.type.spec.tabl
 // 옆 가지(side): 부모 글 바로 옆 x에서 자식들이 시작한다. 첫 자식은 한 줄 위(부모와 같은 줄)로 올라가
 // 부모 글 뒤에 붙고(┬─ 또는 ──), 나머지 자식은 그 아래 같은 x에 줄을 맞춘다(├─ └─ │). 줄 높이는 그대로라 쪽 나눔이 안 흔들린다.
 // 제목 없는 트리(맨 바깥이 꺾쇠 줄)는 칸이 하나 더 있어서 글을 한 칸 더 들인다(깊이 1 꺾쇠 줄도 ┌─ ├─ └─ 뒤에서 시작).
-// 자동 형광펜 색은 부모 줄 형광펜 색의 다음 색(빨강 → 노랑 → 파랑 → 초록 → 보라, 보라 다음은 없음).
-// 부모가 없으면 깊이대로(깊이 1 = 빨강). 부모 주제어에 직접 칠한 색이 있으면 그 색에서 이어진다(제목을 파랑으로 칠하면 가지는 초록).
+// 자동 형광펜 색은 hlLevels(부모 색의 다음 색, 같은 가지 형제는 같은 색).
 function decorate(container: Node, base: number, decos: Decoration[], auto: boolean, sideX: SideX | null, treeTop: TreeTop) {
   const infos = lineInfos(container);
   const tree = computeTree(infos, treeTop);
+  const nodes: Node[] = [];
+  container.forEach((n) => nodes.push(n));
+  const styles = nodes.map((n, k) =>
+    auto && n.type.name === 'line' ? autoStyle(lineText(n), n.attrs.kind as Kind, n.attrs.kind !== 'branch' && tree[k].hasBranchChild) : null,
+  );
+  const levels = auto ? hlLevels(nodes, infos, styles) : [];
   const stack: { d: number; x: number; first: number }[] = [];
-  const hlChain: { depth: number; level: number }[] = []; // 위 줄들의 형광펜 단계(부모 찾기)
   let i = 0;
   container.forEach((node, offset) => {
     const pos = base + offset;
     const row = tree[i];
     const d = infos[i].depth + (row.rootless ? 1 : 0); // 칸 수로 센 깊이
-    while (hlChain.length && hlChain[hlChain.length - 1].depth >= infos[i].depth) hlChain.pop();
-    const parentHl = hlChain[hlChain.length - 1];
-    const level = parentHl ? parentHl.level + 1 : infos[i].depth - 1; // 이 줄 자동 형광펜 단계
     while (stack.length && d <= stack[stack.length - 1].d) stack.pop();
     const colBase = (c: number) => {
       for (let k = stack.length - 1; k >= 0; k--) {
@@ -123,7 +156,6 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
       if (x !== undefined && x >= 0) stack.push({ d, x, first: i + 1 });
     }
     if (node.type.name !== 'line') {
-      hlChain.push({ depth: infos[i].depth, level });
       decos.push(Decoration.node(pos, pos + node.nodeSize, { style, class: 'blk', 'data-depth': String(node.attrs.depth ?? 1) }));
       if (node.type.name === 'table')
         node.descendants((child, p) => {
@@ -141,13 +173,12 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
       i++;
       return;
     }
-    const text = lineText(node);
-    const st = autoStyle(text, kind, isTitle);
+    const st = styles[i]!;
     const start = pos + 1;
     const block = blocked(node);
     if (st.red) for (const s of subtract(st.red, block.pen)) decos.push(Decoration.inline(start + s.from, start + s.to, { class: 'a-red' }));
     for (const blue of st.blue) for (const s of subtract(blue, block.pen)) decos.push(Decoration.inline(start + s.from, start + s.to, { class: 'a-blue' }));
-    hlChain.push({ depth: infos[i].depth, level: manualLevel(node, st.hl) ?? level });
+    const level = levels[i];
     if (st.hl && level < HL_BY_DEPTH.length) {
       const c = HL_BY_DEPTH[level];
       const cls = `hl hl-${c} v${(i % 3) + 1}`;

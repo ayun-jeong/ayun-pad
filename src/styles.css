@@ -109,7 +109,7 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
 .confirm { display: flex; gap: 6px; align-items: center; padding: 4px 14px; font-size: 12.5px; color: var(--accent); }
 
 /* 종이 */
-.desk { overflow: auto; position: relative; padding: 24px 16px 120px; }
+.desk { overflow: auto; position: relative; padding: 24px 16px 200px; } /* 아래 여백은 그리기 막대 자리까지 늘 같게(그리기를 끌 때 화면이 밀려 누른 자리가 어긋나지 않게) */
 .zoom-outer { margin: 0 auto; position: relative; }
 .zoom-inner { transform-origin: top left; position: absolute; top: 0; left: 0; }
 .paper { width: 105mm; background: #fff; color: #000; box-shadow: var(--shadow); position: relative; }
@@ -432,7 +432,6 @@ textarea.tbox.tedit { pointer-events: auto; resize: none; overflow: hidden; back
 
 /* 그리는 동안 알림은 아래 도구 막대 위로 */
 body.drawing .toasts { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 104px); }
-.desk.drawing { padding-bottom: 200px; }
 
 /* 기호 퀵 메뉴(= + -) · 분수 · 루트 */
 .mathmenu { position: fixed; z-index: 45; display: flex; align-items: center; gap: 2px; padding: 3px; background: var(--surface); border: 1px solid var(--rule-2); border-radius: 9px; box-shadow: var(--shadow); font-size: 15px; }

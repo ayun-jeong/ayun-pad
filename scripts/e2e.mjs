@@ -683,6 +683,17 @@ try {
     ps.slice(-5).map((p) => `${p.textContent}:${[...p.querySelectorAll('.hl')].map((x) => x.className.match(/hl-([a-z])/)?.[1] ?? '').join('') || '-'}`).join(' '),
   );
   check(chain === '회계:b 원가:g 변동비:p 단가:- 관리:g', `제목 파랑 → 가지 초록 → 보라 → 없음, 형제는 같은 색 (${chain})`);
+  // 12-2) 같은 가지의 '-' 형제는 같은 색: 관리(형제)를 노랑으로 칠하면 원가도 노랑, 그 아래는 다음 색(파랑 → 초록)
+  await k.down('Alt');
+  await k.down('Shift');
+  await k.press('KeyY');
+  await k.up('Shift');
+  await k.up('Alt');
+  await sleep(200);
+  const chain2 = await page.$$eval('.editor > p', (ps) =>
+    ps.slice(-5).map((p) => `${p.textContent}:${[...p.querySelectorAll('.hl')].map((x) => x.className.match(/hl-([a-z])/)?.[1] ?? '').join('') || '-'}`).join(' '),
+  );
+  check(chain2 === '회계:b 원가:y 변동비:b 단가:g 관리:y', `형제 하나를 칠하면 같은 가지 형제도 그 색, 아래는 다음 색 (${chain2})`);
 
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();

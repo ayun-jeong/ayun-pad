@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
+import { Slice } from 'prosemirror-model';
 import { createPortal } from 'react-dom';
 import * as Y from 'yjs';
+import { clipboardTextSerializer } from '../editor/clipboard';
 import { newId } from '../editor/ids';
 import type { RuleSettings } from '../editor/inputRules';
 import { PEN_NAME, type PenKey } from '../editor/model';
 import { isMac, keyId, type ShortcutHost } from '../editor/shortcuts';
 import { emptyTextDoc, plainText, TextBox, textDoc, withEffects } from './TextBox';
+import { clip, copyShapes, forgetOnOtherCopy, shapesIn } from './clip';
 import {
   anchorAt,
   arrowHead,
@@ -71,6 +74,7 @@ interface Props {
   setDraw(patch: Partial<DrawState> | null): void;
   onExtent(bottomMm: number): void;
   onCaret?(clientX: number, clientY: number): void; // 그 화면 자리에 글 커서 놓기
+  caretXY?(): { x: number; y: number } | null; // 본문 글 커서의 화면 자리(그림을 본문에 붙여넣을 때 그 자리에)
   widgets?: WidgetApi;
   caught?: string[]; // 글쓰기 화면에서 본문을 끌어 고를 때 같이 잡힌 그림
   // 글쓰기 화면에서 배경을 끌어 사각형에 걸친 글 줄(first~last 번째 맨 바깥 블록)과 그림을 한꺼번에 잡는다
@@ -121,9 +125,6 @@ const DOUBLE_PX = 8;
 const SNAP_PX = 5; // 자석 스냅: 화면에서 5px 안이면 붙는다
 const MARQUEE_PX = 4; // 이만큼 끌어야 영역 고르기(덜 끌면 그냥 누름)
 
-// 복사한 그림(노트를 바꿔도 남는다). 시스템 클립보드에도 표시를 붙여 넣어 두어 다른 탭에서도 붙여넣기.
-const CLIP_MARK = 'ayunpad-shapes:';
-const clip: { shapes: Resolved[] | null; n: number; sys: boolean } = { shapes: null, n: 0, sys: false };
 
 function ShapeSvg({ r }: { r: Resolved }) {
   const stroke = strokeOf(r.c);
@@ -194,7 +195,7 @@ const snapOff = (e: Mods) => e.metaKey || e.ctrlKey; // ⌘(Ctrl)를 누르고 �
 // 직각 · 45°로 묶인 점은 묶인 방향을 빼고만 맞춘다
 const freeOf = (q: XY, last: XY | null, ortho: boolean) => ({ x: !(ortho && last && q.x === last.x), y: !(ortho && last && q.y === last.y) });
 
-export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, setDraw, onExtent, onCaret, widgets, caught, onTextMarquee, host, settings }: Props) {
+export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, setDraw, onExtent, onCaret, caretXY, widgets, caught, onTextMarquee, host, settings }: Props) {
   const [, repaint] = useReducer((x: number) => x + 1, 0);
   const layer = useRef<HTMLDivElement>(null);
   const ix = useRef<Ix>({ sel: [], wsel: [], drawing: null, cursor: null, press: null, box: null, drag: null, drafts: new Map(), marquee: null, guides: null, last: null, pid: null }).current;
@@ -316,7 +317,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       m.hits = resolved.filter((r) => touches(r, rect, th)).map((r) => r.id);
       repaint();
     };
-    const end = (ok: boolean) => {
+    const end = (ok: boolean, ev?: PointerEvent) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', cancel);
@@ -324,7 +325,14 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       const m = ix.marquee;
       ix.marquee = null;
       repaint();
-      if (!ok || !m?.moved) return;
+      if (!ok || !m) return;
+      if (!m.moved) {
+        // 그냥 누름(끌지 않음): 고른 글 · 같이 잡힌 그림이 있으면 풀고 누른 자리 가까운 줄에 커서
+        const s = getSelection();
+        const has = (!!s && !s.isCollapsed && editor.contains(s.anchorNode)) || !!caught?.length;
+        if (has && ev) onCaret?.(ev.clientX, ev.clientY);
+        return;
+      }
       const rect = boxOf(m.a, m.b);
       const ids = resolved.filter((r) => touches(r, rect, th)).map((r) => r.id);
       const wids = wboxes().filter((w) => intersects(w.b, rect)).map((w) => w.id);
@@ -358,7 +366,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
         }
       }, 0);
     };
-    const up = () => end(true);
+    const up = (ev: PointerEvent) => end(true, ev);
     const cancel = () => end(false);
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -940,10 +948,10 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   };
 
   // 고른 그림들을 dx · dy만큼 옮긴 복사본으로 넣고, 복사본을 고른다
-  const addCopies = (list: Resolved[], dx: number, dy: number) => {
+  const addCopies = (list: Resolved[], dx: number, dy: number, ls: Lines = lines) => {
     if (!list.length) return;
     const z0 = nextZ();
-    const copies = list.map((r, i) => unresolve({ ...translate(r, dx, dy), id: newId(), z: z0 + i } as Resolved, lines));
+    const copies = list.map((r, i) => unresolve({ ...translate(r, dx, dy), id: newId(), z: z0 + i } as Resolved, ls));
     write(() => copies.forEach((s) => shapes.set(s.id, clean(s))));
     pickOnly(copies.map((s) => s.id));
     repaint();
@@ -955,23 +963,54 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     if (rs.length) write(() => rs.forEach((r) => shapes.set(r.id, clean(unresolve(translate(r, dx, dy), lines)))));
   };
 
-  // 복사 · 붙여넣기: 붙일 때마다 3mm씩 비켜서
+  // 복사: 클립보드에는 글상자 글(트리 모양 그대로, 다른 앱에 붙이면 이 글)과 그림 데이터(ayun pad에서 그림으로 붙음)를 함께
   const copySel = () => {
     const rs = ix.sel.map(byId).filter(isR);
     if (!rs.length) return false;
-    clip.shapes = clean(rs);
-    clip.n = 0;
-    clip.sys = false;
-    navigator.clipboard?.writeText(CLIP_MARK + JSON.stringify(clip.shapes)).then(
-      () => (clip.sys = true),
-      () => undefined,
-    );
+    const texts = rs.filter((r) => r.t === 'text').map((r) => clipboardTextSerializer(new Slice(textDoc(r as Resolved & { t: 'text' }).content, 0, 0)));
+    copyShapes(clean(rs), texts.filter((t) => t.trim()).join('\n\n') || `(ayun pad 그림 ${rs.length}개)`);
     host.toast(`그림 ${rs.length}개 복사 · ⌘V로 붙여넣기`);
     return true;
   };
-  const pasteShapes = (list: Resolved[]) => {
-    clip.n += 1;
-    addCopies(list, 3 * clip.n, 3 * clip.n);
+  // 종이에서 지금 화면에 보이는 부분(mm)
+  const visibleMM = (): Box | null => {
+    const el = layer.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const d = el.closest('.desk')?.getBoundingClientRect();
+    const left = Math.max(r.left, d?.left ?? 0, 0);
+    const top = Math.max(r.top, d?.top ?? 0, 0);
+    const right = Math.min(r.right, d?.right ?? innerWidth, innerWidth);
+    const bot = Math.min(r.bottom, d?.bottom ?? innerHeight, innerHeight);
+    if (right - left < 4 || bot - top < 4) return null;
+    const a = toMM({ clientX: left, clientY: top });
+    const b = toMM({ clientX: right, clientY: bot });
+    return { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y };
+  };
+  // 붙여넣기. at(본문 글 커서 자리)이 있으면 그 자리에, 없으면 원래 자리에서 3mm씩 비켜서 —
+  // 그 자리가 화면 밖이면(다른 데로 스크롤 · 다른 노트) 지금 보이는 곳 가운데에(안 보이는 데 붙어서 여러 번 누르지 않게)
+  const pasteShapes = (list: Resolved[], at: XY | null) => {
+    if (!list.length) return;
+    const fresh = measureLines(src, editor, pitch);
+    const b = union(list.map((r) => bboxOf(r, th)))!;
+    const fitX = (x: number) => clamp(x, 0, Math.max(0, W - b.w));
+    let dx: number;
+    let dy: number;
+    if (at) {
+      dx = fitX(at.x) - b.x;
+      dy = Math.max(0, at.y) - b.y;
+    } else {
+      clip.n += 1;
+      dx = 3 * clip.n;
+      dy = 3 * clip.n;
+      const v = visibleMM();
+      if (v && !inBox({ x: b.x + dx + b.w / 2, y: b.y + dy + Math.min(b.h, v.h) / 2 }, v)) {
+        dx = fitX(v.x + v.w / 2 - b.w / 2) - b.x;
+        dy = Math.max(0, v.y + Math.max(4, v.h / 2 - b.h / 2)) - b.y;
+      }
+    }
+    addCopies(list, dx, dy, fresh);
+    if (!drawRef.current) setDraw({ tool: 'select', picked: true }); // 붙인 것을 고른 채로(바로 옮기기 · 지우기)
   };
   // 그리기 중에 글을 붙여 넣으면 화면 가운데에 글상자로
   const pasteText = (text: string) => {
@@ -1055,10 +1094,10 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
         handled = copySel();
         if (handled) remove();
       } else if (id === 'mod+KeyV') {
-        // 진짜 붙여넣기(paste 이벤트)가 오면 거기서, 안 오는 브라우저면 잠시 뒤 복사해 둔 그림으로
+        // 진짜 붙여넣기(paste 이벤트)가 오면 거기서, 안 오는 브라우저면 잠시 뒤 이 탭에서 복사해 둔 그림으로
         pasted.current = false;
         setTimeout(() => {
-          if (!pasted.current && clip.shapes) pasteShapes(clip.shapes);
+          if (!pasted.current && clip.shapes) pasteShapes(clip.shapes, null);
         }, 80);
         handled = false;
       } else if (id === 'mod+KeyZ') um?.undo();
@@ -1081,28 +1120,46 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
         e.stopPropagation();
       }
     };
-    const onPaste = (e: ClipboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.isContentEditable)) return;
-      pasted.current = true;
-      const text = e.clipboardData?.getData('text/plain') ?? '';
-      e.preventDefault();
-      if (text.startsWith(CLIP_MARK)) {
-        try {
-          pasteShapes(JSON.parse(text.slice(CLIP_MARK.length)) as Resolved[]);
-        } catch {
-          /* 깨진 내용은 무시 */
-        }
-      } else if (clip.shapes && (!text || !clip.sys)) pasteShapes(clip.shapes);
-      else if (text.trim()) pasteText(text);
-    };
     window.addEventListener('keydown', onKey, true);
-    document.addEventListener('paste', onPaste);
-    return () => {
-      window.removeEventListener('keydown', onKey, true);
-      document.removeEventListener('paste', onPaste);
-    };
+    return () => window.removeEventListener('keydown', onKey, true);
   });
+
+  // 붙여넣기(글쓰기 화면에서도 늘). 클립보드에 그림이 있으면:
+  // 본문 글 커서 → 그 자리에 그림으로, 글상자 안 → 그 글상자가 내용으로 붙인다(TextBox), 그리기 · 고른 상태 → 종이에.
+  // 그림이 아니면 그리기 중 종이에 붙인 글만 새 글상자로, 나머지는 원래대로(본문 · 입력 칸).
+  const pasteRef = useRef<(e: ClipboardEvent) => void>(() => undefined);
+  pasteRef.current = (e: ClipboardEvent) => {
+    const t = e.target as HTMLElement | null;
+    if (t?.closest?.('.tb-edit')) return;
+    const editable = !!t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.isContentEditable);
+    const inBody = !!t && editor.contains(t) && !t.closest('.wg');
+    const list = shapesIn(e.clipboardData);
+    if (list) {
+      if (editable && !inBody) return; // 다른 입력 칸에는 글(text/plain)로
+      e.preventDefault();
+      e.stopPropagation();
+      pasted.current = true;
+      const c = inBody ? caretXY?.() : null;
+      pasteShapes(list, c ? toMM({ clientX: c.x, clientY: c.y }) : null);
+      repaint();
+      return;
+    }
+    if (!drawRef.current || editable) return;
+    e.preventDefault();
+    pasted.current = true;
+    const text = e.clipboardData?.getData('text/plain') ?? '';
+    if (text.trim()) pasteText(text);
+    else if (clip.shapes) pasteShapes(clip.shapes, null);
+  };
+  useEffect(() => {
+    const on = (e: ClipboardEvent) => pasteRef.current(e);
+    document.addEventListener('paste', on, true);
+    const forget = forgetOnOtherCopy();
+    return () => {
+      document.removeEventListener('paste', on, true);
+      forget();
+    };
+  }, []);
 
   // 글상자에서 커서가 빠지면: 빈 글상자는 지운다
   const doneText = (id: string) => {

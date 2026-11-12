@@ -127,7 +127,7 @@ describe('자동 볼펜·형광펜', () => {
 });
 
 describe('형광펜 지우기', () => {
-  // 경영학(대제목 → 자동 빨강 형광펜) › 마케팅(직접 칠한 초록) · 재무: 돈(콜론 앞 자동 노랑)
+  // 경영학(대제목 → 자동 빨강 형광펜) › 마케팅(직접 칠한 초록) · 재무: 돈(형제가 초록이라 자동 초록)
   const docOf = () =>
     schema.node('doc', null, [
       schema.node('line', { depth: 1 }, schema.text('경영학')),
@@ -144,7 +144,7 @@ describe('형광펜 지우기', () => {
   };
   it('지우면 직접 칠한 것도 자동 형광펜도 남지 않는다', () => {
     const doc = docOf();
-    expect(visible(doc)).toEqual({ auto: 'ry', manual: 1 });
+    expect(visible(doc)).toEqual({ auto: 'rg', manual: 1 });
     const tr = EditorState.create({ schema, doc }).tr;
     eraseHl(tr, [{ from: 0, to: doc.content.size }]);
     expect(visible(tr.doc)).toEqual({ auto: '', manual: 0 });
@@ -155,7 +155,7 @@ describe('형광펜 지우기', () => {
     hlCmd('none')(state, (tr) => (state = state.apply(tr)));
     expect(visible(state.doc)).toEqual({ auto: 'r', manual: 1 });
     hlCmd(null)(state, (tr) => (state = state.apply(tr)));
-    expect(visible(state.doc)).toEqual({ auto: 'ry', manual: 1 });
+    expect(visible(state.doc)).toEqual({ auto: 'rg', manual: 1 });
   });
 });
 
@@ -174,8 +174,19 @@ describe('형광펜 색 이어지기(빨 → 노 → 파 → 초 → 보)', () =
   it('제목을 파랑으로 칠해 두면 가지는 초록 → 보라 → 없음', () => {
     expect(colors([ln(1, 'plain', '경영학', 'b'), ln(2, 'branch', '마케팅'), ln(3, 'branch', 'STP'), ln(4, 'branch', '세분화'), ln(2, 'branch', '재무')])).toBe('gpg');
   });
-  it('가지 하나를 직접 칠하면 그 아래만 이어서 바뀐다', () => {
-    expect(colors([ln(1, 'plain', '경영학'), ln(2, 'branch', '마케팅', 'g'), ln(3, 'branch', 'STP'), ln(2, 'branch', '재무'), ln(3, 'branch', '예산')])).toBe('rpyb');
+  it("가지 하나를 직접 칠하면 같은 가지의 '-' 형제도 그 색, 그 아래는 다음 색", () => {
+    expect(colors([ln(1, 'plain', '경영학'), ln(2, 'branch', '마케팅', 'g'), ln(3, 'branch', 'STP'), ln(2, 'branch', '재무'), ln(3, 'branch', '예산')])).toBe('rpgp');
+  });
+  it('뒤 형제를 칠해도 앞 형제까지 같은 색, 형제 중 맨 앞에 칠한 색이 이긴다', () => {
+    expect(colors([ln(1, 'plain', '경영학'), ln(2, 'branch', '가'), ln(2, 'branch', '나'), ln(2, 'branch', '다', 'b')])).toBe('rbb');
+    expect(colors([ln(1, 'plain', '경영학'), ln(2, 'branch', '가', 'g'), ln(2, 'branch', '나'), ln(2, 'branch', '다', 'b')])).toBe('rg');
+  });
+  it('제목 없는 트리의 맨 바깥 꺾쇠 줄끼리도 같은 색', () => {
+    expect(colors([ln(1, 'branch', '장점', 'y'), ln(1, 'branch', '단점'), ln(2, 'branch', '비용'), ln(1, 'branch', '기타')])).toBe('yby');
+  });
+  it('따로 있는 대제목 · 콜론 줄은 묶지 않는다', () => {
+    expect(colors([ln(1, 'plain', '경영학', 'b'), ln(2, 'branch', '마케팅'), ln(1, 'plain', '회계'), ln(2, 'branch', '원가')])).toBe('gry');
+    expect(colors([ln(1, 'plain', '경영학'), ln(2, 'branch', '마케팅', 'g'), ln(2, 'plain', '정의: 뜻')])).toBe('ry');
   });
   it('지운 형광펜(none)은 이어지기에 안 쓴다(원래 단계대로)', () => {
     expect(colors([ln(1, 'plain', '경영학', 'none'), ln(2, 'branch', '마케팅')])).toBe('y');
