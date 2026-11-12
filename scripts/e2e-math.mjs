@@ -263,6 +263,34 @@ try {
   await k.up('Alt');
   await sleep(200);
 
+  // 11-1) 장점 · 단점: +) → ⊕, -) → ⊖ (줄 맨 앞 · 띄어쓰기 뒤만, 웃는 얼굴 :-) 은 그대로, 바로 ⌫ 하면 되돌림)
+  {
+    // 커서를 문서 맨 끝 줄 끝으로(분수 · 루트 칸 안이 아니라)
+    await page.evaluate(() => {
+      const v = window.__ayunpad.view();
+      v.focus();
+      v.dispatch(v.state.tr.setSelection(v.state.selection.constructor.atEnd(v.state.doc)));
+    });
+    await k.press('Enter');
+    await k.type('+) 원가 절감');
+    await k.press('Enter');
+    await k.type('장점 -) 비용 큼 :-)');
+    await sleep(150);
+    const two = await page.evaluate(() => {
+      const d = window.__ayunpad.view().state.doc;
+      return [d.child(d.childCount - 2).textContent, d.child(d.childCount - 1).textContent];
+    });
+    check(two[0] === '⊕ 원가 절감' && two[1] === '장점 ⊖ 비용 큼 :-)', `+) → ⊕ · -) → ⊖, :-) 은 그대로 (${two.join(' / ')})`);
+    await k.press('Enter');
+    await k.type('+)');
+    await k.press('Backspace');
+    await sleep(100);
+    const back = await page.evaluate(() => { const d = window.__ayunpad.view().state.doc; return d.child(d.childCount - 1).textContent; });
+    check(back === '+)', `바뀐 바로 뒤 ⌫ → +) 로 되돌림 (${back})`);
+    await k.press('Backspace');
+    await k.press('Backspace');
+  }
+
   // 12) 끄면 메뉴 안 뜸
   await k.down('Alt');
   await k.press('KeyT');

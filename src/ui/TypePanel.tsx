@@ -163,7 +163,7 @@ export function TypePanel({ typo, fonts, hasSelection, onChange, onUpload, onSel
         </label>
         <label className="check">
           <input type="checkbox" checked={typo.arrows} onChange={() => onChange({ arrows: !typo.arrows })} />
-          화살표 자동 변환: {ARROW_PAIRS.map(([a, b]) => `${a} ${b}`).join(' · ')}
+          자동 변환(화살표 · 장단점): {ARROW_PAIRS.map(([a, b]) => `${a} ${b}`).join(' · ')}
         </label>
         <label className="check">
           <input type="checkbox" checked={typo.math} onChange={() => onChange({ math: !typo.math })} />

@@ -25,8 +25,9 @@ export interface RuleSettings {
   math?: boolean; // = + - 기호 퀵 메뉴(mathMenu.ts)
 }
 
+// 바꿀 글은 맞은 부분에 그대로 규칙을 적용해 만든다(+) → ⊕ 처럼 앞의 띄어쓰기를 남기는 규칙도 있어서)
 const arrow = (settings: RuleSettings, re: RegExp, ch: string) =>
-  new InputRule(re, (state, _m, start, end) => (settings.arrows ? state.tr.insertText(ch, start, end) : null));
+  new InputRule(re, (state, m, start, end) => (settings.arrows ? state.tr.insertText(m[0].replace(re, ch), start, end) : null));
 
 const arrows = (settings: RuleSettings) => ARROW_RULES.map(([re, ch]) => arrow(settings, re, ch));
 
