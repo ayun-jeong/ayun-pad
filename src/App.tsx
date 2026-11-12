@@ -53,7 +53,12 @@ const lsSet = (k: string, v: string) => {
 };
 
 // PC는 150%, 폰은 화면 폭에 맞춘다. 확대는 그림처럼 키우는 방식이라 줄바꿈 위치는 인쇄와 같다.
+// ⌘+휠로 바꾼 배율은 이 기기에 기억한다.
+const ZOOM = 'ayunpad-zoom';
+const clampZoom = (z: number) => Math.min(3, Math.max(0.5, Math.round(z * 100) / 100));
 function initialZoom(): number {
+  const saved = Number(lsGet(ZOOM));
+  if (saved >= 0.5 && saved <= 3) return saved;
   const w = window.innerWidth;
   if (w >= 1000) return 1.5;
   return Math.max(0.5, Math.min(1.5, (w - 24) / ((105 + GUTTER_MM) * PX_PER_MM)));
@@ -85,6 +90,66 @@ export function App() {
   const [pen, setPen] = useState<string | null>(null);
   const [hasSel, setHasSel] = useState(false);
   const [zoom, setZoom] = useState(initialZoom);
+  const zoomNow = useRef(zoom);
+  zoomNow.current = zoom;
+  const [zoomBadge, setZoomBadge] = useState(false);
+  const deskRef = useRef<HTMLElement>(null);
+  useEffect(() => lsSet(ZOOM, String(zoom)), [zoom]);
+  // ⌘(Ctrl)+휠 · 트랙패드 오므리기/벌리기: 노트 배율(브라우저 전체 확대 대신). 마우스 아래 자리가 그대로 있게 스크롤도 맞춘다.
+  useEffect(() => {
+    const desk = deskRef.current;
+    if (!desk) return;
+    let hide = 0;
+    const zoomTo = (want: number, cx: number, cy: number) => {
+      const z = zoomNow.current;
+      const next = clampZoom(want);
+      if (next === z) return;
+      const paper = [...desk.querySelectorAll<HTMLElement>('.zoom-outer')].find((e) => e.offsetParent !== null);
+      const r = desk.getBoundingClientRect();
+      const mx = cx - r.left;
+      const my = cy - r.top;
+      // 마우스 아래의 종이 위 점(배율 1 기준)
+      const px = paper ? (desk.scrollLeft + mx - paper.offsetLeft) / z : 0;
+      const py = paper ? (desk.scrollTop + my - paper.offsetTop) / z : 0;
+      zoomNow.current = next;
+      setZoom(next);
+      setZoomBadge(true);
+      clearTimeout(hide);
+      hide = window.setTimeout(() => setZoomBadge(false), 900);
+      requestAnimationFrame(() => {
+        if (!paper) return;
+        desk.scrollTop = paper.offsetTop + py * next - my;
+        if (desk.scrollWidth > desk.clientWidth) desk.scrollLeft = paper.offsetLeft + px * next - mx;
+      });
+    };
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      e.preventDefault();
+      const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY; // 줄 단위로 오는 휠
+      zoomTo(zoomNow.current * Math.exp(Math.max(-0.15, Math.min(0.15, -dy * 0.002))), e.clientX, e.clientY);
+    };
+    // 사파리의 트랙패드 오므리기 · 벌리기
+    let base = 1;
+    type Gesture = Event & { scale: number; clientX: number; clientY: number };
+    const onGestureStart = (e: Event) => {
+      e.preventDefault();
+      base = zoomNow.current;
+    };
+    const onGesture = (e: Event) => {
+      e.preventDefault();
+      const g = e as Gesture;
+      zoomTo(base * g.scale, g.clientX, g.clientY);
+    };
+    desk.addEventListener('wheel', onWheel, { passive: false });
+    desk.addEventListener('gesturestart', onGestureStart);
+    desk.addEventListener('gesturechange', onGesture);
+    return () => {
+      desk.removeEventListener('wheel', onWheel);
+      desk.removeEventListener('gesturestart', onGestureStart);
+      desk.removeEventListener('gesturechange', onGesture);
+      clearTimeout(hide);
+    };
+  }, []);
   const [typo, setTypo] = useState<Typo | null>(null);
   const [mode, setMode] = useState<ViewMode>('edit');
   const [source, setSource] = useState<HTMLElement | null>(null);
@@ -743,7 +808,7 @@ export function App() {
           zoom={zoom}
           syncText={sync.state === 'local' ? '로그인 · 동기화' : statusText(sync)}
           act={act}
-          onZoom={(d) => setZoom((z) => Math.min(3, Math.max(0.5, Math.round((z + d * 0.1) * 10) / 10)))}
+          onZoom={(d) => setZoom((z) => clampZoom(Math.round((z + d * 0.1) * 10) / 10))}
           onAccount={() => {
             setPanel(false);
             setAccount(true);
@@ -767,7 +832,8 @@ export function App() {
         onClose={() => setSidebar(false)}
       />
 
-      <main className={`desk${draw ? ' drawing' : ''}`}>
+      <main ref={deskRef} className={`desk${draw ? ' drawing' : ''}`}>
+        {zoomBadge && <div className="zoom-badge">{Math.round(zoom * 100)}%</div>}
         {ready && noteId ? (
           <>
             <div hidden={mode !== 'edit'}>

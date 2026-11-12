@@ -460,6 +460,36 @@ try {
   const redCells = await page.$$eval('.editor table [data-pen="r"]', (e) => e.map((x) => x.textContent).join(','));
   check(redCells.split(',').length >= 2, `칸 여러 개에 ⌥R → 고른 칸 모두 빨강 (${redCells})`);
 
+  // 10) ⌘+휠로 노트 배율(브라우저 전체 확대가 아니라 종이만), 마우스 아래 줄은 그 자리에
+  const scaleNow = () => page.$eval('.zoom-inner', (e) => Number(/scale\(([\d.]+)\)/.exec(e.style.transform)?.[1] ?? 0));
+  const z0 = await scaleNow();
+  const anchorLine = await page.$$eval('.editor > p', (ps) => ps.length);
+  const wheelAt = await (await page.$('.editor > p')).boundingBox();
+  const mx = wheelAt.x + 30;
+  const my = wheelAt.y + wheelAt.height / 2;
+  await page.mouse.move(mx, my);
+  const lineAt = () => page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('.editor > p, .editor > *')?.textContent?.slice(0, 12) ?? '', [mx, my]);
+  const lineBefore = await lineAt();
+  await page.keyboard.down(meta);
+  for (let i = 0; i < 3; i++) await page.mouse.wheel({ deltaY: -100 });
+  await page.keyboard.up(meta);
+  await sleep(250);
+  const z1 = await scaleNow();
+  const dpr = await page.evaluate(() => window.devicePixelRatio);
+  const lineAfter = await lineAt();
+  check(z1 > z0 + 0.2 && dpr === 1 && !!(await page.$('.zoom-badge')), `${meta}+휠 위로 → 노트 배율 커짐, 브라우저 확대는 안 됨 (${z0} → ${z1})`);
+  check(lineBefore === lineAfter, `마우스 아래 줄이 그대로 (${lineBefore} → ${lineAfter})`);
+  await page.keyboard.down(meta);
+  for (let i = 0; i < 6; i++) await page.mouse.wheel({ deltaY: 100 });
+  await page.keyboard.up(meta);
+  await sleep(250);
+  const z2 = await scaleNow();
+  check(z2 < z1 - 0.3, `${meta}+휠 아래로 → 작아짐 (${z1} → ${z2})`);
+  await page.reload({ waitUntil: 'networkidle0' });
+  await page.waitForSelector('.editor > p');
+  check(Math.abs((await scaleNow()) - z2) < 0.001, `바꾼 배율을 기억 (${await scaleNow()})`);
+  void anchorLine;
+
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
   await browser.close();
 } catch (e) {
