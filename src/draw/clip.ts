@@ -70,7 +70,12 @@ function valid(list: unknown): Resolved[] | null {
   const ok = list.filter((r): r is Resolved => {
     const s = r as Resolved;
     if (!s || typeof s !== 'object' || typeof s.id !== 'string') return false;
-    if (s.t === 'path') return Array.isArray(s.pts) && s.pts.length >= 2 && s.pts.every(xy);
+    if (s.t === 'path') {
+      // 곡선 손잡이(cs)는 점마다 null 또는 [들어오는, 나가는] 상대 위치
+      const cs = (s as { cs?: unknown }).cs;
+      const csOk = cs === undefined || (Array.isArray(cs) && cs.every((c) => c === null || (Array.isArray(c) && c.length === 2 && xy(c[0]) && xy(c[1]))));
+      return Array.isArray(s.pts) && s.pts.length >= 2 && s.pts.every(xy) && csOk;
+    }
     if (s.t === 'text') return xy(s.a) && num(s.bw);
     if (s.t === 'rect' || s.t === 'ellipse') return xy(s.a) && xy(s.b);
     return false;

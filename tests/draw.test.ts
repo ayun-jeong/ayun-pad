@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { anchorAt, arrowHead, constrain, dist, hit, HEAD_NAME, nextHead, resolveAnchor, segmentAt, type Lines, type Resolved } from '../src/draw/model';
+import { anchorAt, arrowHead, constrain, cubicAt, dist, distToSeg, hit, HEAD_NAME, insertPoint, knobs, moveKnob, nearSegment, nextHead, outline, pathGeom, pieces, removePoint, resolveAnchor, segmentAt, type Lines, type Resolved, type XY } from '../src/draw/model';
 import { bboxOf, snapCoords, snapMove, touches } from '../src/draw/snap';
 import { matchAt, matchRank } from '../src/editor/hangul';
 
@@ -136,5 +136,53 @@ describe('스마트 보조선 · 스냅', () => {
     const rect = { id: 'r', t: 'rect', a: { x: 0, y: 0 }, b: { x: 10, y: 5 }, c: 'r', w: 0.35, z: 1 } as Resolved;
     expect(touches(rect, B(9, 4, 5, 5), th)).toBe(true);
     expect(bboxOf(rect, th)).toEqual({ x: 0, y: 0, w: 10, h: 5 });
+  });
+});
+
+describe('곡선(베지어) 선 · 화살표', () => {
+  const th = () => 5;
+  const bend = { x: 0, y: 6 }; // 끝 점에 아래로 들어오는 손잡이
+  const curved = { id: 'c', t: 'path', pts: [{ x: 0, y: 0 }, { x: 20, y: 0 }], cs: [null, [bend, { x: 0, y: -6 }]], head: 1, c: 'r', w: 0.35, z: 1 } as Resolved & { t: 'path' };
+
+  it('직선만이면 L, 손잡이가 있으면 C로 그린다', () => {
+    const straight = { ...curved, cs: undefined, head: 0 } as Resolved & { t: 'path' };
+    expect(pathGeom(straight).d).toMatch(/^M0\.000 0\.000 L20\.000 0\.000$/);
+    expect(pathGeom({ ...curved, head: 0 }).d).toContain(' C');
+  });
+  it('화살촉은 끝 구간의 접선 방향(곡선이면 휘어 들어온 방향)', () => {
+    const { heads } = pathGeom(curved);
+    // 끝 손잡이가 아래(+y)에 있으니 위쪽으로 들어와 끝난다 → 화살촉 몸통은 끝점보다 아래
+    const [tip, ...rest] = heads[0];
+    expect(tip).toEqual({ x: 20, y: 0 });
+    for (const q of rest) expect(q.y).toBeGreaterThan(0.5);
+  });
+  it('곡선 위 두 번 누르기: 그 자리에서 나눠도 모양이 그대로', () => {
+    const at = nearSegment(curved, cubicAt(curved.pts[0], curved.pts[0], { x: 20, y: 6 }, curved.pts[1], 0.4), 0.5);
+    expect(at?.i).toBe(1);
+    expect(at!.t).toBeCloseTo(0.4, 1);
+    const next = insertPoint(curved, at!.i, at!.t, { x: 0, y: 0 });
+    expect(next.pts.length).toBe(3);
+    const before = pieces(curved);
+    const after = outline({ ...curved, ...next });
+    // 나눈 경로 위의 점은 모두 원래 곡선 위(0.05mm 안)
+    for (const q of after) expect(Math.min(...before.map((b) => distToSeg(q, b.a, b.b)))).toBeLessThan(0.05);
+    expect(next.cs?.[1]).toBeTruthy(); // 새 점은 곡선 손잡이를 가진 매끈한 점
+  });
+  it('점 빼기 · 손잡이 맞추기 · 손잡이 없으면 cs 없음', () => {
+    const three = { pts: [{ x: 0, y: 0 }, { x: 10, y: 5 }, { x: 20, y: 0 }], cs: [null, [{ x: -3, y: 0 }, { x: 3, y: 0 }] as [XY, XY], null] };
+    const r = removePoint(three, 1);
+    expect(r.pts).toEqual([{ x: 0, y: 0 }, { x: 20, y: 0 }]);
+    expect(r.cs).toBeUndefined(); // 남은 점에 손잡이가 없으면 직선 화살표 그대로
+    const m = moveKnob(three, 1, 1, { x: 14, y: 8 }, true)!;
+    expect(m[1]).toEqual([{ x: -4, y: -3 }, { x: 4, y: 3 }]); // 맞은편 손잡이도 같이(매끈하게)
+    const a = moveKnob(three, 1, 1, { x: 14, y: 8 }, false)!;
+    expect(a[1]).toEqual([{ x: -3, y: 0 }, { x: 4, y: 3 }]); // ⌥: 이 손잡이만
+    expect(knobs(three).map((k) => k.side)).toEqual([0, 1]);
+  });
+  it('곡선도 눌러서 맞히고 상자 · 영역 고르기는 휜 모양대로', () => {
+    const mid = cubicAt({ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 20, y: 6 }, { x: 20, y: 0 }, 0.6);
+    expect(hit(curved, mid, 0.6, th)).toBe(true);
+    expect(hit(curved, { x: 10, y: -2 }, 0.6, th)).toBe(false);
+    expect(bboxOf(curved, th).h).toBeGreaterThan(1); // 직선이면 0, 곡선은 아래로 불룩
   });
 });

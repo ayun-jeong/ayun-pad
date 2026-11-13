@@ -1,4 +1,4 @@
-import { boxOf, route, type Resolved, type XY } from './model';
+import { boxOf, outline, type Resolved, type XY } from './model';
 
 // 스마트 보조선 · 자석 스냅 · 영역 고르기 계산. 값은 모두 종이 위 mm.
 export interface Box {
@@ -36,7 +36,7 @@ const MIN_GAP = 0.3; // 이보다 좁은 간격(맞닿음)은 같은 간격으�
 
 export function bboxOf(r: Resolved, textH: (id: string) => number): Box {
   if (r.t === 'path') {
-    const p = route(r.pts, r.o);
+    const p = outline(r); // 곡선은 잘게 나눈 점으로
     const xs = p.map((q) => q.x);
     const ys = p.map((q) => q.y);
     const x = Math.min(...xs);
@@ -196,7 +196,7 @@ function segCross(a: XY, b: XY, c: XY, d: XY): boolean {
 }
 export function touches(r: Resolved, rect: Box, textH: (id: string) => number): boolean {
   if (r.t !== 'path') return intersects(bboxOf(r, textH), rect);
-  const p = route(r.pts, r.o);
+  const p = outline(r);
   if (p.some((q) => inBox(q, rect))) return true;
   const c = [
     { x: rect.x, y: rect.y },

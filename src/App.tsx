@@ -462,7 +462,7 @@ export function App() {
           break;
         case 'draw-arrow':
           startDraw('arrow');
-          toast('시작점을 누르고, 꺾을 곳마다 누르고, 끝점에서 두 번 누르세요');
+          toast('누르면 꺾인 점 · 누른 채 끌면 곡선 · 끝점에서 두 번 누르거나 Enter로 끝(Esc 그만두기)');
           break;
         case 'draw-line':
           startDraw('line');

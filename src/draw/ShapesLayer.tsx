@@ -11,7 +11,6 @@ import { emptyTextDoc, plainText, TextBox, textDoc, withEffects } from './TextBo
 import { clip, copyShapes, forgetOnOtherCopy, shapesIn } from './clip';
 import {
   anchorAt,
-  arrowHead,
   boxOf,
   constrain,
   DEFAULT_W,
@@ -19,18 +18,25 @@ import {
   handles,
   HEAD_NAME,
   hit,
+  insertPoint,
+  knobs,
   moveCorner,
+  moveKnob,
   moveSide,
+  nearSegment,
   nextHead,
+  outline,
+  pathGeom,
+  removePoint,
   resolve,
-  route,
-  segmentAt,
   SHAPES,
+  tidyCs,
   stepW,
   strokeOf,
   translate,
   unresolve,
   type BoxShape,
+  type Ctrl,
   type Lines,
   type PathShape,
   type Resolved,
@@ -125,27 +131,18 @@ const DOUBLE_MS = { mouse: 450, touch: 300 };
 const DOUBLE_PX = 8;
 const SNAP_PX = 5; // 자석 스냅: 화면에서 5px 안이면 붙는다
 const MARQUEE_PX = 4; // 이만큼 끌어야 영역 고르기(덜 끌면 그냥 누름)
+const CURVE_PX = 4; // 선 · 화살표를 그릴 때 누른 채 이만큼 끌면 곡선 손잡이(덜 끌면 꺾인 점)
 
 
 function ShapeSvg({ r }: { r: Resolved }) {
   const stroke = strokeOf(r.c);
   const dash = r.t !== 'text' && r.dash ? `${(r.w * 3.2).toFixed(2)} ${(r.w * 2.6).toFixed(2)}` : undefined;
   if (r.t === 'path') {
-    let line = route(r.pts, r.o);
-    const heads: XY[][] = [];
-    if ((r.head === 1 || r.head === 2) && line.length >= 2) {
-      const h = arrowHead(line[line.length - 2], line[line.length - 1], r.w);
-      heads.push(h.poly);
-      line = [...line.slice(0, -1), h.base];
-    }
-    if ((r.head === 2 || r.head === 3) && line.length >= 2) {
-      const h = arrowHead(line[1], line[0], r.w);
-      heads.push(h.poly);
-      line = [h.base, ...line.slice(1)];
-    }
+    // 직선 · 곡선이 섞인 하나의 경로(베지어). 화살촉은 끝 구간의 접선 방향
+    const { d, heads } = pathGeom(r);
     return (
       <g data-sid={r.id}>
-        <polyline points={pts(line)} fill="none" stroke={stroke} strokeWidth={r.w} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={dash} />
+        <path d={d} fill="none" stroke={stroke} strokeWidth={r.w} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={dash} />
         {heads.map((h, i) => (
           <polygon key={i} points={pts(h)} fill={stroke} stroke={stroke} strokeWidth={r.w * 0.6} strokeLinejoin="round" />
         ))}
@@ -160,10 +157,24 @@ function ShapeSvg({ r }: { r: Resolved }) {
   return <ellipse cx={b.x + b.w / 2} cy={b.y + b.h / 2} rx={b.w / 2} ry={b.h / 2} {...common} />;
 }
 
+// 그리는 중인 점의 곡선 손잡이(양쪽 손잡이 끝까지 선 · 동그라미)
+function Knobs({ at, c }: { at: XY; c: Ctrl }) {
+  const a = { x: at.x + c[0].x, y: at.y + c[0].y };
+  const b = { x: at.x + c[1].x, y: at.y + c[1].y };
+  if (Math.hypot(c[1].x, c[1].y) < 1e-6 && Math.hypot(c[0].x, c[0].y) < 1e-6) return null;
+  return (
+    <g>
+      <line className="sh-ui sh-knobline" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
+      <circle className="sh-ui sh-knob" cx={a.x} cy={a.y} r={0.65} />
+      <circle className="sh-ui sh-knob" cx={b.x} cy={b.y} r={0.65} />
+    </g>
+  );
+}
+
 // 글쓰기 화면에서 그림을 누를 수 있게 하는 투명한 선(그림 테두리만 닿고 글은 그대로 눌린다)
 function ShapeHit({ r, onPick }: { r: Resolved; onPick(e: React.PointerEvent): void }) {
   const w = Math.max(2.4, r.w + 1.8);
-  if (r.t === 'path') return <polyline className="sh-hit" points={pts(route(r.pts, r.o))} fill="none" strokeWidth={w} onPointerDown={onPick} />;
+  if (r.t === 'path') return <path className="sh-hit" d={pathGeom({ ...r, head: 0 }).d} fill="none" strokeWidth={w} onPointerDown={onPick} />;
   if (r.t === 'text') return null;
   const b = boxOf(r.a, r.b);
   const cls = `sh-hit${r.fill ? ' filled' : ''}`;
@@ -174,14 +185,16 @@ function ShapeHit({ r, onPick }: { r: Resolved; onPick(e: React.PointerEvent): v
 
 // 끌기: 고른 것 모두 옮기기(toggle · only는 끌지 않고 놓았을 때 고름을 고치는 것), 또는 하나의 점 · 모서리 · 폭
 type MoveDrag = { mode: 'move'; start: XY; bases: Resolved[]; moved: boolean; toggle?: string; only?: string };
-type EditDrag = { mode: 'point' | 'corner' | 'side' | 'width'; id: string; i: number; start: XY; base: Resolved; moved: boolean };
+// ctrl: 곡선 손잡이(점 i의 들어오는 0 · 나가는 1 손잡이)
+type EditDrag = { mode: 'point' | 'corner' | 'side' | 'width' | 'ctrl'; id: string; i: number; side?: 0 | 1; start: XY; base: Resolved; moved: boolean };
 
 interface Ix {
   sel: string[]; // 고른 그림(여러 개)
   wsel: string[]; // 고른 위젯(표 · 그래프 · 연표)
-  drawing: { pts: XY[] } | null;
+  drawing: { pts: XY[]; cs: (Ctrl | null)[] } | null; // 그리는 중인 선 · 화살표(점마다 곡선 손잡이)
   cursor: XY | null;
-  press: { p: XY; moved: boolean } | null;
+  press: { p: XY; moved: boolean; i: number } | null; // 그리는 중 누른 채인 점(끌면 그 점의 곡선 손잡이)
+  node: { id: string; i: number } | null; // 고른 경로에서 고른 점 하나(⌫로 그 점만 지운다)
   box: { a: XY; b: XY } | null;
   drag: MoveDrag | EditDrag | null;
   drafts: Map<string, Resolved>; // 끄는 중인 모양
@@ -201,7 +214,7 @@ const freeOf = (q: XY, last: XY | null, ortho: boolean) => ({ x: !(ortho && last
 export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, setDraw, onExtent, onCaret, caretXY, widgets, caught, onTextMarquee, host, settings, reading }: Props) {
   const [, repaint] = useReducer((x: number) => x + 1, 0);
   const layer = useRef<HTMLDivElement>(null);
-  const ix = useRef<Ix>({ sel: [], wsel: [], drawing: null, cursor: null, press: null, box: null, drag: null, drafts: new Map(), marquee: null, guides: null, last: null, pid: null }).current;
+  const ix = useRef<Ix>({ sel: [], wsel: [], drawing: null, cursor: null, press: null, node: null, box: null, drag: null, drafts: new Map(), marquee: null, guides: null, last: null, pid: null }).current;
   // 새 글상자는 첫 글자를 쓸 때 저장한다(그냥 나가면 흔적 없이 사라지고 되돌리기 칸도 안 남는다)
   const [pending, setPending] = useState<TextShape | null>(null);
   const geo = useRef<{ lines: Lines; W: number; H: number } | null>(null);
@@ -447,7 +460,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
 
   // 그림이 마지막 줄보다 아래로 내려가면 종이(반쪽 · 인쇄)도 그만큼 늘린다
   const bottom = resolved.reduce((m, r) => {
-    if (r.t === 'path') return Math.max(m, ...route(r.pts, r.o).map((p) => p.y));
+    if (r.t === 'path') return Math.max(m, ...outline(r).map((p) => p.y));
     if (r.t === 'text') return Math.max(m, r.a.y + th(r.id));
     return Math.max(m, r.a.y, r.b.y);
   }, 0);
@@ -536,15 +549,21 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     return [dx + s.dx, dy + s.dy];
   };
 
-  const finishPath = () => {
-    const d = drawRef.current;
-    const p = ix.drawing?.pts ?? [];
+  // 그리기 그만두기(Esc): 찍은 점은 버린다
+  const cancelPath = () => {
     ix.drawing = null;
     ix.cursor = null;
     ix.press = null;
     ix.guides = null;
-    if (p.length >= 2 && d) {
-      const s: PathShape = { id: newId(), t: 'path', pts: p.map((q) => anchorAt(q, lines)), head: d.tool === 'line' ? 0 : 1, c: d.c, w: d.w, z: nextZ(), ...(d.ortho ? { o: true } : {}) };
+  };
+  const finishPath = () => {
+    const d = drawRef.current;
+    const dr = ix.drawing;
+    const p = dr?.pts ?? [];
+    cancelPath();
+    if (p.length >= 2 && d && dr) {
+      const cs = tidyCs(dr.cs);
+      const s: PathShape = { id: newId(), t: 'path', pts: p.map((q) => anchorAt(q, lines)), ...(cs ? { cs } : {}), head: d.tool === 'line' ? 0 : 1, c: d.c, w: d.w, z: nextZ(), ...(d.ortho ? { o: true } : {}) };
       put(s);
       pickOnly([s.id]);
       if (!d.lock) setDraw({ tool: 'select' });
@@ -570,7 +589,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
         const cur = shapes.get(r.id);
         if (!cur) continue;
         const g = unresolve(r, lines);
-        const patch = g.t === 'path' ? { pts: g.pts } : g.t === 'text' ? { a: g.a, bw: g.bw } : { a: g.a, b: g.b };
+        const patch = g.t === 'path' ? { pts: g.pts, cs: g.cs } : g.t === 'text' ? { a: g.a, bw: g.bw } : { a: g.a, b: g.b };
         shapes.set(r.id, clean({ ...cur, ...patch } as Shape));
       }
     });
@@ -652,6 +671,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   const hoverCursor = (p: XY, tol: number): string => {
     const one = ix.sel.length === 1 && !ix.wsel.length ? byId(ix.sel[0]) : undefined;
     if (one?.t === 'text') return handles(one, th).some((h) => dist(h, p) <= tol * 1.3) ? 'ew-resize' : '';
+    if (one?.t === 'path') return [...one.pts, ...knobs(one).map((k) => k.at)].some((h) => dist(h, p) <= tol * 1.3) ? 'move' : '';
     if (!one || (one.t !== 'rect' && one.t !== 'ellipse')) return '';
     const hi = handles(one, th).findIndex((h) => dist(h, p) <= tol * 1.3);
     if (hi >= 0) return ['nwse-resize', 'nesw-resize', 'nwse-resize', 'nesw-resize', 'ns-resize', 'ew-resize', 'ns-resize', 'ew-resize'][hi];
@@ -700,21 +720,21 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     layer.current?.setPointerCapture(e.pointerId);
     const tol = e.pointerType === 'touch' ? 2.4 : 1.2;
 
+    // 선 · 화살표(펜 도구처럼): 누르고 바로 떼면 꺾인 점(직선으로 이어짐), 누른 채 끌면 그 점에서 양쪽으로 곡선 손잡이.
+    // 두 번 누르거나 Enter면 끝, Esc는 그만두기.
     if (d.tool === 'line' || d.tool === 'arrow') {
-      if (ix.drawing) {
-        // 두 번 누르면 끝. 첫 번째 누름에서 이미 끝점을 찍었으니 점을 더 찍지 않는다.
-        if (dbl) return finishPath();
-        const last = ix.drawing.pts[ix.drawing.pts.length - 1];
-        const q = drawPoint(p, e);
-        if (dist(q, last) >= 0.5) ix.drawing.pts.push(q);
-        ix.cursor = q;
-      } else {
-        pickOnly([]);
-        const q = drawPoint(p, e);
-        ix.drawing = { pts: [q] };
-        ix.cursor = q;
-        ix.press = { p, moved: false };
+      // 두 번 누르면 끝. 첫 번째 누름에서 이미 끝점을 찍었으니 점을 더 찍지 않는다.
+      if (ix.drawing && dbl) return finishPath();
+      if (!ix.drawing) pickOnly([]);
+      const q = drawPoint(p, e);
+      const dr = ix.drawing ?? (ix.drawing = { pts: [], cs: [] });
+      const last = dr.pts[dr.pts.length - 1];
+      if (!last || dist(q, last) >= 0.5) {
+        dr.pts.push(q);
+        dr.cs.push(null);
       }
+      ix.cursor = null;
+      ix.press = { p: dr.pts[dr.pts.length - 1], moved: false, i: dr.pts.length - 1 };
       return repaint();
     }
     if (d.tool === 'rect' || d.tool === 'ellipse') {
@@ -731,15 +751,23 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       return repaint();
     }
 
-    // 고르기: 하나만 골랐으면 그 손잡이(점 · 모서리 · 폭)부터
+    // 고르기: 하나만 골랐으면 그 손잡이(곡선 손잡이 · 점 · 모서리 · 폭)부터
     const one = ix.sel.length === 1 && !ix.wsel.length ? byId(ix.sel[0]) : undefined;
+    ix.node = null;
     if (one) {
       const hi = handles(one, th).findIndex((h) => dist(h, p) <= tol * 1.3);
+      // 곡선 손잡이: 점과 겹치면 더 가까운 쪽
+      const kb = one.t === 'path' ? knobs(one).find((k) => dist(k.at, p) <= tol * 1.3) : undefined;
+      if (kb && (hi < 0 || dist(kb.at, p) < dist(handles(one, th)[hi], p))) {
+        ix.drag = { mode: 'ctrl', id: one.id, i: kb.i, side: kb.side, start: p, base: one, moved: false };
+        return repaint();
+      }
       if (hi >= 0) {
         if (dbl && one.t === 'path' && one.pts.length > 2) {
-          put(unresolve({ ...one, pts: one.pts.filter((_, i) => i !== hi) }, lines));
+          put(unresolve({ ...one, ...removePoint(one, hi) }, lines));
           return repaint();
         }
+        if (one.t === 'path') ix.node = { id: one.id, i: hi }; // 점 고르기: ⌫로 그 점만 지운다
         ix.drag =
           one.t === 'path' || one.t === 'text'
             ? { mode: one.t === 'path' ? 'point' : 'width', id: one.id, i: hi, start: p, base: one, moved: false }
@@ -759,12 +787,11 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       ix.marquee = { a: p, b: p, add: e.shiftKey, base: e.shiftKey ? [...ix.sel] : [], wbase: e.shiftKey ? [...ix.wsel] : [], moved: false };
       return repaint();
     }
+    // 선분 위 두 번 누르기: 그 자리에 점을 끼운다(곡선이면 모양 그대로 나눔)
     if (dbl && target.t === 'path') {
-      const at = segmentAt(target.pts, p, tol * 1.5, target.o);
-      if (at > 0) {
-        const next = [...target.pts];
-        next.splice(at, 0, p);
-        put(unresolve({ ...target, pts: next }, lines));
+      const at = nearSegment(target, p, tol * 1.5);
+      if (at) {
+        put(unresolve({ ...target, ...insertPoint(target, at.i, at.t, p) }, lines));
         pickOnly([target.id]);
         return repaint();
       }
@@ -792,7 +819,17 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     if (!d || !fromLayer(e) || (ix.pid !== null && e.pointerId !== ix.pid)) return;
     const p = toMM(e);
     if (layer.current && d.tool === 'select' && !ix.drag && !ix.marquee) layer.current.style.cursor = hoverCursor(p, e.pointerType === 'touch' ? 2.4 : 1.2);
-    if (ix.press && !ix.press.moved && dist(p, ix.press.p) > 2) ix.press.moved = true;
+    const pr = ix.press;
+    if (pr && ix.drawing) {
+      // 누른 채 끌기: 그 점에서 끄는 쪽으로 나가는 손잡이, 맞은편으로 들어오는 손잡이(곡선). ⇧는 45°마다.
+      if (!pr.moved && dist(p, pr.p) * pxPerMm() < CURVE_PX) return;
+      pr.moved = true;
+      const q = e.shiftKey ? constrain(p, pr.p, false, true) : p;
+      const v = { x: q.x - pr.p.x, y: q.y - pr.p.y };
+      ix.drawing.cs[pr.i] = [{ x: -v.x, y: -v.y }, v];
+      ix.cursor = null;
+      return repaint();
+    }
     if (ix.drawing) {
       ix.cursor = drawPoint(p, e);
       return repaint();
@@ -853,6 +890,10 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     } else if (g.mode === 'width' && b.t === 'text') {
       const q = snapPt({ x: p.x, y: b.a.y }, skip, [], { x: true, y: false }, e, (n) => ({ x: b.a.x, y: b.a.y, w: n.x - b.a.x, h: th(b.id) }));
       next = { ...b, bw: Math.max(6, q.x - b.a.x) };
+    } else if (g.mode === 'ctrl' && b.t === 'path') {
+      // 곡선 손잡이: 맞은편 손잡이도 같이(매끈하게), ⌥는 이 손잡이만, ⇧는 45°마다
+      const q = e.shiftKey ? constrain(p, b.pts[g.i], false, true) : p;
+      next = { ...b, cs: moveKnob(b, g.i, g.side ?? 1, q, !e.altKey) };
     }
     if (next) ix.drafts = new Map([[b.id, next]]);
     repaint();
@@ -862,15 +903,10 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     if (!fromLayer(e) || (ix.pid !== null && e.pointerId !== ix.pid)) return;
     ix.pid = null;
     const p = toMM(e);
-    // 처음 점에서 끌어서 놓으면 곧은 화살표 하나로 끝
+    // 그리는 중 누른 점을 놓음: 끌었으면 곡선 손잡이가 그대로 남고, 다음 점을 기다린다
     if (ix.press) {
-      const pr = ix.press;
       ix.press = null;
-      if (pr.moved && ix.drawing && ix.drawing.pts.length === 1) {
-        ix.drawing.pts.push(ix.cursor ?? drawPoint(p, e));
-        ix.last = null;
-        return finishPath();
-      }
+      if (ix.drawing) return repaint();
     }
     if (ix.box) return finishBox(ix.box.b); // 끌 때 이미 맞춤 · ⇧ 정사각형이 들어가 있다
     const m = ix.marquee;
@@ -1105,9 +1141,18 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
         finishOrCancel();
         setDraw(null);
       } else if (code === 'Backspace' || code === 'Delete') {
+        const n = ix.node;
+        const np = n && sel.length === 1 && sel[0].id === n.id ? byId(n.id) : undefined;
         if (ix.drawing) {
           ix.drawing.pts.pop();
+          ix.drawing.cs.pop();
           if (!ix.drawing.pts.length) ix.drawing = null;
+          repaint();
+        } else if (n && np?.t === 'path' && n.i < np.pts.length) {
+          // 고른 점 하나만 빼고 앞뒤를 잇는다(점이 둘뿐이면 경로째 지움)
+          ix.node = null;
+          if (np.pts.length > 2) put(unresolve({ ...np, ...removePoint(np, n.i) }, lines));
+          else remove();
           repaint();
         } else remove();
       } else if (id === 'mod+KeyD') duplicate();
@@ -1126,10 +1171,15 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       } else if (id === 'mod+KeyZ') um?.undo();
       else if (id === 'mod+shift+KeyZ' || id === 'mod+KeyY') um?.redo();
       else if (code === 'Enter' || code === 'NumpadEnter') {
-        if (ix.drawing) finishPath();
+        // 그리는 중: 마지막으로 찍은 점을 끝점으로(점이 둘 이상일 때)
+        if (ix.drawing) {
+          if (ix.drawing.pts.length >= 2) finishPath();
+        }
         else if (sel.length === 1 && sel[0].t === 'text') focusBox(sel[0].id);
       } else if (code === 'Escape') {
-        if (ix.drawing || ix.box || ix.marquee) finishOrCancel();
+        if (ix.drawing) cancelPath(); // 그리던 선 · 화살표는 버린다
+        else if (ix.box || ix.marquee) finishOrCancel();
+        else if (ix.node) ix.node = null; // 고른 점부터 풀고(그다음 ⌫는 경로째), 한 번 더 누르면 고름을 푼다
         else if (any) pickOnly([]);
         else setDraw(null);
         repaint();
@@ -1219,10 +1269,15 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   useEffect(() => {
     if (draw?.picked && !ix.sel.length && !ix.wsel.length && !ix.marquee && !ix.drag) setDraw(null);
   });
-  const preview: XY[] | null = ix.drawing ? (ix.cursor ? [...ix.drawing.pts, ix.cursor] : ix.drawing.pts) : null;
+  // 그리는 중인 경로 미리 보기(마지막 점에서 마우스까지 · 곡선 손잡이째)
+  const dr = ix.drawing;
+  const preview = dr && dr.pts.length ? pathGeom({ pts: ix.cursor ? [...dr.pts, ix.cursor] : dr.pts, cs: ix.cursor ? [...dr.cs, null] : dr.cs, o: draw?.ortho, w: draw?.w ?? DEFAULT_W }).d : null;
+  const lastCs = dr?.cs[dr.cs.length - 1];
   const one = selRs.length === 1 && !wsel.length ? selRs[0] : undefined;
   const hs = draw && one ? handles(one, th) : [];
   const hsz = 1.5;
+  const ks = draw && one?.t === 'path' ? knobs(one) : []; // 고른 경로의 곡선 손잡이
+  const nodeOn = (i: number) => !!one && one.t === 'path' && ix.node?.id === one.id && ix.node.i === i;
   const selBoxes = draw ? [...selRs.map((r) => bboxOf(r, th)), ...wsel.map((w) => w.b)] : [];
   const group = selBoxes.length > 1 ? union(selBoxes) : null;
   const mq = ix.marquee?.moved ? boxOf(ix.marquee.a, ix.marquee.b) : null;
@@ -1243,10 +1298,11 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
           <ShapeSvg key={r.id} r={r} />
         ))}
         {!draw && !reading && resolved.map((r) => (r.t === 'text' ? null : <ShapeHit key={`hit-${r.id}`} r={r} onPick={(e) => pickShape(r.id, e)} />))}
-        {preview && preview.length >= 2 && (
-          <polyline className="sh-ui" points={pts(preview)} fill="none" stroke={strokeOf(draw?.c ?? 'r')} strokeWidth={draw?.w ?? DEFAULT_W} strokeLinejoin="round" strokeLinecap="round" strokeOpacity={0.75} />
+        {preview && <path className="sh-ui sh-preview" d={preview} fill="none" stroke={strokeOf(draw?.c ?? 'r')} strokeWidth={draw?.w ?? DEFAULT_W} strokeLinejoin="round" strokeLinecap="round" strokeOpacity={0.75} />}
+        {dr && lastCs && (
+          <Knobs at={dr.pts[dr.pts.length - 1]} c={lastCs} />
         )}
-        {preview?.slice(0, ix.drawing!.pts.length).map((p, i) => <circle key={i} className="sh-ui" cx={p.x} cy={p.y} r={0.55} fill="#fff" stroke="#0064e8" strokeWidth={0.2} />)}
+        {dr?.pts.map((p, i) => <circle key={i} className="sh-ui" cx={p.x} cy={p.y} r={0.55} fill="#fff" stroke="#0064e8" strokeWidth={0.2} />)}
         {ix.box && draw && (
           <ShapeSvg r={{ id: 'draft', t: draw.tool === 'ellipse' ? 'ellipse' : 'rect', a: ix.box.a, b: ix.box.b, c: draw.c, w: draw.w, z: 0 }} />
         )}
@@ -1261,8 +1317,15 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
             return <rect key={`c-${id}`} className="sh-ui sh-caught" x={b.x - 0.8} y={b.y - 0.8} width={b.w + 1.6} height={b.h + 1.6} />;
           })}
         {group && <rect className="sh-ui sh-group" x={group.x - 1.4} y={group.y - 1.4} width={group.w + 2.8} height={group.h + 2.8} />}
+        {one?.t === 'path' &&
+          ks.map((k) => (
+            <line key={`kl${k.i}-${k.side}`} className="sh-ui sh-knobline" x1={one.pts[k.i].x} y1={one.pts[k.i].y} x2={k.at.x} y2={k.at.y} />
+          ))}
         {hs.map((h, i) => (
-          <rect key={i} className="sh-ui sh-handle" x={h.x - hsz / 2} y={h.y - hsz / 2} width={hsz} height={hsz} rx={0.25} />
+          <rect key={i} className={`sh-ui sh-handle${nodeOn(i) ? ' on' : ''}`} x={h.x - hsz / 2} y={h.y - hsz / 2} width={hsz} height={hsz} rx={0.25} />
+        ))}
+        {ks.map((k) => (
+          <circle key={`k${k.i}-${k.side}`} className="sh-ui sh-knob" cx={k.at.x} cy={k.at.y} r={0.65} />
         ))}
         {mq && <rect className="sh-ui sh-marquee" x={mq.x} y={mq.y} width={mq.w} height={mq.h} />}
         {guides && <GuideMarks g={guides} />}
@@ -1573,7 +1636,7 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highligh
           )}
           <span className="dhint">
             {drawing
-              ? '누를 때마다 꺾임 · 두 번 눌러 끝 · ⌫ 마지막 점 빼기'
+              ? '누르면 꺾인 점 · 누른 채 끌면 곡선 · 두 번 누르기 · Enter로 끝 · ⌫ 마지막 점 빼기 · Esc 그만두기'
               : draw.tool === 'select'
                 ? '종이를 끌면 여러 개 고르기 · 그린 것을 누르면 고치기 · 도구를 눌러 그리기'
                 : `${TOOLS.find((t) => t.t === draw.tool)?.name ?? ''} 그리기 · 다 그리면 다시 고르기로 · 단추를 한 번 더 누르면 끄기`}

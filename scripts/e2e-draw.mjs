@@ -170,7 +170,7 @@ try {
   await sleep(80);
   await page.mouse.move(...at(40, 2.5));
   await sleep(50);
-  const prev = await page.$$eval('.shapes-svg polyline.sh-ui', (e) => e.length);
+  const prev = await page.$$eval('.shapes-svg path.sh-ui', (e) => e.length);
   check(prev === 1, '첫 점 뒤에 마우스를 따라오는 미리보기 선');
   const headsWhile = await page.$$eval('.shapes-svg polygon', (e) => e.length);
   check(headsWhile === 0, '그리는 중에는 화살촉 없음');
@@ -193,18 +193,18 @@ try {
   await sleep(100);
   check((await shapes()).length === 1, '⌘⇧Z → 다시');
 
-  // 7) 직각 꺾기(H) + 끌어서 한 번에 곧은 화살표
+  // 7) 직각 꺾기(H): 두 점을 누르고 Enter → 마지막 점을 끝점으로(가로 화살표)
   await k.press('KeyA');
   await k.press('KeyH');
-  await page.mouse.move(...at(60, 20));
-  await page.mouse.down();
-  await page.mouse.move(...at(75, 21), { steps: 6 });
-  await page.mouse.move(...at(85, 22), { steps: 6 });
-  await page.mouse.up();
+  await page.mouse.click(...at(60, 20));
+  await sleep(450);
+  await page.mouse.click(...at(85, 22));
+  await sleep(100);
+  await k.press('Enter');
   await sleep(150);
   S = await shapes();
   const ortho = S.find((s) => s.t === 'path' && s.o);
-  check(!!ortho && ortho.pts.length === 2 && Math.abs(ortho.pts[0].y - ortho.pts[1].y) < 0.01, `직각 모드에서 끌기 → 수평 화살표 (${JSON.stringify(ortho?.pts.map((p) => [p.x.toFixed(1), p.y.toFixed(1)]))})`);
+  check(!!ortho && ortho.pts.length === 2 && Math.abs(ortho.pts[0].y - ortho.pts[1].y) < 0.01 && !ortho.cs, `직각 모드에서 두 번 누르고 Enter → 가로 화살표 (${JSON.stringify(ortho?.pts.map((p) => [p.x.toFixed(1), p.y.toFixed(1)]))})`);
   await k.press('KeyH');
 
   // 8) 네모(R) 끌기, 글상자(T)
@@ -255,8 +255,11 @@ try {
   await press('.drawbar.has-sel button', (b) => b.textContent === '직각');
   await sleep(80);
   check((await shapes()).find((s) => s.id === z.id)?.o === true, '막대의 직각(마우스로 누름) → 그린 화살표를 직선에서 직각으로');
+  // 끈 점은 골라진 채라 ⌫는 그 점만 지운다 → Esc로 점 고름을 풀고 ⌫ → 화살표째
+  await k.press('Escape');
   await k.press('Backspace');
   await sleep(80);
+  check(!(await shapes()).some((s) => s.id === z.id), '점 고름을 Esc로 풀면 ⌫는 화살표째 지움');
 
   // 9) 고르고 끌어 옮기기
   await k.press('KeyV');
@@ -274,7 +277,8 @@ try {
   await k.press('Escape');
   await sleep(100);
   check(!(await page.$('.drawbar')), 'Esc → 그리기 끝');
-  const y0 = await page.$eval('.shapes-svg g polyline', (e) => e.getAttribute('points'));
+  const firstY = (d) => Number(d.match(/^M([\d.-]+) ([\d.-]+)/)[2]);
+  const y0 = await page.$eval('.shapes-svg g[data-sid] > path', (e) => e.getAttribute('d'));
   const fb = await (await page.$('.editor > p')).boundingBox();
   await page.mouse.click(fb.x + 2, fb.y + fb.height / 2);
   // 커서를 확실히 첫 줄 맨 앞에(클릭 위치는 시험 대상이 아니다)
@@ -285,8 +289,8 @@ try {
   });
   await k.press('Enter');
   await sleep(250);
-  const y1 = await page.$eval('.shapes-svg g polyline', (e) => e.getAttribute('points'));
-  const dy = Number(y1.split(' ')[0].split(',')[1]) - Number(y0.split(' ')[0].split(',')[1]);
+  const y1 = await page.$eval('.shapes-svg g[data-sid] > path', (e) => e.getAttribute('d'));
+  const dy = firstY(y1) - firstY(y0);
   check(Math.abs(dy - pitch) < 0.05, `위에 줄을 끼우면 화살표가 한 줄(${pitch.toFixed(2)}mm) 내려감 (${dy.toFixed(3)}mm)`);
 
   if (out) await (await page.$('.paper')).screenshot({ path: path.join(out, 'e2e-draw.png') });
@@ -294,13 +298,13 @@ try {
   // 11) A4 보기 · 인쇄에 그림이 같이 나온다
   await combo(['Alt'], 'Digit3');
   await page.waitForSelector('.pages.a4 .psheet');
-  const inA4 = await page.$$eval('.pages .shapes-svg polyline, .pages .tbox', (e) => e.length);
+  const inA4 = await page.$$eval('.pages .shapes-svg g[data-sid] > path, .pages .tbox', (e) => e.length);
   check(inA4 >= 3, `A4 보기에 그림 · 글상자 (${inA4})`);
   const noUi = await page.$$eval('.pages .sh-ui, .pages .wg-ctl', (e) => e.length);
   check(noUi === 0, '보기 화면에는 손잡이 · 버튼 없음');
   if (out) await (await page.$('.pages')).screenshot({ path: path.join(out, 'e2e-draw-a4.png') });
   await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
-  const printed = await page.$$eval('.print-root .shapes-svg polyline', (e) => e.length);
+  const printed = await page.$$eval('.print-root .shapes-svg g[data-sid] > path', (e) => e.length);
   check(printed >= 2, `인쇄에도 그림 (${printed})`);
   if (out) {
     const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: false });
@@ -1035,7 +1039,7 @@ try {
   const arrow6 = await page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).find((s) => s.t === 'path'));
   check(stillDrawing && arrow6?.c === 'b' && arrow6.pts.length === 2, `긋는 중 색을 바꿔도 이어 긋고 그 색으로 (${arrow6?.c}, 점 ${arrow6?.pts.length})`);
   // 끄는 동안 다른 데서 지워지면 놓아도 되살아나지 않음
-  const onArrow = await page.$eval('.shapes-layer svg g[data-sid] polyline', (el) => {
+  const onArrow = await page.$eval('.shapes-layer svg g[data-sid] > path', (el) => {
     const q = el.getPointAtLength(el.getTotalLength() * 0.5);
     const m = el.getScreenCTM();
     return [q.x * m.a + m.e, q.y * m.d + m.f];
@@ -1124,12 +1128,12 @@ try {
     const vb = document.querySelector('.sheet-src .shapes-svg')?.getAttribute('viewBox');
     const page = document.querySelector('.pages');
     const tops = [...(page?.querySelectorAll('.tbox') ?? [])].map((e) => parseFloat(e.style.top));
-    return { vb, lines: page?.querySelectorAll('.shapes-svg polyline').length ?? 0, tops };
+    return { vb, lines: page?.querySelectorAll('.shapes-svg g[data-sid] > path').length ?? 0, tops };
   });
   check(a4.vb && !a4.vb.startsWith('0 0 0.000') && a4.lines > 0 && a4.tops.every((t) => t > 1), `A4 · 반쪽을 오가도 그림 · 글상자 그대로 (viewBox ${a4.vb}, 선 ${a4.lines}, 글상자 위치 ${a4.tops.join(',')})`);
   await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
   await sleep(200);
-  const pr = await page.evaluate(() => ({ lines: document.querySelectorAll('.print-root .shapes-svg polyline').length, tops: [...document.querySelectorAll('.print-root .tbox')].map((e) => parseFloat(e.style.top)) }));
+  const pr = await page.evaluate(() => ({ lines: document.querySelectorAll('.print-root .shapes-svg g[data-sid] > path').length, tops: [...document.querySelectorAll('.print-root .tbox')].map((e) => parseFloat(e.style.top)) }));
   await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
   check(pr.lines > 0 && pr.tops.length > 0 && pr.tops.every((t) => t > 1), `A4 보기에서 인쇄해도 그림 · 글상자 그대로 (선 ${pr.lines}, 글상자 ${pr.tops.join(',')})`);
   await combo(['Alt'], 'Digit1');
@@ -1531,6 +1535,142 @@ try {
     check((await handlesNow()).length === 0, '그리기 화면: 빈 회색 누르기 → 고름 풀림');
     await combo(['Alt'], 'KeyD');
     await sleep(150);
+  }
+
+  // 27) 펜 도구처럼 그리는 선 · 화살표(하나의 베지어 경로): 누르고 떼면 꺾인 점(직선), 누른 채 끌면 곡선 손잡이,
+  //     두 번 누르기 · Enter로 끝, Esc는 그만두기. 화살촉은 끝 접선 방향. 고른 화살표의 손잡이 · 점 끌기, 선분 두 번 누르기로 점 끼우기, 점 고르고 ⌫
+  {
+    await page.click('.addnote');
+    await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+    await page.click('.editor');
+    for (let i = 0; i < 6; i++) await k.press('Enter');
+    await combo(['Alt'], 'KeyD');
+    await page.waitForSelector('.shapes-layer.on');
+    const Lb = await page.$eval('.shapes-layer', (e) => {
+      const r = e.getBoundingClientRect();
+      return { x: r.left, y: r.top, w: r.width, mmW: e.offsetWidth / (96 / 25.4) };
+    });
+    const ppm = Lb.w / Lb.mmW;
+    const P = (x, y) => [Lb.x + x * ppm, Lb.y + y * ppm];
+    const paths = async () => (await shapes()).filter((s) => s.t === 'path').sort((a, b) => a.z - b.z);
+    const near = (a, b, t = 0.6) => Math.abs(a - b) < t;
+    const dragAt = async (from, to) => {
+      await page.mouse.move(...P(...from));
+      await page.mouse.down();
+      await page.mouse.move(...P(...to), { steps: 8 });
+      await page.mouse.up();
+      await sleep(80);
+    };
+    // A) 화살표: 누르기(10,10) → (40,10)에서 (50,16)까지 끌기 → 누르기(70,10) → Enter
+    await k.press('KeyA');
+    await page.mouse.click(...P(10, 10));
+    await sleep(450);
+    await dragAt([40, 10], [50, 16]);
+    const knobsWhile = await page.$$eval('.shapes-svg .sh-knob', (e) => e.length);
+    await sleep(400);
+    await page.mouse.click(...P(70, 10));
+    await sleep(100);
+    await k.press('Enter');
+    await sleep(150);
+    let A = (await paths()).at(-1);
+    const c1 = A?.cs?.[1];
+    check(
+      A?.pts.length === 3 && A.head === 1 && !A.cs[0] && !A.cs[2] && c1 && near(c1[1].x, 10) && near(c1[1].y, 6) && near(c1[0].x, -10) && near(c1[0].y, -6) && knobsWhile === 2,
+      `누르기 · 끌기 · 누르기 + Enter → 점 3개, 가운데만 곡선 손잡이(양쪽 맞은편) (${JSON.stringify(A?.cs)})`,
+    );
+    const dA = await page.$eval(`.shapes-svg g[data-sid="${A.id}"] > path`, (e) => e.getAttribute('d'));
+    check(/ C/.test(dA) && (await page.$$eval(`.shapes-svg g[data-sid="${A.id}"] polygon`, (e) => e.length)) === 1, `곡선으로 그려지고 끝에 화살촉 (${dA.slice(0, 40)}…)`);
+    check(await page.$eval('.shapes-layer', (e) => e.classList.contains('tool-select')), 'Enter로 끝내면 고르기 도구로');
+    // B) Esc는 그만두기(찍은 점 버림)
+    const nB = (await paths()).length;
+    await k.press('KeyA');
+    await page.mouse.click(...P(10, 30));
+    await sleep(450);
+    await page.mouse.click(...P(30, 32));
+    await sleep(100);
+    await k.press('Escape');
+    await sleep(120);
+    check((await paths()).length === nB && !(await page.$('.shapes-svg path.sh-preview')), 'Esc → 그리던 화살표는 버림');
+    // C) 마지막 점을 끌어 곡선으로 끝 → 화살촉이 휘어 들어온 방향(아래쪽)을 가리킴
+    await k.press('KeyA');
+    await page.mouse.click(...P(10, 40));
+    await sleep(450);
+    await dragAt([40, 40], [40, 48]);
+    await sleep(400);
+    await k.press('Enter');
+    await sleep(150);
+    const C = (await paths()).at(-1);
+    const head = await page.$eval(`.shapes-svg g[data-sid="${C.id}"] polygon`, (e) => e.getAttribute('points').split(' ').map((q) => q.split(',').map(Number)));
+    const [tip, ...rest] = head;
+    check(C.pts.length === 2 && near(tip[0], 40, 0.3) && rest.every((q) => q[1] < tip[1] - 0.3), `끝을 곡선으로 끝내면 화살촉도 그 접선(아래로 들어옴) 방향 (끝 ${tip.map((v) => v.toFixed(1))})`);
+    // D) 선(L)도 같은 방법으로 곡선, 두 번 눌러 끝
+    await k.press('KeyL');
+    await page.mouse.click(...P(10, 60));
+    await sleep(450);
+    await dragAt([35, 60], [42, 66]);
+    await sleep(400);
+    await page.mouse.click(...P(70, 60), { count: 2 });
+    await sleep(150);
+    const D = (await paths()).at(-1);
+    check(D.head === 0 && D.pts.length === 3 && !!D.cs?.[1], `선도 끌면 곡선, 두 번 눌러 끝 (점 ${D.pts.length}, 화살촉 ${D.head})`);
+    // E) 고른 화살표(A): 곡선 손잡이 끌기 → 맞은편도 같이, 점 끌기 → 손잡이째 옮겨짐
+    await page.mouse.click(...P(25, 10 + 0.3)); // 첫 구간(곧은 쪽은 아님 — 곡선이지만 이 근처를 지난다)
+    await sleep(120);
+    A = (await paths()).find((s) => s.id === A.id);
+    const pickA = async () => {
+      const g = await page.$(`.shapes-svg g[data-sid="${A.id}"] > path`);
+      const q = await g.evaluate((el) => {
+        const p = el.getPointAtLength(el.getTotalLength() * 0.75);
+        const m = el.getScreenCTM();
+        return [p.x * m.a + m.e, p.y * m.d + m.f];
+      });
+      await page.mouse.click(...q);
+      await sleep(150);
+    };
+    await pickA();
+    const kn = await page.$$eval('.shapes-svg .sh-knob', (e) => e.map((c) => { const r = c.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }));
+    check(kn.length === 2, `고른 화살표에 곡선 손잡이 2개 (${kn.length})`);
+    const outKnob = kn.reduce((m, q) => (q[0] > m[0] ? q : m)); // 오른쪽(나가는) 손잡이
+    await page.mouse.move(...outKnob);
+    await page.mouse.down();
+    await page.mouse.move(outKnob[0] + 5 * ppm, outKnob[1] + 6 * ppm, { steps: 6 });
+    await page.mouse.up();
+    await sleep(150);
+    const A2 = (await paths()).find((s) => s.id === A.id);
+    const c2 = A2.cs[1];
+    check(near(c2[1].x, 15) && near(c2[1].y, 12) && near(c2[0].x, -15) && near(c2[0].y, -12), `손잡이를 끌면 맞은편 손잡이도 같이 (${JSON.stringify(c2)})`);
+    const anchor = await page.$$eval('.shapes-svg .sh-handle', (e) => e.map((c) => { const r = c.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }));
+    const mid = anchor[1];
+    await page.mouse.move(...mid);
+    await page.mouse.down();
+    await page.mouse.move(mid[0], mid[1] + 5 * ppm, { steps: 6 });
+    await page.mouse.up();
+    await sleep(150);
+    const A3 = (await paths()).find((s) => s.id === A.id);
+    check(near(A3.pts[1].y - A2.pts[1].y, 5) && JSON.stringify(A3.cs) === JSON.stringify(A2.cs), `가운데 점을 끌면 손잡이째 옮겨짐 (y ${A2.pts[1].y.toFixed(1)} → ${A3.pts[1].y.toFixed(1)})`);
+    // F) 곡선 위 두 번 누르기 → 모양 그대로 점 끼우기, 그 점 고르고 ⌫ → 그 점만 지움
+    const dBefore = await page.$eval(`.shapes-svg g[data-sid="${A.id}"] > path`, (e) => e.getAttribute('d'));
+    const onCurve = await page.$eval(`.shapes-svg g[data-sid="${A.id}"] > path`, (el) => {
+      const p = el.getPointAtLength(el.getTotalLength() * 0.3);
+      const m = el.getScreenCTM();
+      return [p.x * m.a + m.e, p.y * m.d + m.f];
+    });
+    await page.mouse.click(...onCurve, { count: 2 });
+    await sleep(150);
+    const A4 = (await paths()).find((s) => s.id === A.id);
+    check(A4.pts.length === 4, `곡선 위 두 번 누르기 → 점 끼우기 (점 ${A4.pts.length})`);
+    const hs4 = await page.$$eval('.shapes-svg .sh-handle', (e) => e.map((c) => { const r = c.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }));
+    await page.mouse.click(...hs4[1]);
+    await sleep(120);
+    check((await page.$$eval('.shapes-svg .sh-handle.on', (e) => e.length)) === 1, '점을 누르면 그 점이 골라짐(파랗게)');
+    await k.press('Backspace');
+    await sleep(150);
+    const A5 = (await paths()).find((s) => s.id === A.id);
+    check(!!A5 && A5.pts.length === 3, `점 고르고 ⌫ → 그 점만 지우고 앞뒤를 이음 (점 ${A5?.pts.length})`);
+    void dBefore;
+    await k.press('Escape');
+    await k.press('Escape');
+    await sleep(100);
   }
 
   check(errors.length === 0, `콘솔 오류 없음 ${errors.length ? JSON.stringify(errors.slice(0, 3)) : ''}`);
