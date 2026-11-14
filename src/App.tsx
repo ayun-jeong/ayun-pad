@@ -3,12 +3,17 @@ import { NodeSelection, Selection, TextSelection, type EditorState } from 'prose
 import type { EditorView } from 'prosemirror-view';
 import { redo, undo } from 'y-prosemirror';
 import type * as Y from 'yjs';
-import { DEFAULT_DRAW, type DrawState } from './draw/ShapesLayer';
-import type { Tool } from './draw/model';
+import { DEFAULT_DRAW, measureLines, type DrawState } from './draw/ShapesLayer';
+import { anchorAt, DEFAULT_W, resolve, SHAPES, translate, unresolve, type Shape, type TextShape, type Tool } from './draw/model';
+import { liveBox, plainText, textBoxes } from './draw/TextBox';
+import { Fragment, type Node as PMNode } from 'prosemirror-model';
 import { circleCmd, fontCmd, hlCmd, indentCmd, penCmd, sideCmd, toggleBranchCmd, trackCmd } from './editor/commands';
+import { halfAt, hasContent, measureBlocks, shiftOf, textUnits, topOf, type HalfOp } from './editor/halves';
+import { newId } from './editor/ids';
+import { schema } from './editor/schema';
 import { lineText } from './editor/decorations';
 import { findKey } from './editor/find';
-import { fitPitch, type Typo } from './editor/layout';
+import { fitPitch, halfLabel, textWidth, type Typo } from './editor/layout';
 import { colorOf, isPenKey, PEN_NAME } from './editor/model';
 import { penKey } from './editor/pen';
 import { keyId, type AppAction } from './editor/shortcuts';
@@ -16,7 +21,7 @@ import { putFontFile, registerFont } from './store/fontFiles';
 import { ensureFont, uploadFont } from './store/fontSync';
 import { download, exportBackup, importBackup } from './store/backup';
 import { addFont, addNote, dropSample, isUntouchedSample, notesOf, openLibrary, sortedSubjects, updateNote } from './store/library';
-import { openNote, readTypo, writeTypo, type NoteDoc } from './store/noteDoc';
+import { openNote, readTypo, writeHalves, writeTypo, type NoteDoc } from './store/noteDoc';
 import { seedIfEmpty } from './store/seed';
 import { consumeLoginLink, supabase } from './store/supabase';
 import { hub, type SyncStatus } from './store/sync';
@@ -27,7 +32,7 @@ import { EmphasisPanel } from './ui/EmphasisPanel';
 import { MoreMenu } from './ui/MoreMenu';
 import { FindPanel } from './ui/FindPanel';
 import { Help } from './ui/Help';
-import { buildPrintSheets, PagesView, type ViewMode } from './ui/PagesView';
+import { buildPrintSheets, PagesView, type PageInfo, type PageOp, type ViewMode } from './ui/PagesView';
 import { ColorPop, rememberColor } from './ui/ColorPop';
 import { InsertPanel } from './ui/InsertPanel';
 import { SearchPalette, type JumpTarget, type PaletteCommand } from './ui/SearchPalette';
@@ -74,6 +79,9 @@ function initialReading(): boolean {
 const READ_HINT = '읽기 모드예요. 고치려면 위쪽 ‘읽기 중’을 눌러 끄세요 (⌥L)';
 // 읽기 모드에서 막는 것(노트를 고치는 판 · 도구)
 const EDIT_ACTIONS = new Set<AppAction>(['type', 'draw', 'draw-text', 'draw-arrow', 'draw-line', 'draw-rect', 'draw-ellipse', 'insert', 'emph', 'pitch-down', 'pitch-up', 'pen-picker', 'hl-picker']);
+// 종이(본문)에 바로 쓰기: 기본은 끔 — 글은 글상자로 쓴다(빈 종이를 누르면 그 자리에 글상자). 기기마다 기억.
+const PAPER = 'ayunpad-paper';
+const BOX_HINT = '글상자에서 써요 · 빈 종이를 누르면 그 자리에 글상자가 생겨요';
 // 사파리(gesture 이벤트)가 아닌 폰 · 태블릿(안드로이드 등)은 두 손가락 오므리기 · 벌리기를 직접 받아 노트 배율로
 const OWN_PINCH = !('GestureEvent' in window);
 
@@ -112,6 +120,10 @@ export function App() {
   const readingRef = useRef(reading);
   readingRef.current = reading;
   useEffect(() => lsSet(READ, reading ? '1' : '0'), [reading]);
+  const [paper, setPaper] = useState(() => lsGet(PAPER) === '1');
+  const paperRef = useRef(paper);
+  paperRef.current = paper;
+  useEffect(() => lsSet(PAPER, paper ? '1' : '0'), [paper]);
   // ⌘(Ctrl)+휠 · 트랙패드 오므리기/벌리기: 노트 배율(브라우저 전체 확대 대신). 마우스 아래 자리가 그대로 있게 스크롤도 맞춘다.
   useEffect(() => {
     const desk = deskRef.current;
@@ -195,6 +207,13 @@ export function App() {
   }, []);
   const [typo, setTypo] = useState<Typo | null>(null);
   const [mode, setMode] = useState<ViewMode>('edit');
+  // 반쪽 · A4 보기를 다시 그릴 때(반쪽을 옮기거나 넣은 뒤, 배치가 다시 잡히면)
+  const [pagesVer, setPagesVer] = useState(0);
+  const pagesTimer = useRef(0);
+  const schedulePages = useCallback(() => {
+    clearTimeout(pagesTimer.current);
+    pagesTimer.current = window.setTimeout(() => setPagesVer((v) => v + 1), 150);
+  }, []);
   const [source, setSource] = useState<HTMLElement | null>(null);
   const [sync, setSync] = useState<SyncStatus>(() => hub.status());
   const [draw, setDrawState] = useState<DrawState | null>(null);
@@ -351,16 +370,22 @@ export function App() {
     return () => clearInterval(t);
   }, []);
 
+  // 지금 글을 쓰는 편집기: 커서가 든 글상자 → (종이에 바로 쓰지 않으면) 마지막에 쓴 글상자 → 본문
+  const activeView = useCallback((): EditorView | null => {
+    const box = liveBox();
+    if (box && (box.dom.contains(document.activeElement) || !paperRef.current)) return box;
+    return paperRef.current ? viewRef.current : null;
+  }, []);
   // 편집기에 명령 하나(펜 · 형광펜 · 들여쓰기 · 되돌리기 …). 읽기 모드에서는 하지 않는다.
   const withView = useCallback(
     (fn: (v: EditorView) => void) => {
-      const v = viewRef.current;
-      if (!v) return;
       if (readingRef.current) return toast(READ_HINT);
+      const v = activeView();
+      if (!v) return toast(BOX_HINT);
       fn(v);
       v.focus();
     },
-    [toast],
+    [toast, activeView],
   );
 
   const changeTypo = useCallback(
@@ -378,6 +403,13 @@ export function App() {
         return;
       }
       switch (a) {
+        case 'paper': {
+          const next = !paperRef.current;
+          paperRef.current = next;
+          setPaper(next);
+          toast(next ? '종이에 바로 쓰기: 켬 — 본문을 눌러 바로 써요' : '종이에 바로 쓰기: 끔 — 빈 종이를 누르면 그 자리에 글상자');
+          break;
+        }
         case 'read': {
           const next = !readingRef.current;
           readingRef.current = next;
@@ -608,11 +640,136 @@ export function App() {
     });
   }, []);
 
+  // ── 반쪽(페이지) · 글상자로 바꾸기 ─────────────────────────────────────
+  // 지금 노트의 배치: 반쪽 높이(mm) · 줄 간격 · 글 칸 폭, 편집 칸 · 칼럼 · 그림 지도
+  const layoutNow = useCallback(() => {
+    const v = viewRef.current;
+    const d = docRef.current;
+    const t = typoRef.current;
+    const src = srcRef.current;
+    if (!v || !d || !t || !src) return null;
+    const fit = fitPitch(t);
+    return { v, d, src, usable: fit.usable, pitch: fit.pitch, W: textWidth(t), zoom: zoomNow.current };
+  }, []);
+  // 그림 · 글상자의 지금 자리(줄 위치를 푼 것)
+  const resolvedShapes = useCallback((L: NonNullable<ReturnType<typeof layoutNow>>) => {
+    const lines = measureLines(L.src, L.v.dom, L.pitch);
+    return { lines, rs: [...L.d.shapes.values()].map((s) => resolve(s, lines)) };
+  }, []);
+  // 반쪽 수: 칼럼 높이(글상자 · 그림 · 끝에 넣은 빈 반쪽까지)
+  const halvesNow = (L: NonNullable<ReturnType<typeof layoutNow>>) => Math.max(1, Math.ceil(L.src.offsetHeight / PX_PER_MM / L.usable - 0.01));
+
+  // 본문 글(종이에 바로 쓴 예전 글)을 반쪽마다 같은 자리의 글상자로 바꾼다. only: 그 블록이 든 반쪽만(두 번 눌러 고칠 때).
+  // 반쪽 하나만 바꿀 때는 그 자리를 같은 높이의 빈 줄로 채워 아래 글이 움직이지 않게 하고, 다 바꿀 때는 본문을 빈 줄 하나로.
+  // 그림 · 글상자는 바꾸기 전 자리 그대로 다시 붙인다. 되돌리기 한 번(⌘Z)이면 다 돌아온다.
+  const convertBody = useCallback(
+    (onlyPos?: number): string[] => {
+      const L = layoutNow();
+      if (!L) return [];
+      const { v, d } = L;
+      const blocks = measureBlocks(v, L.usable, PX_PER_MM, L.zoom);
+      let units = textUnits(blocks);
+      if (onlyPos !== undefined) units = units.filter((u) => u.some((b) => b.pos <= onlyPos && onlyPos < b.pos + b.node.nodeSize));
+      if (!units.length) return [];
+      const { rs } = resolvedShapes(L);
+      const all = onlyPos === undefined;
+      // 새 본문
+      const keep: PMNode[] = [];
+      const used = new Set(units.flat());
+      const firstId = blocks[0]?.node.attrs.id ?? null;
+      if (all) keep.push(schema.nodes.line.create({ id: typeof firstId === 'string' ? firstId : newId() }));
+      else
+        for (const b of blocks) {
+          const u = units.find((x) => x[0] === b);
+          if (u) {
+            // 바꾼 묶음 자리: 같은 높이만큼 빈 줄(아래 본문이 그대로 있게)
+            const h = u.reduce((m, x) => Math.max(m, x.top + x.height), 0) - u[0].top;
+            const n = Math.max(1, Math.round(h / L.pitch));
+            for (let k = 0; k < n; k++) keep.push(schema.nodes.line.create({ id: newId() }));
+          } else if (!used.has(b)) keep.push(b.node);
+        }
+      v.dispatch(v.state.tr.replaceWith(0, v.state.doc.content.size, Fragment.fromArray(keep)));
+      // 바뀐 본문 기준으로 그림 · 글상자를 다시 붙이고 새 글상자를 만든다
+      const lines = measureLines(L.src, v.dom, L.pitch);
+      const z0 = [...d.shapes.values()].reduce((m, s) => Math.max(m, s.z), 0) + 1;
+      const ids: string[] = [];
+      d.ydoc.transact(() => {
+        for (const r of rs) d.shapes.set(r.id, JSON.parse(JSON.stringify(unresolve(r, lines))) as Shape);
+        units.forEach((u, k) => {
+          const doc = schema.node('doc', null, u.map((b) => b.node));
+          const id = newId();
+          ids.push(id);
+          const box: TextShape = { id, t: 'text', a: anchorAt({ x: -0.7, y: u[0].top - 0.2 }, lines), bw: L.W + 1.4, text: plainText(doc), doc: doc.toJSON(), c: 'k', w: DEFAULT_W, z: z0 + k };
+          d.shapes.set(id, JSON.parse(JSON.stringify(box)) as Shape);
+        });
+      }, SHAPES);
+      return ids;
+    },
+    [layoutNow, resolvedShapes],
+  );
+  // 종이에 바로 쓰지 않을 때 본문 글 두 번 누르기 → 그 반쪽 글을 글상자로 바꿔 바로 고치기
+  const onLegacyEdit = useCallback(
+    (x: number, y: number) => {
+      if (readingRef.current) return;
+      const v = viewRef.current;
+      const hit = v?.posAtCoords({ left: x, top: y });
+      if (!v || !hit) return;
+      const ids = convertBody(hit.inside >= 0 ? hit.inside : hit.pos);
+      if (!ids.length) return;
+      window.dispatchEvent(new CustomEvent('ayunpad-edit-box', { detail: ids[0] }));
+      toast('본문 글을 글상자로 바꿨어요 · 이제 글상자로 고쳐요 (⌘Z로 되돌림)');
+    },
+    [convertBody, toast],
+  );
+  // 반쪽마다: 빈 반쪽인지(글상자 · 그림 · 본문 글이 없음)
+  const pageInfo = useCallback((): PageInfo => {
+    const L = layoutNow();
+    if (!L) return { starts: new Set([0]), blank: new Set(), last: 0 };
+    const H = halvesNow(L);
+    const busy = new Set<number>();
+    for (const r of resolvedShapes(L).rs) busy.add(Math.min(H - 1, halfAt(topOf(r), L.usable)));
+    for (const b of measureBlocks(L.v, L.usable, PX_PER_MM, L.zoom)) if (hasContent(b.node)) busy.add(Math.min(H - 1, b.half));
+    const all = Array.from({ length: H }, (_, k) => k);
+    return { starts: new Set(all), blank: new Set(H > 1 ? all.filter((k) => !busy.has(k)) : []), last: H - 1 };
+  }, [layoutNow, resolvedShapes]);
+  // 반쪽 옮기기 · 빈 반쪽 넣기 · 지우기: 그 반쪽에 맨 위가 든 글상자 · 그림을 반쪽 높이만큼 옮긴다(본문 글이 있으면 먼저 글상자로)
+  const pageOp = useCallback(
+    (op: PageOp) => {
+      if (readingRef.current) return toast(READ_HINT);
+      let L = layoutNow();
+      if (!L) return;
+      let H = halvesNow(L);
+      const h: HalfOp = op.t === 'shift' ? { t: 'move', from: op.half, to: op.half + op.dir } : op;
+      if (h.t === 'move' && (h.to < 0 || h.to >= H || h.from === h.to)) return;
+      if (h.t === 'del' && !pageInfo().blank.has(h.half)) return toast('빈 반쪽만 지울 수 있어요');
+      const converted = h.t !== 'del' && measureBlocks(L.v, L.usable, PX_PER_MM, L.zoom).some((b) => hasContent(b.node)) ? convertBody().length : 0;
+      L = layoutNow();
+      if (!L) return;
+      H = Math.max(H, halvesNow(L));
+      const { lines, rs } = resolvedShapes(L);
+      const d = L.d;
+      d.ydoc.transact(() => {
+        for (const r of rs) {
+          const k = shiftOf(h, Math.min(H - 1, halfAt(topOf(r), L!.usable)));
+          if (k) d.shapes.set(r.id, JSON.parse(JSON.stringify(unresolve(translate(r, 0, k * L!.usable), lines))) as Shape);
+        }
+      }, SHAPES);
+      writeHalves(d, h.t === 'add' ? H + 1 : h.t === 'del' ? H - 1 : H);
+      const note = converted ? ' · 본문 글은 반쪽마다 글상자로 바꿨어요' : '';
+      if (h.t === 'move') toast(`${halfLabel(h.from)} 반쪽을 ${halfLabel(h.to)} 자리로 옮겼어요${note} (⌘Z로 되돌림)`);
+      else if (h.t === 'add') toast(`${halfLabel(h.after)} 뒤에 빈 반쪽을 넣었어요${note}`);
+      else toast(`빈 반쪽(${halfLabel(h.half)})을 지웠어요`);
+      schedulePages();
+    },
+    [layoutNow, resolvedShapes, convertBody, pageInfo, schedulePages, toast],
+  );
+
   const onState = useCallback((state: EditorState) => {
+    if (modeRef.current !== 'edit') schedulePages();
     setPen(penKey.getState(state)?.pen ?? null);
     setHasSel(!state.selection.empty);
     if (findRef.current || emphRef.current) setEdState(state);
-  }, []);
+  }, [schedulePages]);
 
   // 검색에서 고른 줄로: 줄 id로 찾고(없으면 블록 번호), 찾은 말을 골라 둔 채 화면을 옮긴다
   const jumpTo = useCallback((v: EditorView, t: JumpTarget) => {
@@ -774,9 +931,11 @@ export function App() {
   const commands = useMemo<PaletteCommand[]>(
     () => [
       { name: '읽기 모드 켜기 · 끄기(눌러도 노트가 안 바뀌게, 확대 · 축소만)', keys: '⌥L', alias: ['읽기', 'read', '잠금', '보기 전용', 'lock'], run: () => act('read') },
+      { name: '종이에 바로 쓰기 켜기 · 끄기(끄면 빈 종이를 눌러 글상자로 · 본문 글은 두 번 눌러 글상자로)', alias: ['본문', '종이', 'paper', '바로 쓰기', '글상자로만'], run: () => act('paper') },
       { name: '편집 화면', keys: '⌥1', run: () => act('view-edit') },
       { name: '반쪽 보기', keys: '⌥2', run: () => act('view-half') },
       { name: 'A4 합침 보기', keys: '⌥3', run: () => act('view-a4') },
+      { name: '반쪽 옮기기 · 빈 반쪽 넣기(A4 보기에서 ◀ ▶ · 끌어 놓기 · ＋)', alias: ['페이지 옮기기', '페이지 추가', '반쪽 순서', '왼쪽 오른쪽'], run: () => act('view-a4') },
       { name: '인쇄 · PDF 저장', keys: '⌘P', alias: ['print', '프린트'], run: () => setTimeout(() => window.print(), 80) },
       { name: '넣기: 표 · 수직선 · 연표 · 그래프 · 분수 · 글상자 · 도형', alias: ['insert', '표', '그래프', '수직선', '연표', '글상자', '네모'], run: () => act('insert') },
       { name: '그리기', keys: '⌥D', alias: ['draw', '화살표', '도형'], run: () => act('draw') },
@@ -820,7 +979,7 @@ export function App() {
   const penText = pen ? (isPenKey(pen) ? `${PEN_NAME[pen]} 펜` : '고른 색 펜') : '자동 펜';
 
   return (
-    <div className={`app${reading ? ' reading' : ''}`}>
+    <div className={`app${reading ? ' reading' : ''}${paper ? '' : ' paper-off'}`}>
       <header className="top">
         <button type="button" className="tbtn" onClick={() => setSidebar((s) => !s)} aria-label="과목 목록 열고 닫기">
           ☰
@@ -897,6 +1056,7 @@ export function App() {
           mode={mode}
           zoom={zoom}
           reading={reading}
+          paper={paper}
           syncText={sync.state === 'local' ? '로그인 · 동기화' : statusText(sync)}
           act={act}
           onZoom={(d) => setZoom((z) => clampZoom(Math.round((z + d * 0.1) * 10) / 10))}
@@ -927,12 +1087,15 @@ export function App() {
         {zoomBadge && <div className="zoom-badge">{Math.round(zoom * 100)}%</div>}
         {ready && noteId ? (
           <>
-            <div hidden={mode !== 'edit'}>
+            {/* 보기 화면 동안에도 편집 칸은 화면 밖에 그려 둔다(반쪽 나눔 배치 · 반쪽 옮기기가 그 자리를 잰다) */}
+            <div className={mode !== 'edit' ? 'ed-off' : undefined} aria-hidden={mode !== 'edit' || undefined}>
               <EditorPane
                 key={noteId}
                 noteId={noteId}
                 zoom={zoom}
                 reading={reading}
+                paper={paper}
+                onLegacyEdit={onLegacyEdit}
                 draw={mode === 'edit' ? draw : null}
                 setDraw={setDraw}
                 toast={toast}
@@ -942,7 +1105,9 @@ export function App() {
                 onDoc={onDoc}
               />
             </div>
-            {mode !== 'edit' && source && typo && <PagesView mode={mode} source={source} typo={typo} zoom={zoom} onPick={pickLine} />}
+            {mode !== 'edit' && source && typo && (
+              <PagesView mode={mode} source={source} typo={typo} zoom={zoom} version={pagesVer} reading={reading} pageInfo={pageInfo} onPage={pageOp} onPick={pickLine} />
+            )}
           </>
         ) : (
           <p style={{ textAlign: 'center', color: 'var(--ink-3)' }}>{ready ? '왼쪽 목록에서 + 과목이나 + 노트로 시작하세요.' : '노트를 여는 중…'}</p>
@@ -976,7 +1141,18 @@ export function App() {
         <Versions docId={`note:${docRef.current.id}`} ydoc={docRef.current.ydoc} view={viewRef.current} toast={toast} reading={reading} onClose={() => setVersions(false)} />
       )}
       {help && <Help onClose={() => setHelp(false)} />}
-      {insert && viewRef.current && <InsertPanel view={viewRef.current} app={act} onClose={() => setInsert(false)} />}
+      {insert && viewRef.current && (
+        <InsertPanel
+          target={activeView}
+          place={(fn) => {
+            // 쓰던 글상자가 없으면: 넣을 곳을 누르면 그 자리에 글상자를 만들고 거기에 넣는다
+            textBoxes.next = fn;
+            act('draw-text');
+          }}
+          app={act}
+          onClose={() => setInsert(false)}
+        />
+      )}
       {find && viewRef.current && edState && docRef.current && (
         <FindPanel
           view={viewRef.current}

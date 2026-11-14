@@ -47,6 +47,12 @@ try {
   await waitServer();
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-first-run'] });
   const page = await browser.newPage();
+  // 이 시험은 본문(종이에 바로 쓰기)으로 엔진을 시험한다(기본은 꺼져 있고 글은 글상자로)
+  await page.evaluateOnNewDocument(() => {
+    try {
+      localStorage.setItem('ayunpad-paper', '1');
+    } catch {}
+  });
   await page.setViewport({ width: 1400, height: 1000 });
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -532,6 +538,12 @@ try {
   fs.writeFileSync(file, json);
   const ctx = await browser.createBrowserContext();
   const p2 = await ctx.newPage();
+  // 이 시험은 본문(종이에 바로 쓰기)으로 엔진을 시험한다(기본은 꺼져 있고 글은 글상자로)
+  await p2.evaluateOnNewDocument(() => {
+    try {
+      localStorage.setItem('ayunpad-paper', '1');
+    } catch {}
+  });
   await p2.setViewport({ width: 1400, height: 1000 });
   p2.on('pageerror', (e) => errors.push(`p2: ${e}`));
   await p2.goto(URL, { waitUntil: 'networkidle0' });
@@ -589,6 +601,12 @@ try {
   // 10) 폰: 글자를 고르면 아래 막대가 색 도구로
   const ctx3 = await browser.createBrowserContext();
   const m = await ctx3.newPage();
+  // 이 시험은 본문(종이에 바로 쓰기)으로 엔진을 시험한다(기본은 꺼져 있고 글은 글상자로)
+  await m.evaluateOnNewDocument(() => {
+    try {
+      localStorage.setItem('ayunpad-paper', '1');
+    } catch {}
+  });
   await m.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
   m.on('pageerror', (e) => errors.push(`mobile: ${e}`));
   await m.goto(URL, { waitUntil: 'networkidle0' });

@@ -30,6 +30,12 @@ try {
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-first-run'] });
   await browser.defaultBrowserContext().overridePermissions(new globalThis.URL(URL).origin, ['clipboard-read', 'clipboard-write', 'clipboard-sanitized-write']);
   const page = await browser.newPage();
+  // 이 시험은 본문(종이에 바로 쓰기)으로 엔진을 시험한다(기본은 꺼져 있고 글은 글상자로)
+  await page.evaluateOnNewDocument(() => {
+    try {
+      localStorage.setItem('ayunpad-paper', '1');
+    } catch {}
+  });
   await page.setViewport({ width: 1400, height: 1000 });
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -253,6 +259,12 @@ try {
   // 14) 폰: 처음부터 읽기 모드 · 아래 편집 막대 없음 · 눌러도 안 바뀜 · 두 손가락으로 배율
   const ctx = await browser.createBrowserContext();
   const mp = await ctx.newPage();
+  // 이 시험은 본문(종이에 바로 쓰기)으로 엔진을 시험한다(기본은 꺼져 있고 글은 글상자로)
+  await mp.evaluateOnNewDocument(() => {
+    try {
+      localStorage.setItem('ayunpad-paper', '1');
+    } catch {}
+  });
   const merr = [];
   mp.on('pageerror', (e) => merr.push(String(e)));
   await mp.emulate(KnownDevices['iPhone 13']);

@@ -575,3 +575,22 @@ body.marqueeing, body.marqueeing * { user-select: none !important; -webkit-user-
 .reading .pages .pcol .editor { cursor: auto; }
 /* 사파리 gesture 이벤트가 없는 폰(안드로이드 등): 두 손가락 오므리기 · 벌리기는 노트 배율이 받는다(App.tsx) */
 .desk.own-pinch { touch-action: pan-x pan-y; }
+
+/* 반쪽 · A4 보기 동안 편집 칸은 화면 밖에 그려 둔다(반쪽 옮기기 · 글상자로 바꾸기가 그 자리를 잰다) */
+.ed-off { position: fixed; left: -100000px; top: 0; visibility: hidden; pointer-events: none; }
+/* 반쪽 고치기 단추(보기 화면): ◀ ▶ 자리 바꾸기 · ＋ 빈 반쪽 · × 빈 반쪽 지우기. 마우스면 올렸을 때, 터치면 늘 */
+.pctl { position: absolute; top: 2mm; right: 2mm; display: flex; gap: 4px; z-index: 3; transform: scale(var(--inv, 1)); transform-origin: top right; opacity: 0; transition: opacity 0.12s; }
+.phalf:hover .pctl, .pctl:focus-within { opacity: 1; }
+@media (hover: none) { .pctl { opacity: 1; } }
+.pctl button { font: 600 14px/1 var(--ui); min-width: 30px; height: 30px; padding: 0 6px; border: 1px solid var(--rule-2); border-radius: 8px; background: rgba(255, 255, 255, 0.95); color: #222; cursor: pointer; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+.pctl button:hover:not(:disabled) { border-color: #0064e8; color: #0064e8; }
+.pctl button:disabled { opacity: 0.35; cursor: default; }
+.phalf[data-half] { cursor: grab; }
+.phalf.pdrag { opacity: 0.45; }
+.phalf.pdrop { box-shadow: inset 0 0 0 1mm rgba(0, 100, 232, 0.7) !important; }
+body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: none !important; }
+/* 종이에 바로 쓰지 않을 때: 본문은 고치지 않는다(예전 본문 위젯의 손잡이 · 막대 숨김), 빈 종이는 눌러서 글상자 */
+.paper-off .sheet-src .editor .wg-ctl, .paper-off .sheet-src .editor .tbl-ctl, .paper-off .sheet-src .editor .wg-size, .paper-off .sheet-src .editor .column-resize-handle { display: none !important; }
+.paper-off .sheet-src .editor .wg-ed, .paper-off .sheet-src .editor .mi { pointer-events: none; }
+.paper-off .sheet-src .editor .wg-ed:empty::before { content: none; }
+.paper-off .sheet-src { cursor: text; }

@@ -26,6 +26,7 @@ export interface RuleSettings {
   math?: boolean; // = + - 기호 퀵 메뉴(mathMenu.ts)
   treeTop?: TreeTop; // 제목 없는 트리 첫 가지 ┌─ / ├─(decorations.ts가 칠할 때 읽는다)
   readOnly?: boolean; // 읽기 모드: 눌러도 · 쳐도 노트가 안 바뀐다(createEditor.ts readOnlyPlugin이 읽는다)
+  paper?: boolean; // 종이(본문)에 바로 쓰기. false면 본문은 고치지 않고 글은 글상자로(본문 편집기에만, createEditor.ts paperPlugin)
 }
 
 // 바꿀 글은 맞은 부분에 그대로 규칙을 적용해 만든다(+) → ⊕ 처럼 앞의 띄어쓰기를 남기는 규칙도 있어서)

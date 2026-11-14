@@ -5,6 +5,7 @@ interface Props {
   mode: 'edit' | 'half' | 'a4';
   zoom: number;
   reading: boolean; // 읽기 모드면 고치는 것(강조 지우기 · 글자 모양)은 빼고 보인다
+  paper: boolean; // 종이에 바로 쓰기
   syncText: string;
   act(a: AppAction): void;
   onZoom(dir: 1 | -1): void;
@@ -20,7 +21,7 @@ const M = mac ? '⌘' : 'Ctrl+';
 const A = mac ? '⌥' : 'Alt+';
 
 // 위쪽 막대의 ⋯: 자주 안 쓰는 것을 한곳에(찾기 · 강조 · 글자 모양 · 배율 · 인쇄 · 로그인 · 백업 · 도움말)
-export function MoreMenu({ mode, zoom, reading, syncText, act, onZoom, onAccount, onExport, onImport, onHelp, onClose }: Props) {
+export function MoreMenu({ mode, zoom, reading, paper, syncText, act, onZoom, onAccount, onExport, onImport, onHelp, onClose }: Props) {
   const box = useRef<HTMLDivElement>(null);
   // 바깥을 누르거나 Esc면 닫는다(⋯ 단추는 스스로 열고 닫는다)
   useEffect(() => {
@@ -67,6 +68,7 @@ export function MoreMenu({ mode, zoom, reading, syncText, act, onZoom, onAccount
       {item('전체 검색 · 명령', () => act('search'), `${M}K`)}
       {!reading && item('강조 모아 보기 · 지우기', () => act('emph'))}
       {!reading && item('글자 모양', () => act('type'), `${A}T`)}
+      {!reading && item(paper ? '종이에 바로 쓰기 끄기(글상자로만)' : '종이에 바로 쓰기 켜기', () => act('paper'))}
       <div className="menu-row" role="group" aria-label="화면 배율">
         <span>배율</span>
         <button type="button" onClick={() => onZoom(-1)} aria-label="작게">

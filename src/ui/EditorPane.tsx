@@ -18,7 +18,7 @@ import { mathKey, type MathMenuState } from '../editor/mathMenu';
 import { slashKey, type SlashState } from '../editor/slash';
 import { MathMenu, SlashMenu } from './Menus';
 import { ensureFont } from '../store/fontSync';
-import { openNote, readTypo, type NoteDoc } from '../store/noteDoc';
+import { openNote, readHalves, readTypo, type NoteDoc } from '../store/noteDoc';
 import { hub, REMOTE } from '../store/sync';
 
 export const PX_PER_MM = 96 / 25.4;
@@ -29,6 +29,8 @@ interface Props {
   noteId: string;
   zoom: number;
   reading: boolean; // 읽기 모드: 눌러도 · 쳐도 노트가 안 바뀐다(확대 · 축소 · 스크롤만)
+  paper: boolean; // 종이(본문)에 바로 쓰기. 끄면 빈 종이를 눌러 글상자로 쓴다
+  onLegacyEdit(clientX: number, clientY: number): void; // 종이에 바로 쓰지 않을 때 본문 글을 두 번 누름 → 그 반쪽 본문 글을 글상자로
   draw: DrawState | null;
   setDraw(patch: Partial<DrawState> | null): void;
   toast(msg: string): void;
@@ -71,11 +73,12 @@ function pushWidgets(editor: HTMLElement, usablePx: number, lhPx: number, zoom: 
 
 // 노트 하나를 105mm 칼럼에 연다. 반쪽이 끝나는 곳마다 점선과 쪽 번호(1-1, 1-2 …)를 그린다.
 // 칼럼(.sheet-src) = 편집 칸 + 그림 층. 반쪽 보기 · A4 보기 · 인쇄는 이 칼럼을 그대로 복제한다.
-export function EditorPane({ noteId, zoom, reading, draw, setDraw, toast, app, onState, onEdit, onDoc }: Props) {
+export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, setDraw, toast, app, onState, onEdit, onDoc }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const srcRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
   const [typo, setTypo] = useState<Typo>(DEFAULT_TYPO);
+  const [minHalves, setMinHalves] = useState(1); // 끝에 넣은 빈 반쪽까지(노트 설정 'halves')
   const [paperH, setPaperH] = useState(0);
   const [srcH, setSrcH] = useState(0);
   const [live, setLive] = useState<Live | null>(null);
@@ -137,6 +140,7 @@ export function EditorPane({ noteId, zoom, reading, draw, setDraw, toast, app, o
   // 가지선 모양은 그리는 동안(자식 글상자 효과보다 먼저) 바뀌어 있어야 해서 여기서 바로 넣는다
   settings.treeTop = typo.treeTop;
   settings.readOnly = reading;
+  settings.paper = paper;
   const frame = useRef(0);
   const liveRef = useRef<Live | null>(null);
   liveRef.current = live;
@@ -162,7 +166,10 @@ export function EditorPane({ noteId, zoom, reading, draw, setDraw, toast, app, o
     let um: Y.UndoManager | null = null;
     let cancelled = false;
     const doc = openNote(noteId);
-    const onMeta = () => setTypo(readTypo(doc));
+    const onMeta = () => {
+      setTypo(readTypo(doc));
+      setMinHalves(readHalves(doc));
+    };
     const onUpdate = (_u: Uint8Array, origin: unknown) => {
       if (origin !== null && typeof origin === 'object' && 'whenSynced' in (origin as object)) return; // IndexedDB에서 읽어 온 것
       if (origin === REMOTE) return; // 다른 기기에서 온 것(그쪽에서 이미 고친 시각을 올렸다)
@@ -176,7 +183,7 @@ export function EditorPane({ noteId, zoom, reading, draw, setDraw, toast, app, o
       if (cancelled || !mountRef.current) return;
       // 새 노트는 편집기를 열기 전에 빈 줄 하나를 깔아 둔다. 그래야 첫 입력을 ⌘Z로 되돌려도 줄 없는 노트가 되지 않는다.
       if (doc.fragment.length === 0) prosemirrorToYXmlFragment(schema.node('doc', null, [schema.node('line', { id: newId() })]), doc.fragment);
-      setTypo(readTypo(doc));
+      onMeta();
       doc.meta.observe(onMeta);
       doc.ydoc.on('update', onUpdate);
       // 글(fragment)과 그림(shapes)을 한 되돌리기 줄에. 다른 기기에서 온 변경은 되돌리지 않는다.
@@ -256,8 +263,8 @@ export function EditorPane({ noteId, zoom, reading, draw, setDraw, toast, app, o
     if (!sel.empty) v.dispatch(v.state.tr.setSelection(TextSelection.near(sel.$head)));
     v.setProps({});
     const a = document.activeElement as HTMLElement | null;
-    if (reading && a && srcRef.current?.contains(a)) a.blur();
-  }, [reading, live]);
+    if (a && srcRef.current?.contains(a) && (reading || (!paper && v.dom.contains(a)))) a.blur();
+  }, [reading, paper, live]);
   // 읽기 모드: 위젯 글칸(그래프 · 연표 이름표 · 분수 칸)처럼 따로 고칠 수 있는 칸에도 글자가 들어가지 않게
   useEffect(() => {
     const s = srcRef.current;
@@ -327,7 +334,7 @@ export function EditorPane({ noteId, zoom, reading, draw, setDraw, toast, app, o
             {Array.from({ length: halves - 1 }, (_, k) => (
               <div key={k} className="guide" style={{ top: (k + 1) * halfPx, left: `-${typo.mOuter}mm`, right: `-${typo.mInner}mm` }} />
             ))}
-            <div className="sheet-src" ref={srcRef} style={{ minHeight: `${Math.max(fit.usable, extent + 1)}mm` }}>
+            <div className="sheet-src" ref={srcRef} style={{ minHeight: `${Math.max(fit.usable * minHalves, extent + 1)}mm` }}>
               <div ref={mountRef} />
               {live && srcRef.current && (
                 <ShapesLayer
@@ -386,6 +393,8 @@ export function EditorPane({ noteId, zoom, reading, draw, setDraw, toast, app, o
                   host={hostRef.current!}
                   settings={settings}
                   reading={reading}
+                  paper={paper}
+                  onLegacyEdit={onLegacyEdit}
                 />
               )}
             </div>

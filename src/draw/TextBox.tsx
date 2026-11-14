@@ -171,6 +171,14 @@ function TbBar({ view, r, editing, onPatch }: { view: EditorView | null; r: Reso
 // 글상자 = 본문과 똑같은 필기 엔진의 또 하나의 편집기. 늘 살아 있어서 누르면 바로 쓰고,
 // 트리(- 스페이스 · Tab · ⌥Tab) · 자동 색 · 화살표 변환 · 기호 메뉴 · 분수 · 루트 · 펜이 본문과 같다.
 // 내용은 도형 지도(shapes)에 ProseMirror JSON으로 저장되고, 되돌리기는 노트와 같은 줄(⌘Z)이다.
+// 마지막으로 커서가 들어갔던 글상자 편집기(종이에 바로 쓰지 않을 때 펜 · 들여쓰기 · ＋ 넣기가 여기에 들어간다).
+// next: 다음에 커서가 들어가는 글상자에 한 번 할 일(＋ 넣기에서 넣을 곳을 고른 뒤 그 새 글상자에 표 등을 넣기)
+export const textBoxes: { last: EditorView | null; next: ((v: EditorView) => void) | null } = { last: null, next: null };
+export const liveBox = () => {
+  const v = textBoxes.last;
+  return v && !v.isDestroyed && v.dom.isConnected ? v : null;
+};
+
 export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFocus, onBlur, onDrag, onDelete, onPatch, selected, onPick, reading }: BoxProps) {
   const mount = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -221,12 +229,19 @@ export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFo
       },
     });
     view.current = v;
+    v.dom.addEventListener('focus', () => {
+      textBoxes.last = v;
+      const next = textBoxes.next;
+      textBoxes.next = null;
+      if (next) requestAnimationFrame(() => !v.isDestroyed && next(v));
+    });
     if (autoFocus) {
       v.focus();
       v.dispatch(v.state.tr.setSelection(Selection.atEnd(v.state.doc)));
     }
     return () => {
       view.current = null;
+      if (textBoxes.last === v) textBoxes.last = null;
       v.destroy();
     };
   }, [r.id]); // eslint-disable-line react-hooks/exhaustive-deps

@@ -45,9 +45,15 @@ function readOnlyPlugin(settings: RuleSettings): Plugin {
   });
 }
 
+// 종이에 바로 쓰기를 끄면(settings.paper === false) 본문에는 커서가 들어가지 않는다 — 글은 글상자로 쓴다.
+// 본문 편집기에만 붙는다(글상자는 늘 고칠 수 있게). 반쪽 옮기기 · 글상자로 바꾸기 같은 거래는 그대로 들어온다.
+function paperPlugin(settings: RuleSettings): Plugin {
+  return new Plugin({ props: { editable: () => settings.paper !== false } });
+}
+
 export function enginePlugins(o: EngineOptions): Plugin[] {
   const plugins: Plugin[] = [readOnlyPlugin(o.settings)];
-  if (o.main) plugins.push(ySyncPlugin(o.main.fragment), yUndoPlugin(o.main.undoManager ? { undoManager: o.main.undoManager } : undefined), slashPlugin(o.host));
+  if (o.main) plugins.push(paperPlugin(o.settings), ySyncPlugin(o.main.fragment), yUndoPlugin(o.main.undoManager ? { undoManager: o.main.undoManager } : undefined), slashPlugin(o.host));
   plugins.push(mathMenuPlugin(o.settings), shortcutPlugin(o.host), rulesPlugin(o.settings));
   if (o.main) plugins.push(columnResizing({ View: TableViewClass, cellMinWidth: 24 }), tableEditing({ allowTableNodeSelection: true }), tableCursorPlugin());
   if (o.keys) plugins.push(keymap(o.keys));

@@ -27,7 +27,8 @@ export type AppAction =
   | 'draw-line'
   | 'draw-rect'
   | 'draw-ellipse'
-  | 'read';
+  | 'read'
+  | 'paper';
 
 export interface ShortcutHost {
   toast(msg: string): void;

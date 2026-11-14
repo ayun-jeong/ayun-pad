@@ -28,6 +28,12 @@ try {
   await waitServer();
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-first-run'] });
   const page = await browser.newPage();
+  // 이 시험은 본문(종이에 바로 쓰기)으로 엔진을 시험한다(기본은 꺼져 있고 글은 글상자로)
+  await page.evaluateOnNewDocument(() => {
+    try {
+      localStorage.setItem('ayunpad-paper', '1');
+    } catch {}
+  });
   await page.setViewport({ width: 1400, height: 1000 });
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));

@@ -80,7 +80,19 @@ try {
   const ctxA = await browser.createBrowserContext();
   const ctxB = await browser.createBrowserContext();
   const A = await ctxA.newPage();
+  // 이 시험은 본문(종이에 바로 쓰기)으로 엔진을 시험한다(기본은 꺼져 있고 글은 글상자로)
+  await A.evaluateOnNewDocument(() => {
+    try {
+      localStorage.setItem('ayunpad-paper', '1');
+    } catch {}
+  });
   const B = await ctxB.newPage();
+  // 이 시험은 본문(종이에 바로 쓰기)으로 엔진을 시험한다(기본은 꺼져 있고 글은 글상자로)
+  await B.evaluateOnNewDocument(() => {
+    try {
+      localStorage.setItem('ayunpad-paper', '1');
+    } catch {}
+  });
   for (const p of [A, B]) await p.setViewport({ width: 1300, height: 900 });
   const errs = [];
   for (const [n, p] of [['A', A], ['B', B]]) p.on('pageerror', (e) => errs.push(`${n}: ${e}`));

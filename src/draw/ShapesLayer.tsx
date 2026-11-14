@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 import { Slice } from 'prosemirror-model';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import * as Y from 'yjs';
 import { clipboardTextSerializer } from '../editor/clipboard';
 import { newId } from '../editor/ids';
@@ -88,6 +88,8 @@ interface Props {
   host: ShortcutHost;
   settings: RuleSettings;
   reading?: boolean; // 읽기 모드: 그림 · 글상자를 눌러도 아무 일 없음(고르기 · 옮기기 · 만들기 · 붙여넣기 안 함)
+  paper?: boolean; // 종이(본문)에 바로 쓰기. false면 빈 종이를 누르면 그 자리에 글상자, 본문 글은 두 번 눌러 글상자로
+  onLegacyEdit?(clientX: number, clientY: number): void; // 본문 글 두 번 누르기(종이에 바로 쓰지 않을 때)
 }
 
 // 편집 칸 위에 얹힌 그림 층. 평소에는 그림만 보여 주고(누르면 글로 지나감), 그리기(⌥D) 중에는 누르기를 받는다.
@@ -211,7 +213,7 @@ const snapOff = (e: Mods) => e.metaKey || e.ctrlKey; // ⌘(Ctrl)를 누르고 �
 // 직각 · 45°로 묶인 점은 묶인 방향을 빼고만 맞춘다
 const freeOf = (q: XY, last: XY | null, ortho: boolean) => ({ x: !(ortho && last && q.x === last.x), y: !(ortho && last && q.y === last.y) });
 
-export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, setDraw, onExtent, onCaret, caretXY, widgets, caught, onTextMarquee, host, settings, reading }: Props) {
+export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, setDraw, onExtent, onCaret, caretXY, widgets, caught, onTextMarquee, host, settings, reading, paper = true, onLegacyEdit }: Props) {
   const [, repaint] = useReducer((x: number) => x + 1, 0);
   const layer = useRef<HTMLDivElement>(null);
   const ix = useRef<Ix>({ sel: [], wsel: [], drawing: null, cursor: null, press: null, node: null, box: null, drag: null, drafts: new Map(), marquee: null, guides: null, last: null, pid: null }).current;
@@ -226,6 +228,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   drawRef.current = draw;
   const readRef = useRef(false);
   readRef.current = !!reading;
+  const paperRef = useRef(true);
+  paperRef.current = paper;
   const pasted = useRef(false);
 
   useEffect(() => {
@@ -254,19 +258,89 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     repaint();
   };
 
+  // 본문 글자 위인지(그 줄 글자의 화면 상자 안)
+  const onBodyText = (e: { clientX: number; clientY: number; target: EventTarget | null }) => {
+    const line = (e.target as HTMLElement | null)?.closest?.('.editor > p') as HTMLElement | null;
+    if (!line?.textContent || !editor.contains(line)) return false;
+    const r = document.createRange();
+    r.selectNodeContents(line);
+    return Array.from(r.getClientRects()).some((rc) => e.clientX >= rc.left - 3 && e.clientX <= rc.right + 6 && e.clientY >= rc.top - 1 && e.clientY <= rc.bottom + 1);
+  };
+  // 종이에 바로 쓰지 않을 때 빈 종이 한 번 누르기: 고치던 글상자 · 고른 글 · 그림이 있으면 먼저 풀기만, 아니면 그 자리에 새 글상자.
+  // 본문 글 위 · 회색 바깥은 아무 일 없음(본문 글은 두 번 눌러 글상자로).
+  const pendingTap = useRef(0); // 누르기로 글상자를 만든 시각(바로 이은 두 번 누르기가 하나 더 만들지 않게)
+  const blankPress = (ev: { clientX: number; clientY: number }, has: boolean) => {
+    const a = document.activeElement as HTMLElement | null;
+    const inBox = !!a?.closest?.('.tbox');
+    if (has || inBox || editing || ix.sel.length) {
+      getSelection()?.removeAllRanges();
+      if (inBox) a?.blur();
+      return;
+    }
+    if (onBodyText({ clientX: ev.clientX, clientY: ev.clientY, target: document.elementFromPoint(ev.clientX, ev.clientY) })) return;
+    const pr = src.closest('.paper')?.getBoundingClientRect();
+    if (!pr || ev.clientX < pr.left || ev.clientX > pr.right || ev.clientY < pr.top || ev.clientY > pr.bottom) return;
+    pendingTap.current = performance.now();
+    // 누르는 동작 안에서 바로 그려 커서를 넣는다(아이폰은 그래야 자판이 뜬다)
+    flushSync(() => newText(toMM(ev)));
+    repaint();
+  };
+  // 손가락: 끌면 화면 넘기기(영역 고르기 없음), 짧게 톡 누르면 마우스 누르기와 같게(종이에 바로 쓰지 않을 때)
+  const touchTap = (e: PointerEvent) => {
+    if (paperRef.current) return;
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const t0 = performance.now();
+    const s = getSelection();
+    const has = (!!s && !s.isCollapsed && editor.contains(s.anchorNode)) || !!caught?.length;
+    const stop = () => {
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', stop);
+    };
+    const up = (ev: PointerEvent) => {
+      stop();
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 10 || performance.now() - t0 > 600) return;
+      // 손가락을 뗀 뒤 브라우저가 따라 보내는 마우스 누름이 새 글상자의 커서를 빼앗지 않게
+      const keep = (m: MouseEvent) => m.preventDefault();
+      window.addEventListener('mousedown', keep, { once: true, capture: true });
+      setTimeout(() => window.removeEventListener('mousedown', keep, true), 700);
+      blankPress(ev, has);
+    };
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', stop);
+  };
+  // 밖(본문 글을 글상자로 바꾼 뒤 등)에서 글상자 하나를 고치게: 그려질 때까지 몇 번 기다렸다가 커서를 넣는다
+  useEffect(() => {
+    const on = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      const tryFocus = (n: number) => {
+        const el = src.querySelector<HTMLElement>(`.tbox[data-sid="${id}"] .tb-edit`);
+        if (el) el.focus();
+        else if (n < 30) requestAnimationFrame(() => tryFocus(n + 1));
+      };
+      tryFocus(0);
+    };
+    window.addEventListener('ayunpad-edit-box', on);
+    return () => window.removeEventListener('ayunpad-edit-box', on);
+  }, [src]);
+
   // 글쓰기 화면에서 종이 빈 곳(글이 없는 자리)을 두 번 누르면 → 그 자리에 글상자
   const dblRef = useRef<(e: MouseEvent) => void>(() => undefined);
   dblRef.current = (e: MouseEvent) => {
     if (drawRef.current || !layer.current || readRef.current) return;
     const t = e.target as HTMLElement | null;
     if (!t || t.closest('.tbox, .wg, .tblw, .mi, .sh-hit')) return;
-    const line = t.closest('.editor > p') as HTMLElement | null;
-    if (line?.textContent) {
-      const r = document.createRange();
-      r.selectNodeContents(line);
-      const onText = Array.from(r.getClientRects()).some((rc) => e.clientX >= rc.left - 3 && e.clientX <= rc.right + 6 && e.clientY >= rc.top - 1 && e.clientY <= rc.bottom + 1);
-      if (onText) return; // 글자 위 두 번 누르기는 원래대로(낱말 고르기)
+    if (onBodyText(e)) {
+      // 종이에 바로 쓰지 않을 때: 본문 글을 두 번 누르면 그 반쪽 본문 글이 같은 자리의 글상자로(고치기)
+      if (!paperRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        getSelection()?.removeAllRanges();
+        onLegacyEdit?.(e.clientX, e.clientY);
+      }
+      return; // 종이에 바로 쓸 때 글자 위 두 번 누르기는 원래대로(낱말 고르기)
     }
+    if (!paperRef.current && performance.now() - pendingTap.current < 700) return; // 방금 한 번 누르기로 만든 글상자가 있다
     e.preventDefault();
     e.stopPropagation();
     getSelection()?.removeAllRanges();
@@ -326,8 +400,12 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   const writingMarquee = (e: PointerEvent) => {
     const host = layer.current;
     const t = e.target as Element | null;
-    if (!host || !t || e.button !== 0 || e.pointerType === 'touch' || ix.marquee) return;
-    if (t.closest('.editor, .tbox, .sh-hit, .wg, .tblw, .zoom-badge, .drawbar, .panel, .menu, input, button, select, textarea')) return;
+    if (!host || !t || e.button !== 0 || ix.marquee) return;
+    // 종이에 바로 쓰지 않으면 본문(글 · 빈 줄)도 배경처럼: 누르면 그 자리에 글상자, 끌면 영역 고르기
+    const bodyIsPaper = !paperRef.current && !!t.closest('.editor') && !t.closest('.wg, .tblw, .mi');
+    if (!bodyIsPaper && t.closest('.editor, .tbox, .sh-hit, .wg, .tblw, .zoom-badge, .drawbar, .panel, .menu, input, button, select, textarea')) return;
+    if (bodyIsPaper && t.closest('.tbox, .sh-hit')) return;
+    if (e.pointerType === 'touch') return touchTap(e);
     const p = toMM(e);
     ix.marquee = { a: p, b: p, add: false, base: [], wbase: [], moved: false, writing: true, hits: [] };
     // 브라우저가 배경에서부터 글자 고르기를 시작하지 않게(두 번 누르기 · 누르기는 그대로 온다)
@@ -357,6 +435,10 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
         // 그냥 누름(끌지 않음): 고른 글 · 같이 잡힌 그림이 있으면 풀고 누른 자리 가까운 줄에 커서
         const s = getSelection();
         const has = (!!s && !s.isCollapsed && editor.contains(s.anchorNode)) || !!caught?.length;
+        if (!paperRef.current) {
+          if (ev) blankPress(ev, has);
+          return;
+        }
         if (has && ev) onCaret?.(ev.clientX, ev.clientY);
         return;
       }
@@ -381,7 +463,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
           last = i;
         }
       });
-      // 손을 뗀 뒤(브라우저가 누르기 처리를 끝낸 다음)에 고른다
+      // 손을 뗀 뒤(브라우저가 누르기 처리를 끝낸 다음)에 고른다(종이에 바로 쓰지 않으면 본문 줄은 빼고 그림만)
+      if (!paperRef.current) first = -1;
       setTimeout(() => {
         if (first >= 0) onTextMarquee?.(first, last, ids);
         else if (ids.length || wids.length) {
@@ -1080,6 +1163,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     const s: Shape = { id: newId(), t: 'text', a: anchorAt({ x, y }, lines), bw: Math.max(8, Math.min(70, W - x - 2)), text: t, doc: textDoc({ text: t }).toJSON(), c: 'k', w: DEFAULT_W, z: nextZ() };
     put(s);
     pickOnly([s.id]);
+    if (!drawRef.current) setDraw({ tool: 'select', picked: true }); // 글쓰기 화면이면 붙인 것을 고른 채(바로 옮기기)
     repaint();
   };
 
@@ -1218,7 +1302,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       repaint();
       return;
     }
-    if (!drawRef.current || editable) return;
+    // 그리기 중이거나, 종이에 바로 쓰지 않는데 커서가 아무 데도 없으면: 붙인 글은 새 글상자로
+    if ((!drawRef.current && paperRef.current) || editable) return;
     e.preventDefault();
     pasted.current = true;
     const text = e.clipboardData?.getData('text/plain') ?? '';

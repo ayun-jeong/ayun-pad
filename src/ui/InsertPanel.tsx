@@ -6,7 +6,8 @@ import { insertChronology, insertGraph, insertNumberLine, insertTable } from '..
 import type { GraphTpl } from '../editor/widgets';
 
 interface Props {
-  view: EditorView;
+  target(): EditorView | null; // 넣을 편집기(쓰던 글상자 · 종이에 바로 쓸 때는 본문)
+  place(fn: (v: EditorView) => void): void; // 넣을 편집기가 없으면: 누른 자리에 새 글상자를 만들고 거기에
   app(action: AppAction): void;
   onClose(): void;
 }
@@ -20,9 +21,9 @@ const GRAPHS: [GraphTpl, string][] = [
 
 const n = (v: string, d: number) => (v.trim() !== '' && Number.isFinite(Number(v)) ? Number(v) : d);
 
-// '＋ 넣기': 표 · 수직선 · 연표 · 그래프 · 분수 · 루트 · 글상자. 지금 커서가 있던 줄 다음에 넣는다(도형은 ✎ 그리기).
-// 본문에서 / 를 쳐도 같은 것을 넣을 수 있다(/표 3x4, /연표 2016 10).
-export function InsertPanel({ view, app, onClose }: Props) {
+// '＋ 넣기': 표 · 수직선 · 연표 · 그래프 · 분수 · 루트 · 글상자. 쓰던 글상자(종이에 바로 쓸 때는 본문)의 커서 줄 다음에 넣는다.
+// 쓰던 글상자가 없으면 넣을 곳을 누르게 하고 그 자리 새 글상자에 넣는다. 본문에서 / 를 쳐도 같다(/표 3x4, /연표 2016 10).
+export function InsertPanel({ target, place, app, onClose }: Props) {
   const [rows, setRows] = useState('3');
   const [cols, setCols] = useState('3');
   const [line, setLine] = useState('10');
@@ -31,14 +32,16 @@ export function InsertPanel({ view, app, onClose }: Props) {
   const [step, setStep] = useState('1');
 
   // 판을 닫고 편집 칸에 커서를 돌려준 뒤 넣는다(표 · 그래프는 본문에 커서가 그대로, 연표 · 분수 · 루트는 첫 칸으로)
-  const run = (fn: () => void, focus = true) => {
+  const run = (fn: (view: EditorView) => void, focus = true) => {
     onClose();
+    const view = target();
+    if (!view) return place(fn);
     if (focus) view.focus();
-    fn();
+    fn(view);
   };
-  const table = () => run(() => insertTable(view, n(rows, 3), n(cols, 3)));
-  const numberLine = () => run(() => insertNumberLine(view, 0, Math.max(1, Math.round(n(line, 10)))));
-  const chrono = () => run(() => insertChronology(view, start.trim() === '' ? null : n(start, 2000), n(cells, 10), n(step, 1)), false);
+  const table = () => run((view) => insertTable(view, n(rows, 3), n(cols, 3)));
+  const numberLine = () => run((view) => insertNumberLine(view, 0, Math.max(1, Math.round(n(line, 10)))));
+  const chrono = () => run((view) => insertChronology(view, start.trim() === '' ? null : n(start, 2000), n(cells, 10), n(step, 1)), false);
   const onEnter = (fn: () => void) => (e: KeyboardEvent) => {
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
       e.preventDefault();
@@ -93,7 +96,7 @@ export function InsertPanel({ view, app, onClose }: Props) {
       <div className="ins-row">
         <b>그래프</b>
         {GRAPHS.map(([tpl, name]) => (
-          <button key={tpl} type="button" onClick={() => run(() => insertGraph(view, tpl))}>
+          <button key={tpl} type="button" onClick={() => run((view) => insertGraph(view, tpl))}>
             {name}
           </button>
         ))}
@@ -101,13 +104,20 @@ export function InsertPanel({ view, app, onClose }: Props) {
 
       <div className="ins-row">
         <b>그 밖에</b>
-        <button type="button" onClick={() => run(() => insertMath(view, 'frac'), false)}>
+        <button type="button" onClick={() => run((view) => insertMath(view, 'frac'), false)}>
           분수
         </button>
-        <button type="button" onClick={() => run(() => insertMath(view, 'sqrt'), false)}>
+        <button type="button" onClick={() => run((view) => insertMath(view, 'sqrt'), false)}>
           루트 √
         </button>
-        <button type="button" onClick={() => run(() => app('draw-text'), false)} title="누르고 종이를 누르면 그 자리에(빈 곳 두 번 누르기 · ⌥+클릭으로도)">
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            app('draw-text');
+          }}
+          title="누르고 종이를 누르면 그 자리에(빈 종이 누르기 · ⌥+클릭으로도)"
+        >
           글상자
         </button>
       </div>
