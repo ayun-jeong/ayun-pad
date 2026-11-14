@@ -1,5 +1,6 @@
 import { fitPitch, halfLabel, HALF_W, A4_H, textWidth, type Typo } from '../editor/layout';
 import { fontStack } from '../editor/schema';
+import { halvesFor } from '../editor/halves';
 
 export const PX_PER_MM = 96 / 25.4;
 
@@ -46,8 +47,7 @@ export function countHalves(source: HTMLElement, typo: Typo): number {
   document.body.appendChild(probe);
   const h = col.offsetHeight;
   probe.remove();
-  const halfPx = fitPitch(typo).usable * PX_PER_MM;
-  return Math.max(1, Math.ceil(h / halfPx - 1e-3));
+  return halvesFor(h, fitPitch(typo).usable * PX_PER_MM);
 }
 
 // k번째 반쪽(0부터). 왼쪽 반쪽은 바깥 여백이 왼쪽, 오른쪽 반쪽은 바깥 여백이 오른쪽이다.

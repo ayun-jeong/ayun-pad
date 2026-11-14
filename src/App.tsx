@@ -4,11 +4,11 @@ import type { EditorView } from 'prosemirror-view';
 import { redo, undo } from 'y-prosemirror';
 import type * as Y from 'yjs';
 import { DEFAULT_DRAW, measureLines, type DrawState } from './draw/ShapesLayer';
-import { anchorAt, DEFAULT_W, resolve, SHAPES, translate, unresolve, type Shape, type TextShape, type Tool } from './draw/model';
+import { anchorAt, DEFAULT_W, hit, resolve, SHAPES, translate, unresolve, type Resolved, type Shape, type TextShape, type Tool } from './draw/model';
 import { liveBox, plainText, textBoxes } from './draw/TextBox';
 import { Fragment, type Node as PMNode } from 'prosemirror-model';
 import { circleCmd, fontCmd, hlCmd, indentCmd, penCmd, sideCmd, toggleBranchCmd, trackCmd } from './editor/commands';
-import { halfAt, hasContent, measureBlocks, shiftOf, textUnits, topOf, type HalfOp } from './editor/halves';
+import { bottomOf, halvesFor, hasContent, measureBlocks, shiftOf, spanOf, textUnits, topOf, type HalfOp } from './editor/halves';
 import { newId } from './editor/ids';
 import { schema } from './editor/schema';
 import { lineText } from './editor/decorations';
@@ -213,6 +213,11 @@ export function App() {
   const schedulePages = useCallback(() => {
     clearTimeout(pagesTimer.current);
     pagesTimer.current = window.setTimeout(() => setPagesVer((v) => v + 1), 150);
+  }, []);
+  // 반쪽 단추 · 글상자 옮기기 뒤에는 기다리지 않고 바로(편집 칸이 새 자리로 다시 그려진 다음 화면에서)
+  const refreshPages = useCallback(() => {
+    clearTimeout(pagesTimer.current);
+    requestAnimationFrame(() => requestAnimationFrame(() => setPagesVer((v) => v + 1)));
   }, []);
   const [source, setSource] = useState<HTMLElement | null>(null);
   const [sync, setSync] = useState<SyncStatus>(() => hub.status());
@@ -654,10 +659,17 @@ export function App() {
   // 그림 · 글상자의 지금 자리(줄 위치를 푼 것)
   const resolvedShapes = useCallback((L: NonNullable<ReturnType<typeof layoutNow>>) => {
     const lines = measureLines(L.src, L.v.dom, L.pitch);
-    return { lines, rs: [...L.d.shapes.values()].map((s) => resolve(s, lines)) };
+    // 글상자 높이는 그려진 것에서(편집 칸은 보기 화면 동안에도 화면 밖에 그려져 있다)
+    const th = (id: string) => {
+      const el = L.src.querySelector<HTMLElement>(`.tbox[data-sid="${id}"]`);
+      return el ? el.offsetHeight / PX_PER_MM : L.pitch;
+    };
+    return { lines, th, rs: [...L.d.shapes.values()].map((s) => resolve(s, lines)) };
   }, []);
   // 반쪽 수: 칼럼 높이(글상자 · 그림 · 끝에 넣은 빈 반쪽까지)
-  const halvesNow = (L: NonNullable<ReturnType<typeof layoutNow>>) => Math.max(1, Math.ceil(L.src.offsetHeight / PX_PER_MM / L.usable - 0.01));
+  const halvesNow = (L: NonNullable<ReturnType<typeof layoutNow>>) => halvesFor(L.src.offsetHeight / PX_PER_MM, L.usable);
+  // 그림 · 글상자가 차지하는 반쪽 [집(맨 위가 든 반쪽), 끝]
+  const spanNow = (r: Resolved, th: (id: string) => number, usable: number) => spanOf(topOf(r), bottomOf(r, th), usable);
 
   // 본문 글(종이에 바로 쓴 예전 글)을 반쪽마다 같은 자리의 글상자로 바꾼다. only: 그 블록이 든 반쪽만(두 번 눌러 고칠 때).
   // 반쪽 하나만 바꿀 때는 그 자리를 같은 높이의 빈 줄로 채워 아래 글이 움직이지 않게 하고, 다 바꿀 때는 본문을 빈 줄 하나로.
@@ -721,47 +733,98 @@ export function App() {
     },
     [convertBody, toast],
   );
-  // 반쪽마다: 빈 반쪽인지(글상자 · 그림 · 본문 글이 없음)
+  // 반쪽마다: 빈 반쪽인지(글상자 · 그림 · 본문 글이 조금도 걸치지 않음 — 위 반쪽에서 넘어온 글상자 끝도 내용이다)
   const pageInfo = useCallback((): PageInfo => {
     const L = layoutNow();
     if (!L) return { starts: new Set([0]), blank: new Set(), last: 0 };
     const H = halvesNow(L);
     const busy = new Set<number>();
-    for (const r of resolvedShapes(L).rs) busy.add(Math.min(H - 1, halfAt(topOf(r), L.usable)));
-    for (const b of measureBlocks(L.v, L.usable, PX_PER_MM, L.zoom)) if (hasContent(b.node)) busy.add(Math.min(H - 1, b.half));
+    const mark = ([a, b]: [number, number]) => {
+      for (let k = a; k <= Math.min(b, H - 1); k++) busy.add(k);
+    };
+    const { rs, th } = resolvedShapes(L);
+    for (const r of rs) mark(spanNow(r, th, L.usable));
+    for (const b of measureBlocks(L.v, L.usable, PX_PER_MM, L.zoom)) if (hasContent(b.node)) mark(spanOf(b.top, b.top + b.height, L.usable));
     const all = Array.from({ length: H }, (_, k) => k);
     return { starts: new Set(all), blank: new Set(H > 1 ? all.filter((k) => !busy.has(k)) : []), last: H - 1 };
   }, [layoutNow, resolvedShapes]);
-  // 반쪽 옮기기 · 빈 반쪽 넣기 · 지우기: 그 반쪽에 맨 위가 든 글상자 · 그림을 반쪽 높이만큼 옮긴다(본문 글이 있으면 먼저 글상자로)
+  // 반쪽 옮기기 · 빈 반쪽 넣기 · 지우기: 그 반쪽에 맨 위가 든 글상자 · 그림을 반쪽 높이만큼 옮긴다(본문 글이 있으면 먼저 글상자로).
+  // 돌려주는 값: 다 하고 나서 눈으로 따라갈 반쪽(잠깐 표시). 반쪽 수도 같은 되돌리기 칸이라 ⌘Z 한 번이면 다 돌아온다.
   const pageOp = useCallback(
-    (op: PageOp) => {
-      if (readingRef.current) return toast(READ_HINT);
+    (op: PageOp): number | undefined => {
+      if (readingRef.current) {
+        toast(READ_HINT);
+        return;
+      }
       let L = layoutNow();
       if (!L) return;
       let H = halvesNow(L);
       const h: HalfOp = op.t === 'shift' ? { t: 'move', from: op.half, to: op.half + op.dir } : op;
       if (h.t === 'move' && (h.to < 0 || h.to >= H || h.from === h.to)) return;
-      if (h.t === 'del' && !pageInfo().blank.has(h.half)) return toast('빈 반쪽만 지울 수 있어요');
+      if (h.t === 'del' && !pageInfo().blank.has(h.half)) {
+        toast('글상자 · 그림이 걸쳐 있는 반쪽은 지울 수 없어요(먼저 옮기거나 지워 주세요)');
+        return;
+      }
       const converted = h.t !== 'del' && measureBlocks(L.v, L.usable, PX_PER_MM, L.zoom).some((b) => hasContent(b.node)) ? convertBody().length : 0;
       L = layoutNow();
       if (!L) return;
       H = Math.max(H, halvesNow(L));
-      const { lines, rs } = resolvedShapes(L);
+      const { lines, rs, th } = resolvedShapes(L);
       const d = L.d;
+      const usable = L.usable;
       d.ydoc.transact(() => {
         for (const r of rs) {
-          const k = shiftOf(h, Math.min(H - 1, halfAt(topOf(r), L!.usable)));
-          if (k) d.shapes.set(r.id, JSON.parse(JSON.stringify(unresolve(translate(r, 0, k * L!.usable), lines))) as Shape);
+          const k = shiftOf(h, Math.min(H - 1, spanNow(r, th, usable)[0]));
+          if (k) d.shapes.set(r.id, JSON.parse(JSON.stringify(unresolve(translate(r, 0, k * usable), lines))) as Shape);
         }
+        writeHalves(d, h.t === 'add' ? H + 1 : h.t === 'del' ? H - 1 : H);
       }, SHAPES);
-      writeHalves(d, h.t === 'add' ? H + 1 : h.t === 'del' ? H - 1 : H);
       const note = converted ? ' · 본문 글은 반쪽마다 글상자로 바꿨어요' : '';
       if (h.t === 'move') toast(`${halfLabel(h.from)} 반쪽을 ${halfLabel(h.to)} 자리로 옮겼어요${note} (⌘Z로 되돌림)`);
       else if (h.t === 'add') toast(`${halfLabel(h.after)} 뒤에 빈 반쪽을 넣었어요${note}`);
-      else toast(`빈 반쪽(${halfLabel(h.half)})을 지웠어요`);
-      schedulePages();
+      else toast(`빈 반쪽(${halfLabel(h.half)})을 지웠어요 (⌘Z로 되돌림)`);
+      refreshPages();
+      return h.t === 'move' ? h.to : h.t === 'add' ? h.after + 1 : undefined;
     },
-    [layoutNow, resolvedShapes, convertBody, pageInfo, schedulePages, toast],
+    [layoutNow, resolvedShapes, convertBody, pageInfo, refreshPages, toast],
+  );
+  // 보기 화면에서 글상자 · 그림 하나를 끌어 옮기기(반쪽을 넘어가도 된다). 좌표는 칼럼 기준 mm
+  const moveItem = useCallback(
+    (id: string, dx: number, dy: number) => {
+      if (readingRef.current) return toast(READ_HINT);
+      const L = layoutNow();
+      if (!L || (Math.abs(dx) < 0.05 && Math.abs(dy) < 0.05)) return;
+      const { lines, rs } = resolvedShapes(L);
+      const r = rs.find((x) => x.id === id);
+      if (!r) return;
+      L.d.ydoc.transact(() => L.d.shapes.set(id, JSON.parse(JSON.stringify(unresolve(translate(r, dx, dy), lines))) as Shape), SHAPES);
+      refreshPages();
+    },
+    [layoutNow, resolvedShapes, refreshPages, toast],
+  );
+  // 보기 화면에서 누른 자리(칼럼 mm)의 그림(선 · 화살표 · 네모 · 원). 글상자는 PagesView가 화면에서 바로 찾는다
+  const pickItem = useCallback(
+    (x: number, y: number, tol: number): string | null => {
+      const L = layoutNow();
+      if (!L) return null;
+      const { rs, th } = resolvedShapes(L);
+      const z = new Map([...L.d.shapes.values()].map((s) => [s.id, s.z]));
+      const top = rs.filter((r) => r.t !== 'text' && hit(r, { x, y }, tol, th)).sort((a, b) => (z.get(b.id) ?? 0) - (z.get(a.id) ?? 0))[0];
+      return top?.id ?? null;
+    },
+    [layoutNow, resolvedShapes],
+  );
+  // 보기 화면에서 글상자를 두 번 누르면 편집 화면의 그 글상자를 바로 고치기
+  const editBox = useCallback(
+    (id: string) => {
+      if (readingRef.current) return;
+      setMode('edit');
+      requestAnimationFrame(() => {
+        srcRef.current?.querySelector(`.tbox[data-sid="${id}"]`)?.scrollIntoView({ block: 'center' });
+        window.dispatchEvent(new CustomEvent('ayunpad-edit-box', { detail: id }));
+      });
+    },
+    [],
   );
 
   const onState = useCallback((state: EditorState) => {
@@ -902,11 +965,23 @@ export function App() {
       setTypo(null);
       return;
     }
-    const syncTypo = () => setTypo(readTypo(doc));
+    // 글자 모양이 바뀔 때만(반쪽 수 'halves'가 바뀔 때마다 보기 화면을 한 번 더 다시 그리지 않게)
+    const syncTypo = (e?: Y.YMapEvent<unknown>) => {
+      if (!e || e.keysChanged.has('typo')) setTypo(readTypo(doc));
+      if (e?.keysChanged.has('halves') && modeRef.current !== 'edit') schedulePages();
+    };
+    // 보기 화면 동안 그림 · 글상자가 바뀌면(⌘Z · 다른 기기) 다시 그린다
+    const onShapes = () => {
+      if (modeRef.current !== 'edit') schedulePages();
+    };
     syncTypo();
     doc.meta.observe(syncTypo);
-    unobserve.current = () => doc.meta.unobserve(syncTypo);
-  }, [jumpTo]);
+    doc.shapes.observe(onShapes);
+    unobserve.current = () => {
+      doc.meta.unobserve(syncTypo);
+      doc.shapes.unobserve(onShapes);
+    };
+  }, [jumpTo, schedulePages]);
 
   const applyColor = useCallback(
     (hex: string, m: 'pen' | 'hl') => {
@@ -935,7 +1010,7 @@ export function App() {
       { name: '편집 화면', keys: '⌥1', run: () => act('view-edit') },
       { name: '반쪽 보기', keys: '⌥2', run: () => act('view-half') },
       { name: 'A4 합침 보기', keys: '⌥3', run: () => act('view-a4') },
-      { name: '반쪽 옮기기 · 빈 반쪽 넣기(A4 보기에서 ◀ ▶ · 끌어 놓기 · ＋)', alias: ['페이지 옮기기', '페이지 추가', '반쪽 순서', '왼쪽 오른쪽'], run: () => act('view-a4') },
+      { name: '반쪽 옮기기 · 빈 반쪽 넣기 · 글상자 옮기기(A4 보기에서 ◀ ▶ · ＋ · ×, 글상자 끌기)', alias: ['페이지 옮기기', '페이지 추가', '페이지 삭제', '반쪽 순서', '왼쪽 오른쪽', '글상자 옮기기'], run: () => act('view-a4') },
       { name: '인쇄 · PDF 저장', keys: '⌘P', alias: ['print', '프린트'], run: () => setTimeout(() => window.print(), 80) },
       { name: '넣기: 표 · 수직선 · 연표 · 그래프 · 분수 · 글상자 · 도형', alias: ['insert', '표', '그래프', '수직선', '연표', '글상자', '네모'], run: () => act('insert') },
       { name: '그리기', keys: '⌥D', alias: ['draw', '화살표', '도형'], run: () => act('draw') },
@@ -1106,7 +1181,7 @@ export function App() {
               />
             </div>
             {mode !== 'edit' && source && typo && (
-              <PagesView mode={mode} source={source} typo={typo} zoom={zoom} version={pagesVer} reading={reading} pageInfo={pageInfo} onPage={pageOp} onPick={pickLine} />
+              <PagesView mode={mode} source={source} typo={typo} zoom={zoom} version={pagesVer} reading={reading} pageInfo={pageInfo} onPage={pageOp} onPick={pickLine} onMove={moveItem} pickAt={pickItem} onEditBox={editBox} />
             )}
           </>
         ) : (

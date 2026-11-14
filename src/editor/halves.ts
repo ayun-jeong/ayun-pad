@@ -9,11 +9,30 @@ import { outline, type Resolved } from '../draw/model';
 // y(mm)가 든 반쪽(0부터)
 export const halfAt = (y: number, usable: number) => Math.max(0, Math.floor((y + 0.01) / usable));
 
+// 칼럼 높이(mm)로 반쪽 수: 반쪽 높이의 1%(약 3mm)까지 넘친 것은 새 반쪽으로 치지 않는다.
+// 편집 화면 반쪽 선 · 보기 화면 · 반쪽 단추가 모두 이 하나로 센다(서로 다르면 ×를 눌러도 반쪽이 안 없어진다).
+export const HALF_TOL = 0.01;
+export const halvesFor = (h: number, usable: number) => Math.max(1, Math.ceil(h / usable - HALF_TOL));
+// 그림 · 글상자 아래로 종이가 이만큼 더 이어진다(EditorPane sheet-src 최소 높이)
+export const EXTENT_PAD = 1;
+
 // 그림 · 글상자의 맨 위(mm)
 export function topOf(r: Resolved): number {
   if (r.t === 'path') return Math.min(...outline(r).map((p) => p.y));
   if (r.t === 'text') return r.a.y;
   return Math.min(r.a.y, r.b.y);
+}
+// 그림 · 글상자의 아래 끝(mm). 글상자 높이는 그려진 것에서 잰다(th)
+export function bottomOf(r: Resolved, th: (id: string) => number): number {
+  if (r.t === 'path') return Math.max(...outline(r).map((p) => p.y));
+  if (r.t === 'text') return r.a.y + th(r.id);
+  return Math.max(r.a.y, r.b.y);
+}
+// 맨 위(top) ~ 아래 끝(bottom)이 차지하는 반쪽들 [첫 반쪽, 끝 반쪽].
+// 첫 반쪽(이 그림의 '집')은 경계 0.5mm 위까지 다음 반쪽으로 친다(본문 글을 바꾼 글상자는 반쪽 맨 위보다 0.2mm 위에 놓인다).
+export function spanOf(top: number, bottom: number, usable: number): [number, number] {
+  const a = halfAt(top + 0.5, usable);
+  return [a, Math.max(a, halvesFor(bottom + EXTENT_PAD, usable) - 1)];
 }
 
 // k번째 반쪽이 from을 빼서 to 자리에 넣은 뒤 몇 번째가 되나

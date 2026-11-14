@@ -578,16 +578,25 @@ body.marqueeing, body.marqueeing * { user-select: none !important; -webkit-user-
 
 /* 반쪽 · A4 보기 동안 편집 칸은 화면 밖에 그려 둔다(반쪽 옮기기 · 글상자로 바꾸기가 그 자리를 잰다) */
 .ed-off { position: fixed; left: -100000px; top: 0; visibility: hidden; pointer-events: none; }
-/* 반쪽 고치기 단추(보기 화면): ◀ ▶ 자리 바꾸기 · ＋ 빈 반쪽 · × 빈 반쪽 지우기. 마우스면 올렸을 때, 터치면 늘 */
-.pctl { position: absolute; top: 2mm; right: 2mm; display: flex; gap: 4px; z-index: 3; transform: scale(var(--inv, 1)); transform-origin: top right; opacity: 0; transition: opacity 0.12s; }
-.phalf:hover .pctl, .pctl:focus-within { opacity: 1; }
-@media (hover: none) { .pctl { opacity: 1; } }
-.pctl button { font: 600 14px/1 var(--ui); min-width: 30px; height: 30px; padding: 0 6px; border: 1px solid var(--rule-2); border-radius: 8px; background: rgba(255, 255, 255, 0.95); color: #222; cursor: pointer; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
-.pctl button:hover:not(:disabled) { border-color: #0064e8; color: #0064e8; }
+/* 반쪽 고치기 단추(보기 화면): ◀ ▶ 자리 바꾸기 · ＋ 빈 반쪽 · × 빈 반쪽 지우기. 종이 위 제목 줄에 늘 보인다(글을 가리지 않게).
+   보기 화면은 통째로 배율(transform)이 걸려 있어서 크기에 --inv를 곱해 화면에서는 늘 같은 크기 */
+.pfig figcaption { display: flex; align-items: center; min-height: calc(30px * var(--inv, 1)); }
+.pfig figcaption.two { display: grid; grid-template-columns: 1fr 1fr; }
+.pcap { display: flex; align-items: center; justify-content: space-between; gap: 2mm; min-width: 0; flex: 1; }
+.pfig figcaption.two .pcap:last-child { padding-left: 3mm; }
+.pfig figcaption.two .pcap:first-child { padding-right: 3mm; }
+.pctl { display: flex; gap: calc(4px * var(--inv, 1)); flex: none; }
+.pctl button { font: 600 calc(14px * var(--inv, 1)) / 1 var(--ui); min-width: calc(30px * var(--inv, 1)); height: calc(28px * var(--inv, 1)); padding: 0 calc(6px * var(--inv, 1)); border: 1px solid var(--rule-2); border-radius: calc(8px * var(--inv, 1)); background: var(--surface); color: var(--ink); cursor: pointer; }
+.pctl button:hover:not(:disabled) { border-color: var(--focus); color: var(--focus); }
 .pctl button:disabled { opacity: 0.35; cursor: default; }
-.phalf[data-half] { cursor: grab; }
-.phalf.pdrag { opacity: 0.45; }
-.phalf.pdrop { box-shadow: inset 0 0 0 1mm rgba(0, 100, 232, 0.7) !important; }
+.pctl button[data-act='del'] { color: #c62828; }
+.phalf.pflash { box-shadow: inset 0 0 0 0.8mm rgba(0, 100, 232, 0.55) !important; transition: box-shadow 0.3s; }
+/* 보기 화면에서 글상자 · 그림은 하나씩 끌어 옮긴다(두 번 누르면 편집 화면에서 고치기) */
+.pages:not(.ro) .shapes-layer .tbox:not(.tedit) { cursor: grab; }
+.pages.ro .shapes-layer .tbox:not(.tedit) { cursor: auto; }
+.pages.ro .shapes-layer .tbox:hover { outline: none; }
+.pages .pmove { opacity: 0.85; }
+.pages .tbox.pmove { outline: 0.25mm dashed rgba(0, 100, 232, 0.8) !important; outline-offset: 0.3mm; }
 body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: none !important; }
 /* 종이에 바로 쓰지 않을 때: 본문은 고치지 않는다(예전 본문 위젯의 손잡이 · 막대 숨김), 빈 종이는 눌러서 글상자 */
 .paper-off .sheet-src .editor .wg-ctl, .paper-off .sheet-src .editor .tbl-ctl, .paper-off .sheet-src .editor .wg-size, .paper-off .sheet-src .editor .column-resize-handle { display: none !important; }

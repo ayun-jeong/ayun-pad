@@ -12,6 +12,7 @@ import { newId } from '../editor/ids';
 import { autoKey } from '../editor/decorations';
 import type { RuleSettings } from '../editor/inputRules';
 import { fitPitch, halfLabel, HALF_W, DEFAULT_TYPO, type Typo } from '../editor/layout';
+import { EXTENT_PAD, halvesFor } from '../editor/halves';
 import { fontStack, schema } from '../editor/schema';
 import type { AppAction } from '../editor/shortcuts';
 import { mathKey, type MathMenuState } from '../editor/mathMenu';
@@ -166,9 +167,9 @@ export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, s
     let um: Y.UndoManager | null = null;
     let cancelled = false;
     const doc = openNote(noteId);
-    const onMeta = () => {
-      setTypo(readTypo(doc));
-      setMinHalves(readHalves(doc));
+    const onMeta = (e?: Y.YMapEvent<unknown>) => {
+      if (!e || e.keysChanged.has('typo')) setTypo(readTypo(doc));
+      if (!e || e.keysChanged.has('halves')) setMinHalves(readHalves(doc));
     };
     const onUpdate = (_u: Uint8Array, origin: unknown) => {
       if (origin !== null && typeof origin === 'object' && 'whenSynced' in (origin as object)) return; // IndexedDB에서 읽어 온 것
@@ -187,7 +188,8 @@ export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, s
       doc.meta.observe(onMeta);
       doc.ydoc.on('update', onUpdate);
       // 글(fragment)과 그림(shapes)을 한 되돌리기 줄에. 다른 기기에서 온 변경은 되돌리지 않는다.
-      um = new Y.UndoManager([doc.fragment, doc.shapes], {
+      // 반쪽 수(meta 'halves')도 같이: 반쪽 넣기 · 지우기를 ⌘Z 한 번에 되돌린다(글자 모양 등 다른 설정은 출처가 없어 안 잡힘)
+      um = new Y.UndoManager([doc.fragment, doc.shapes, doc.meta], {
         trackedOrigins: new Set<unknown>([ySyncPluginKey, SHAPES]),
         deleteFilter: (item) => defaultDeleteFilter(item, defaultProtectedNodes),
       });
@@ -304,7 +306,7 @@ export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, s
 
   const fit = fitPitch(typo);
   const halfPx = fit.usable * PX_PER_MM;
-  const halves = Math.max(1, Math.ceil((srcH - 0.5) / halfPx));
+  const halves = halvesFor(srcH, halfPx);
   const vars = {
     '--font': fontStack(typo.font),
     '--fs': `${typo.fontPt}pt`,
@@ -334,7 +336,7 @@ export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, s
             {Array.from({ length: halves - 1 }, (_, k) => (
               <div key={k} className="guide" style={{ top: (k + 1) * halfPx, left: `-${typo.mOuter}mm`, right: `-${typo.mInner}mm` }} />
             ))}
-            <div className="sheet-src" ref={srcRef} style={{ minHeight: `${Math.max(fit.usable * minHalves, extent + 1)}mm` }}>
+            <div className="sheet-src" ref={srcRef} style={{ minHeight: `${Math.max(fit.usable * minHalves, extent + EXTENT_PAD)}mm` }}>
               <div ref={mountRef} />
               {live && srcRef.current && (
                 <ShapesLayer
