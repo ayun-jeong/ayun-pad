@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { Fragment, Node, Slice, type Mark } from 'prosemirror-model';
-import { EditorState, Selection } from 'prosemirror-state';
+import { AllSelection, EditorState, Selection, type Command } from 'prosemirror-state';
 import { Transform } from 'prosemirror-transform';
 import { EditorView } from 'prosemirror-view';
 import type * as Y from 'yjs';
@@ -56,6 +56,22 @@ export function withEffects(s: TextShape, hits: { from: number; to: number }[], 
   return { ...s, doc: tr.doc.toJSON(), text: plainText(tr.doc) };
 }
 
+// 글상자 글 전체를 고른 채로 명령 하나(펜 · 형광펜 · 동그라미 · 글꼴 · 자간)를 돌린 결과. 바뀐 게 없으면 null
+export function wholeBox<T extends Pick<TextShape, 'doc' | 'text'>>(s: T, cmd: Command): T | null {
+  const doc = textDoc(s);
+  let out: Node | null = null;
+  cmd(EditorState.create({ schema, doc, selection: new AllSelection(doc) }), (tr) => {
+    if (tr.docChanged) out = tr.doc;
+  });
+  const d = out as Node | null;
+  return d ? { ...s, doc: d.toJSON(), text: plainText(d) } : null;
+}
+// 글상자 전체 글자색: 안의 모든 글(자동 빨강 · 직접 칠한 색까지)을 그 색으로, 글상자 기본 색도 같이.
+// c = null 이면 자동으로(직접 칠한 색을 걷고 기본 검정 → 꺾쇠 줄 · 대제목은 다시 자동 빨강)
+export function penWhole<T extends Pick<TextShape, 'doc' | 'text' | 'c'>>(s: T, c: string | null): T {
+  return { ...(wholeBox(s, penCmd(c)) ?? s), c: c ?? 'k' };
+}
+
 export function withReplaced(s: TextShape, hits: { from: number; to: number }[], text: string): TextShape {
   const tr = new Transform(textDoc(s));
   for (const h of [...hits].reverse()) {
@@ -97,17 +113,22 @@ interface BoxProps {
 const TB_COLORS: PenKey[] = ['r', 'b', 'k', 'p', 'y', 'g'];
 const TB_HL: PenKey[] = ['y', 'r', 'b', 'g'];
 
-// 글상자를 고치는 동안 바로 위에 뜨는 막대. 글자를 끌어 골랐으면 고른 글자만, 아니면 글상자 전체에.
+// 글상자를 고르거나 고치는 동안 바로 위에 뜨는 막대. 글자를 끌어 골랐으면 고른 글자만, 아니면 글상자 전체에.
 function TbBar({ view, r, editing, onPatch }: { view: EditorView | null; r: Resolved & { t: 'text' }; editing: boolean; onPatch(p: Partial<TextShape>): void }) {
   // 누를 때 글상자에서 커서 · 고른 글자가 빠지지 않게
   const keep = (e: React.SyntheticEvent) => {
     e.preventDefault();
     e.stopPropagation();
   };
-  const color = (c: PenKey) => {
+  // 전체면 안의 모든 글(자동 빨강 · 직접 칠한 색까지)을 그 색으로(되돌리기 한 번)
+  const color = (c: PenKey | null) => {
     const v = view;
     if (editing && v && !v.state.selection.empty) penCmd(c)(v.state, v.dispatch, v);
-    else onPatch({ c });
+    else {
+      const cur = v ? { doc: v.state.doc.toJSON(), text: plainText(v.state.doc), c: r.c } : r;
+      const w = penWhole(cur, c);
+      onPatch({ c: w.c, doc: w.doc, text: w.text });
+    }
   };
   const hl = (c: PenKey | null) => {
     const v = view;
@@ -143,6 +164,9 @@ function TbBar({ view, r, editing, onPatch }: { view: EditorView | null; r: Reso
           <i style={{ background: strokeOf(k) }} />
         </button>
       ))}
+      <button type="button" className="tb-auto" title="자동 색(직접 칠한 색 지우기 — 꺾쇠 줄 · 대제목은 자동 빨강)" aria-label="자동 색" onClick={() => color(null)}>
+        <i className="pen-auto" />
+      </button>
       <span className="tb-sep" />
       {TB_HL.map((k) => (
         <button key={`h${k}`} type="button" title={`${PEN_NAME[k]} 형광펜(고른 글자만, 아니면 전체)`} aria-label={`${PEN_NAME[k]} 형광펜`} onClick={() => hl(k)}>

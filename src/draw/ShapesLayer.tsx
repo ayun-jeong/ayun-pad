@@ -7,7 +7,8 @@ import { newId } from '../editor/ids';
 import type { RuleSettings } from '../editor/inputRules';
 import { PEN_NAME, type PenKey } from '../editor/model';
 import { isMac, keyId, type ShortcutHost } from '../editor/shortcuts';
-import { emptyTextDoc, plainText, TextBox, textDoc, withEffects } from './TextBox';
+import { circleCmd } from '../editor/commands';
+import { emptyTextDoc, penWhole, plainText, TextBox, textDoc, wholeBox, withEffects } from './TextBox';
 import { clip, copyShapes, forgetOnOtherCopy, shapesIn } from './clip';
 import {
   anchorAt,
@@ -60,6 +61,9 @@ export interface DrawState {
 }
 
 export const DEFAULT_DRAW: DrawState = { tool: 'select', c: 'r', w: DEFAULT_W, ortho: false, lock: false };
+
+// 지금 통째로 골라 둔 글상자(고치는 중이 아닌 것). 위쪽 펜 · 형광펜 · 동그라미 단추가 이 글상자 글 전체에 칠한다(App.withView)
+export const pickedBoxes: { ids: string[] } = { ids: [] };
 
 // 본문 위젯(표 · 그래프 · 연표 · 수직선): 글 흐름 안에 있어서 옮기지는 못하고, 골라서 지우기 · 글씨 크기만 한다
 export interface WidgetApi {
@@ -537,6 +541,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     if (!hidden) geo.current = { lines, W, H };
   }
   const resolved = all.map((s) => ix.drafts.get(s.id) ?? resolve(s, lines));
+  pickedBoxes.ids = draw && !reading ? ix.sel.filter((id) => id !== editing && shapes.get(id)?.t === 'text') : [];
+  useEffect(() => () => void (pickedBoxes.ids = []), []);
   const byId = (id: string | null | undefined) => (id ? resolved.find((r) => r.id === id) : undefined);
   const live = (id: string) => shapes.has(id) || pending?.id === id;
   if (ix.sel.some((id) => !live(id))) ix.sel = ix.sel.filter(live);
@@ -1087,7 +1093,11 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     write(() => {
       for (const s of list) {
         const p = Object.entries(typeof patch === 'function' ? patch(s) : patch).filter(([k]) => fits(s, k));
-        if (p.length) shapes.set(s.id, clean({ ...s, ...Object.fromEntries(p) } as Shape));
+        if (!p.length) continue;
+        let next = { ...s, ...Object.fromEntries(p) } as Shape;
+        // 글상자 색은 안의 글 전체(자동 빨강 · 직접 칠한 색까지)
+        if (next.t === 'text' && p.some(([k]) => k === 'c')) next = penWhole(next, next.c);
+        shapes.set(s.id, clean(next));
       }
     });
   };
@@ -1265,6 +1275,14 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       else if (id.startsWith('alt+') && !id.startsWith('alt+shift') && PEN_CODES[code]) {
         setDraw({ c: PEN_CODES[code] });
         update({ c: PEN_CODES[code] });
+      } else if (id === 'alt+KeyA' && sel.some((s) => s.t === 'text')) {
+        // 고른 글상자: 자동 색(직접 칠한 색을 걷어 꺾쇠 줄 · 대제목은 다시 자동 빨강)
+        const texts = sel.filter((s): s is TextShape => s.t === 'text');
+        write(() => texts.forEach((s) => shapes.set(s.id, clean(penWhole(s, null)))));
+      } else if (id === 'alt+KeyO' && sel.some((s) => s.t === 'text')) {
+        // 고른 글상자: 글 전체에 동그라미(이미 있으면 걷기)
+        const texts = sel.filter((s): s is TextShape => s.t === 'text');
+        write(() => texts.forEach((s) => shapes.set(s.id, clean(wholeBox(s, circleCmd) ?? s))));
       } else if (id === 'alt+KeyD') {
         finishOrCancel();
         setDraw(null);

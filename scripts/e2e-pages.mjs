@@ -318,6 +318,80 @@ try {
   await combo(['Alt'], 'Digit1');
   await sleep(300);
 
+  // 2-3) 글상자를 통째로 골라 둔 채 색 바꾸기 → 안의 글 전체(자동 빨강 꺾쇠 줄까지). 꾸미기 막대 · ⌥키 · 위쪽 단추 모두
+  await newNote();
+  await page.$eval('.desk', (d) => (d.scrollTop = 0));
+  await sleep(100);
+  L = await layer();
+  ppm = L.w / L.mmW;
+  P = (x, y) => [L.x + x * ppm, L.y + y * ppm];
+  await page.mouse.click(...P(20, 30));
+  await page.waitForSelector('.tbox.tedit .tb-edit', { timeout: 3000 }).catch(() => {});
+  await k.type('- 경영학 개론');
+  await k.press('Enter');
+  await k.type('마케팅 4P');
+  await k.press('Escape');
+  await sleep(250);
+  const [cbx] = await boxes();
+  // 글상자 안 글자마다 보이는 색(중복 없이)
+  const inkOf = () =>
+    page.evaluate((id) => {
+      const root = document.querySelector(`.tbox[data-sid="${id}"] .tb-edit`);
+      const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      const out = new Set();
+      for (let n = w.nextNode(); n; n = w.nextNode()) if (n.textContent.trim() && !n.parentElement.closest('.tree, .tl, [class*="branch"], [contenteditable="false"]')) out.add(getComputedStyle(n.parentElement).color);
+      return [...out];
+    }, cbx.id);
+  const RED = 'rgb(236, 53, 53)';
+  const BLUE = 'rgb(0, 100, 232)';
+  const BLACK = 'rgb(0, 0, 0)';
+  check(JSON.stringify(await inkOf()) === JSON.stringify([RED]), `꺾쇠 줄 글상자는 처음에 자동 빨강 (${await inkOf()})`);
+  const pickBox = async () => {
+    const bb = await (await page.$(`.tbox[data-sid="${cbx.id}"]`)).boundingBox();
+    await page.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2);
+    await page.waitForSelector(`.tbox[data-sid="${cbx.id}"] .tb-bar`, { timeout: 2000 }).catch(() => {});
+    await sleep(100);
+  };
+  await pickBox();
+  check(!!(await page.$(`.tbox[data-sid="${cbx.id}"]:not(.tedit) .tb-bar`)), '한 번 누르면 글상자 통째로 고름(꾸미기 막대)');
+  await (await page.$(`.tbox[data-sid="${cbx.id}"] .tb-bar button[aria-label="파랑 글자"]`)).click();
+  await sleep(250);
+  const sh = () => page.evaluate((id) => window.__ayunpad.doc().shapes.get(id), cbx.id);
+  check(JSON.stringify(await inkOf()) === JSON.stringify([BLUE]) && (await sh()).c === 'b', `꾸미기 막대 파랑 → 글상자 글 전체가 파랑(자동 빨강 꺾쇠 줄까지) (${await inkOf()})`);
+  check(!!(await page.$(`.tbox[data-sid="${cbx.id}"]:not(.tedit) .tb-bar`)), '색을 바꿔도 고른 상태 그대로(고치기로 안 넘어감)');
+  await combo(['Meta'], 'KeyZ');
+  await sleep(300);
+  check(JSON.stringify(await inkOf()) === JSON.stringify([RED]), `⌘Z 한 번 → 원래 색 (${await inkOf()})`);
+  await pickBox();
+  await combo(['Alt'], 'KeyK');
+  await sleep(250);
+  check(JSON.stringify(await inkOf()) === JSON.stringify([BLACK]), `고른 채 ⌥K → 글 전체 검정 (${await inkOf()})`);
+  await combo(['Alt'], 'KeyA');
+  await sleep(250);
+  const noPen = await page.evaluate((id) => !JSON.stringify(window.__ayunpad.doc().shapes.get(id).doc).includes('"pen"'), cbx.id);
+  check(JSON.stringify(await inkOf()) === JSON.stringify([RED]) && noPen, `⌥A → 자동 색(직접 칠한 색 걷기, 꺾쇠 줄은 다시 자동 빨강) (${await inkOf()})`);
+  // 형광펜: 고른 채 ⌥⇧Y → 전체, ⌘K '형광펜 지우기'(위쪽 단추 · 명령과 같은 길) → 전체(자동 형광펜까지)
+  const hlOf = () => page.evaluate((id) => [...new Set((JSON.stringify(window.__ayunpad.doc().shapes.get(id).doc).match(/"hl","attrs":\{"c":"[a-z]+"/g) ?? []).map((m) => m.slice(-2, -1)))].join(','), cbx.id);
+  await combo(['Alt', 'Shift'], 'KeyY');
+  await sleep(250);
+  const hly = await hlOf();
+  await combo(['Meta'], 'KeyK');
+  await page.waitForSelector('.palette input');
+  await k.type('형광펜 지우기');
+  await sleep(250);
+  await page.$$eval('.pal-list button', (bs) => bs.find((b) => b.querySelector('.pal-title')?.textContent.startsWith('형광펜 지우기')).click());
+  await sleep(300);
+  const hln = await hlOf();
+  check(hly === 'y' && hln === 'e', `고른 채 ⌥⇧Y → 전체 노랑 형광펜 (${hly}), ⌘K 형광펜 지우기 → 글상자 전체(자동 형광펜까지) (${hln})`);
+  await pickBox();
+  await (await page.$(`.tbox[data-sid="${cbx.id}"] .tb-bar button[aria-label="초록 글자"]`)).click();
+  await sleep(200);
+  await (await page.$(`.tbox[data-sid="${cbx.id}"] .tb-bar button[aria-label="자동 색"]`)).click();
+  await sleep(250);
+  check(JSON.stringify(await inkOf()) === JSON.stringify([RED]), `꾸미기 막대 '자동 색' → 원래 자동 빨강 (${await inkOf()})`);
+  await k.press('Escape');
+  await sleep(150);
+
   // 3) 예전 본문 글: 두 번 누르면 그 반쪽 글이 같은 자리의 글상자로(바로 고치기)
   await page.evaluate(() => localStorage.setItem('ayunpad-paper', '1'));
   await page.reload({ waitUntil: 'networkidle0' });

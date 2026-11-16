@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { NodeSelection, Selection, TextSelection, type EditorState } from 'prosemirror-state';
+import { NodeSelection, Selection, TextSelection, type Command, type EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { redo, undo } from 'y-prosemirror';
 import type * as Y from 'yjs';
-import { DEFAULT_DRAW, measureLines, type DrawState } from './draw/ShapesLayer';
+import { DEFAULT_DRAW, measureLines, pickedBoxes, type DrawState } from './draw/ShapesLayer';
 import { anchorAt, DEFAULT_W, hit, resolve, SHAPES, translate, unresolve, type Resolved, type Shape, type TextShape, type Tool } from './draw/model';
-import { liveBox, plainText, textBoxes } from './draw/TextBox';
+import { liveBox, penWhole, plainText, textBoxes, wholeBox } from './draw/TextBox';
 import { Fragment, type Node as PMNode } from 'prosemirror-model';
 import { circleCmd, fontCmd, hlCmd, indentCmd, penCmd, sideCmd, toggleBranchCmd, trackCmd } from './editor/commands';
 import { bottomOf, halvesFor, hasContent, measureBlocks, shiftOf, spanOf, textUnits, topOf, type HalfOp } from './editor/halves';
@@ -382,9 +382,26 @@ export function App() {
     return paperRef.current ? viewRef.current : null;
   }, []);
   // 편집기에 명령 하나(펜 · 형광펜 · 들여쓰기 · 되돌리기 …). 읽기 모드에서는 하지 않는다.
+  // whole: 글자 꾸미기(펜 · 형광펜 · 동그라미 · 글꼴 · 자간). 글상자를 통째로 골라 둔 상태면(고치는 중 아님)
+  // 그 글상자 글 전체에 한다 — 펜은 자동 빨강 · 직접 칠한 색까지 그 색으로(pen: 색, null = 자동). 되돌리기 한 번.
   const withView = useCallback(
-    (fn: (v: EditorView) => void) => {
+    (fn: (v: EditorView) => void, whole?: { cmd: Command; pen?: string | null }) => {
       if (readingRef.current) return toast(READ_HINT);
+      const d = docRef.current;
+      const ids = whole && d ? pickedBoxes.ids.filter((id) => d.shapes.get(id)?.t === 'text') : [];
+      if (whole && d && ids.length) {
+        umRef.current?.stopCapturing();
+        d.ydoc.transact(() => {
+          for (const id of ids) {
+            const s = d.shapes.get(id);
+            if (s?.t !== 'text') continue;
+            const next = whole.pen !== undefined ? penWhole(s, whole.pen) : wholeBox(s, whole.cmd);
+            if (next) d.shapes.set(id, JSON.parse(JSON.stringify(next)) as Shape);
+          }
+        }, SHAPES);
+        umRef.current?.stopCapturing();
+        return;
+      }
       const v = activeView();
       if (!v) return toast(BOX_HINT);
       fn(v);
@@ -990,7 +1007,7 @@ export function App() {
 
   const applyColor = useCallback(
     (hex: string, m: 'pen' | 'hl') => {
-      withView((v) => (m === 'pen' ? penCmd(hex)(v.state, v.dispatch, v) : hlCmd(hex)(v.state, v.dispatch, v)));
+      withView((v) => (m === 'pen' ? penCmd(hex)(v.state, v.dispatch, v) : hlCmd(hex)(v.state, v.dispatch, v)), m === 'pen' ? { cmd: penCmd(hex), pen: hex } : { cmd: hlCmd(hex) });
       rememberColor(hex);
       setColorPop(null);
       toast(m === 'pen' ? `고른 색 펜 ${hex}` : `고른 색 형광펜 ${hex}`);
@@ -1021,7 +1038,7 @@ export function App() {
       { name: '그리기', keys: '⌥D', alias: ['draw', '화살표', '도형'], run: () => act('draw') },
       { name: '찾기 · 일괄 강조', keys: '⌘F', alias: ['find', '바꾸기', '동그라미'], run: () => act('find') },
       { name: '강조 모아 보기 · 지우기', alias: ['강조 지우기', '동그라미 지우기', '밑줄 지우기', '형광펜 지우기'], run: () => act('emph') },
-      { name: '형광펜 지우기: 고른 글자(없으면 지금 줄), 자동 형광펜도', keys: '⌥⇧X', alias: ['형광펜 없애기', 'highlight'], run: () => withView((v) => hlCmd('none')(v.state, v.dispatch, v)) },
+      { name: '형광펜 지우기: 고른 글자(없으면 지금 줄), 자동 형광펜도', keys: '⌥⇧X', alias: ['형광펜 없애기', 'highlight'], run: () => withView((v) => hlCmd('none')(v.state, v.dispatch, v), { cmd: hlCmd('none') }) },
       { name: '글자 모양', keys: '⌥T', alias: ['글꼴', '행간', '자간', '여백', '폰트'], run: () => act('type') },
       { name: '행간 좁게', keys: '⌥⇧,', run: () => act('pitch-down') },
       { name: '행간 넓게', keys: '⌥⇧.', run: () => act('pitch-up') },
@@ -1077,7 +1094,7 @@ export function App() {
           />
         </div>
         {pen && !reading && (
-          <button type="button" className="tbtn pen-now" onClick={() => withView((v) => penCmd(null)(v.state, v.dispatch, v))} title="지금 든 펜 · 누르면 자동 펜으로 (⌥A)">
+          <button type="button" className="tbtn pen-now" onClick={() => withView((v) => penCmd(null)(v.state, v.dispatch, v), { cmd: penCmd(null), pen: null })} title="지금 든 펜 · 누르면 자동 펜으로 (⌥A)">
             <i className="pen-dot" style={{ background: colorOf(pen) }} />
             <span className="wide-only">{penText}</span>
           </button>
@@ -1201,8 +1218,8 @@ export function App() {
           hasSelection={hasSel}
           onChange={changeTypo}
           onUpload={(f) => void onUpload(f)}
-          onSelectionFont={(f) => withView((v) => fontCmd(f)(v.state, v.dispatch, v))}
-          onSelectionTrack={(d) => withView((v) => trackCmd(d, (x) => toast(`자간 ${x.toFixed(2)}em`))(v.state, v.dispatch, v))}
+          onSelectionFont={(f) => withView((v) => fontCmd(f)(v.state, v.dispatch, v), { cmd: fontCmd(f) })}
+          onSelectionTrack={(d) => withView((v) => trackCmd(d, (x) => toast(`자간 ${x.toFixed(2)}em`))(v.state, v.dispatch, v), { cmd: trackCmd(d) })}
           onClose={() => setPanel(false)}
         />
       )}
@@ -1312,22 +1329,22 @@ export function App() {
       {mode === 'edit' && !draw && !reading && hasSel && (
         <nav className="touchbar selbar" aria-label="고른 글자 꾸미기">
           {(['r', 'b', 'k'] as const).map((c) => (
-            <button key={c} type="button" onPointerDown={keepFocus} onClick={() => withView((v) => penCmd(c)(v.state, v.dispatch, v))}>
+            <button key={c} type="button" onPointerDown={keepFocus} onClick={() => withView((v) => penCmd(c)(v.state, v.dispatch, v), { cmd: penCmd(c), pen: c })}>
               <span style={{ color: `var(--pen-${c})` }}>●</span> {PEN_NAME[c]}
             </button>
           ))}
           {(['y', 'r', 'b'] as const).map((c) => (
-            <button key={`h${c}`} type="button" onPointerDown={keepFocus} onClick={() => withView((v) => hlCmd(c)(v.state, v.dispatch, v))}>
+            <button key={`h${c}`} type="button" onPointerDown={keepFocus} onClick={() => withView((v) => hlCmd(c)(v.state, v.dispatch, v), { cmd: hlCmd(c) })}>
               <span className={`swatch hl-sw hl-${c}`} /> 형광 {PEN_NAME[c]}
             </button>
           ))}
-          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => hlCmd('none')(v.state, v.dispatch, v))}>
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => hlCmd('none')(v.state, v.dispatch, v), { cmd: hlCmd('none') })}>
             형광 지우기
           </button>
-          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => circleCmd(v.state, v.dispatch, v))}>
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => circleCmd(v.state, v.dispatch, v), { cmd: circleCmd })}>
             ◯ 동그라미
           </button>
-          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => penCmd(null)(v.state, v.dispatch, v))}>
+          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => penCmd(null)(v.state, v.dispatch, v), { cmd: penCmd(null), pen: null })}>
             글자색 지우기
           </button>
         </nav>
@@ -1340,7 +1357,7 @@ export function App() {
               type="button"
               onPointerDown={keepFocus}
               onClick={() => {
-                withView((v) => (subbar === 'pen' ? penCmd(c)(v.state, v.dispatch, v) : hlCmd(c)(v.state, v.dispatch, v)));
+                withView((v) => (subbar === 'pen' ? penCmd(c)(v.state, v.dispatch, v) : hlCmd(c)(v.state, v.dispatch, v)), subbar === 'pen' ? { cmd: penCmd(c), pen: c } : { cmd: hlCmd(c) });
                 setSubbar(null);
               }}
             >
@@ -1354,7 +1371,7 @@ export function App() {
             type="button"
             onPointerDown={keepFocus}
             onClick={() => {
-              withView((v) => (subbar === 'pen' ? penCmd(null)(v.state, v.dispatch, v) : hlCmd(null)(v.state, v.dispatch, v)));
+              withView((v) => (subbar === 'pen' ? penCmd(null)(v.state, v.dispatch, v) : hlCmd(null)(v.state, v.dispatch, v)), subbar === 'pen' ? { cmd: penCmd(null), pen: null } : { cmd: hlCmd(null) });
               setSubbar(null);
             }}
           >
@@ -1365,7 +1382,7 @@ export function App() {
               type="button"
               onPointerDown={keepFocus}
               onClick={() => {
-                withView((v) => hlCmd('none')(v.state, v.dispatch, v));
+                withView((v) => hlCmd('none')(v.state, v.dispatch, v), { cmd: hlCmd('none') });
                 setSubbar(null);
               }}
             >
