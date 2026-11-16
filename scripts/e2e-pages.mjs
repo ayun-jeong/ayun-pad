@@ -220,6 +220,104 @@ try {
   await combo(['Alt'], 'Digit1');
   await sleep(300);
 
+  // 2-2) ⌥(Alt) 누른 채 끌기 = 복제(원본은 그 자리, 놓은 자리에 복사본). 편집 화면 · 보기 화면 모두
+  await newNote();
+  await page.$eval('.desk', (d) => (d.scrollTop = 0));
+  await sleep(100);
+  L = await layer();
+  ppm = L.w / L.mmW;
+  P = (x, y) => [L.x + x * ppm, L.y + y * ppm];
+  await page.mouse.click(...P(20, 30));
+  await page.waitForSelector('.tbox.tedit .tb-edit', { timeout: 3000 }).catch(() => {});
+  await k.type('복제할 글');
+  await k.press('Escape');
+  await sleep(250);
+  const [orig] = await boxes();
+  let ob = await (await page.$(`.tbox[data-sid="${orig.id}"]`)).boundingBox();
+  await k.down('Alt');
+  await page.mouse.move(ob.x + 10, ob.y + ob.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(ob.x + 10 + 15 * ppm, ob.y + ob.height / 2 + 20 * ppm, { steps: 10 });
+  const ghost = await page.evaluate(() => ({ g: document.querySelectorAll('.sh-ghosts .tghost').length, c: document.body.classList.contains('copying') }));
+  await page.mouse.up();
+  await k.up('Alt');
+  await sleep(300);
+  let cb2 = await boxes();
+  const cp = cb2.find((b) => b.id !== orig.id);
+  check(ghost.g === 1 && ghost.c, `⌥ 끌기 중: 원본 자리에 흐린 모습 · 복사 커서 (${JSON.stringify(ghost)})`);
+  check(
+    cb2.length === 2 && Math.abs(cb2.find((b) => b.id === orig.id).y - orig.y) < 0.01 && cp?.text === '복제할 글' && Math.abs(cp.x - orig.x - 15) < 1 && Math.abs(cp.y - orig.y - 20) < 1,
+    `편집 화면 ⌥ 끌기 → 원본 그대로 + 놓은 자리에 복사본 (${JSON.stringify(cb2.map((b) => [b.text, b.x.toFixed(1), b.y.toFixed(1)]))})`,
+  );
+  check(!(await page.$('.sh-ghosts .tghost')) && !(await page.evaluate(() => document.body.classList.contains('copying'))), '놓으면 흐린 모습 · 복사 커서 없어짐');
+  await k.press('Escape');
+  await sleep(150);
+  await combo(['Meta'], 'KeyZ');
+  await sleep(300);
+  check((await boxes()).length === 1, `⌘Z 한 번 → 복사본만 없어짐 (${(await boxes()).length}개)`);
+  // 놓기 전에 ⌥를 떼면 그냥 옮기기
+  ob = await (await page.$(`.tbox[data-sid="${orig.id}"]`)).boundingBox();
+  await k.down('Alt');
+  await page.mouse.move(ob.x + 10, ob.y + ob.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(ob.x + 10 + 10 * ppm, ob.y + ob.height / 2, { steps: 6 });
+  await k.up('Alt');
+  await page.mouse.move(ob.x + 10 + 12 * ppm, ob.y + ob.height / 2, { steps: 2 });
+  await page.mouse.up();
+  await sleep(300);
+  cb2 = await boxes();
+  check(cb2.length === 1 && Math.abs(cb2[0].x - orig.x - 12) < 1, `놓기 전에 ⌥를 떼면 그냥 옮기기 (${cb2.length}개, x ${orig.x.toFixed(1)} → ${cb2[0].x.toFixed(1)})`);
+  await k.press('Escape');
+  await sleep(150);
+  // 그린 네모도: 테두리를 ⌥ 누른 채 끌기(그리기를 켜지 않은 글쓰기 화면, 새 글상자가 생기지 않음)
+  await page.evaluate(() => {
+    const d = window.__ayunpad.doc();
+    d.ydoc.transact(() => d.shapes.set('rq', { id: 'rq', t: 'rect', a: { l: null, r: 0, x: 20, y: 120 }, b: { l: null, r: 0, x: 50, y: 140 }, c: 'r', w: 0.35, z: 50 }));
+  });
+  await sleep(300);
+  const rects = () => page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).filter((s) => s.t === 'rect').map((s) => ({ id: s.id, x: s.a.x, y: s.a.y })));
+  await k.down('Alt');
+  await page.mouse.move(...P(20, 130));
+  await page.mouse.down();
+  const svgGhost = [];
+  await page.mouse.move(...P(30, 150), { steps: 8 });
+  svgGhost.push(await page.$$eval('.sh-ghost', (g) => g.length));
+  await page.mouse.up();
+  await k.up('Alt');
+  await sleep(300);
+  const rs2 = await rects();
+  check(
+    rs2.length === 2 && rs2.some((r) => r.id === 'rq' && r.x === 20 && r.y === 120) && rs2.some((r) => r.id !== 'rq' && Math.abs(r.x - 30) < 1 && Math.abs(r.y - 140) < 1) && (await boxes()).length === 1 && svgGhost[0] === 1,
+    `그린 네모 ⌥ 끌기 → 복제(원본 그대로, 흐린 모습 ${svgGhost[0]}, 글상자 안 생김) (${JSON.stringify(rs2)})`,
+  );
+  await k.press('Escape');
+  await sleep(150);
+  // 보기 화면(A4)에서 ⌥ 끌기 → 복제
+  await combo(['Alt'], 'Digit3');
+  await page.waitForSelector('.pages.a4 .pctl[data-half="0"]');
+  await sleep(200);
+  const before2 = await boxes();
+  const pb = await (await page.$(`.pages .phalf[data-half="0"] .tbox[data-sid="${orig.id}"]`)).boundingBox();
+  const pw = await (await page.$('.pages .phalf[data-half="0"] .pwin')).boundingBox();
+  const ppmP = pw.width / (await page.$eval('.pages .phalf[data-half="0"] .pwin', (e) => e.offsetWidth / (96 / 25.4)));
+  await k.down('Alt');
+  await page.mouse.move(pb.x + 8, pb.y + pb.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(pb.x + 8 + 10 * ppmP, pb.y + pb.height / 2 + 30 * ppmP, { steps: 10 });
+  const pv = await page.evaluate((id) => ({ ghost: document.querySelectorAll(`.pages .phalf[data-half="0"] .tbox[data-sid="${id}"].pghost`).length, copy: document.querySelectorAll('.pages .phalf[data-half="0"] .tbox.pmove:not([data-sid])').length }), orig.id);
+  await page.mouse.up();
+  await k.up('Alt');
+  await sleep(300);
+  const after2 = await boxes();
+  const pc = after2.find((b) => !before2.some((x) => x.id === b.id));
+  check(pv.ghost === 1 && pv.copy === 1, `보기 화면 ⌥ 끌기 중: 원본은 흐리게 그 자리, 복사본이 따라옴 (${JSON.stringify(pv)})`);
+  check(
+    after2.length === before2.length + 1 && JSON.stringify(after2.filter((b) => b.id !== pc?.id)) === JSON.stringify(before2) && Math.abs(pc.y - before2.find((b) => b.id === orig.id).y - 30) < 1,
+    `보기 화면 ⌥ 끌기 → 원본 그대로 + 놓은 자리에 복사본 (${after2.length}개)`,
+  );
+  await combo(['Alt'], 'Digit1');
+  await sleep(300);
+
   // 3) 예전 본문 글: 두 번 누르면 그 반쪽 글이 같은 자리의 글상자로(바로 고치기)
   await page.evaluate(() => localStorage.setItem('ayunpad-paper', '1'));
   await page.reload({ waitUntil: 'networkidle0' });

@@ -323,6 +323,11 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
 .sh-knobline { stroke: #0064e8; stroke-width: 1px; vector-effect: non-scaling-stroke; stroke-opacity: 0.7; }
 .sh-selbox { fill: none; stroke: #0064e8; stroke-width: 0.16; stroke-dasharray: 0.8 0.6; }
 .tboxes { position: absolute; inset: 0; pointer-events: none; }
+/* ⌥(Alt)를 누른 채 끌어 복제하는 동안: 원본 자리에 흐린 모습, 커서는 복사 모양 */
+.sh-ghosts { position: absolute; inset: 0; pointer-events: none; }
+.sh-ghosts .tghost { opacity: 0.4; pointer-events: none !important; outline: 0.2mm dashed rgba(0, 100, 232, 0.45); outline-offset: 0.3mm; }
+.sh-ghost { opacity: 0.4; }
+body.copying, body.copying * { cursor: copy !important; }
 .tbox { position: absolute; margin: 0; padding: 0 0.5mm; white-space: pre-wrap; overflow-wrap: anywhere; word-break: var(--wb); font-family: var(--font); font-size: var(--fs); line-height: var(--lh); letter-spacing: var(--trk); border: 0.2mm solid transparent; min-height: var(--lh); }
 .tbox.boxed { border-color: currentColor; padding: 0 0.8mm; }
 textarea.tbox.tedit { pointer-events: auto; resize: none; overflow: hidden; outline: 0.25mm dashed #0064e8; outline-offset: 0.3mm; display: block; }
@@ -596,6 +601,7 @@ body.marqueeing, body.marqueeing * { user-select: none !important; -webkit-user-
 .pages.ro .shapes-layer .tbox:not(.tedit) { cursor: auto; }
 .pages.ro .shapes-layer .tbox:hover { outline: none; }
 .pages .pmove { opacity: 0.85; }
+.pages .pghost { opacity: 0.4; }
 .pages .tbox.pmove { outline: 0.25mm dashed rgba(0, 100, 232, 0.8) !important; outline-offset: 0.3mm; }
 body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: none !important; }
 /* 종이에 바로 쓰지 않을 때: 본문은 고치지 않는다(예전 본문 위젯의 손잡이 · 막대 숨김), 빈 종이는 눌러서 글상자 */

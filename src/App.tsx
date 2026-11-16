@@ -788,16 +788,21 @@ export function App() {
     },
     [layoutNow, resolvedShapes, convertBody, pageInfo, refreshPages, toast],
   );
-  // 보기 화면에서 글상자 · 그림 하나를 끌어 옮기기(반쪽을 넘어가도 된다). 좌표는 칼럼 기준 mm
+  // 보기 화면에서 글상자 · 그림 하나를 끌어 옮기기(반쪽을 넘어가도 된다). 좌표는 칼럼 기준 mm.
+  // copy(⌥ 누른 채 끌기): 원본은 그대로 두고 놓은 자리에 복사본(맨 위에, 되돌리기 한 번)
   const moveItem = useCallback(
-    (id: string, dx: number, dy: number) => {
+    (id: string, dx: number, dy: number, copy = false) => {
       if (readingRef.current) return toast(READ_HINT);
       const L = layoutNow();
-      if (!L || (Math.abs(dx) < 0.05 && Math.abs(dy) < 0.05)) return;
+      if (!L || (Math.abs(dx) < 0.05 && Math.abs(dy) < 0.05)) return refreshPages();
       const { lines, rs } = resolvedShapes(L);
       const r = rs.find((x) => x.id === id);
-      if (!r) return;
-      L.d.ydoc.transact(() => L.d.shapes.set(id, JSON.parse(JSON.stringify(unresolve(translate(r, dx, dy), lines))) as Shape), SHAPES);
+      if (!r) return refreshPages();
+      const z = [...L.d.shapes.values()].reduce((m, s) => Math.max(m, s.z), 0) + 1;
+      const moved = copy ? ({ ...translate(r, dx, dy), id: newId(), z } as Resolved) : translate(r, dx, dy);
+      umRef.current?.stopCapturing();
+      L.d.ydoc.transact(() => L.d.shapes.set(moved.id, JSON.parse(JSON.stringify(unresolve(moved, lines))) as Shape), SHAPES);
+      umRef.current?.stopCapturing();
       refreshPages();
     },
     [layoutNow, resolvedShapes, refreshPages, toast],

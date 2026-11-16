@@ -186,7 +186,8 @@ function ShapeHit({ r, onPick }: { r: Resolved; onPick(e: React.PointerEvent): v
 }
 
 // 끌기: 고른 것 모두 옮기기(toggle · only는 끌지 않고 놓았을 때 고름을 고치는 것), 또는 하나의 점 · 모서리 · 폭
-type MoveDrag = { mode: 'move'; start: XY; bases: Resolved[]; moved: boolean; toggle?: string; only?: string };
+// copy: ⌥(Alt)를 누른 채 끌면 원본은 그 자리에 두고 놓은 자리에 복사본(d = 지금까지 옮긴 만큼)
+type MoveDrag = { mode: 'move'; start: XY; bases: Resolved[]; moved: boolean; toggle?: string; only?: string; copy?: boolean; d?: XY };
 // ctrl: 곡선 손잡이(점 i의 들어오는 0 · 나가는 1 손잡이)
 type EditDrag = { mode: 'point' | 'corner' | 'side' | 'width' | 'ctrl'; id: string; i: number; side?: 0 | 1; start: XY; base: Resolved; moved: boolean };
 
@@ -357,8 +358,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   const altRef = useRef<(e: PointerEvent) => void>(() => undefined);
   altRef.current = (e: PointerEvent) => {
     if (drawRef.current || !e.altKey || e.button !== 0 || !layer.current || readRef.current) return;
-    // 아무 데나(표 · 그래프 · 연표 위, 글칸 위도). 이미 있는 글상자를 누른 것만 그 글상자 고치기로
-    if ((e.target as HTMLElement | null)?.closest?.('.tbox')) return;
+    // 아무 데나(표 · 그래프 · 연표 위, 글칸 위도). 이미 있는 글상자 · 그림을 누른 것은 그대로(⌥ 끌기 = 복제)
+    if ((e.target as HTMLElement | null)?.closest?.('.tbox, .sh-hit')) return;
     e.preventDefault();
     e.stopPropagation();
     newText(toMM(e));
@@ -553,7 +554,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     const host = layer.current;
     if (!host || src.offsetWidth === 0) return; // 숨어 있으면 높이가 0으로 재진다
     let changed = false;
-    host.querySelectorAll<HTMLElement>('.tbox').forEach((el) => {
+    host.querySelectorAll<HTMLElement>('.tbox[data-sid]').forEach((el) => {
       const id = el.dataset.sid!;
       const h = el.offsetHeight / PX_PER_MM;
       if (Math.abs((textH.current.get(id) ?? 0) - h) > 0.05) {
@@ -582,6 +583,33 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   const pickOnly = (ids: string[]) => {
     ix.sel = ids;
     ix.wsel = [];
+  };
+  // ⌥ 복제로 끄는 동안 원본 자리에 남는 흐린 모습. 글상자는 그려진 것을 복제해 원래 자리에(선 · 도형은 SVG로 그린다)
+  const ghostRef = useRef<HTMLDivElement>(null);
+  const textGhosts = (bases: Resolved[]) => {
+    const box = ghostRef.current;
+    if (!box) return;
+    if (!bases.length) return void (box.firstChild && box.replaceChildren());
+    if (box.firstChild) return;
+    for (const b of bases) {
+      if (b.t !== 'text') continue;
+      const el = layer.current?.querySelector<HTMLElement>(`.tbox[data-sid="${CSS.escape(b.id)}"]`);
+      if (!el) continue;
+      const g = el.cloneNode(true) as HTMLElement;
+      g.removeAttribute('data-sid');
+      g.classList.remove('tedit');
+      g.classList.add('tghost');
+      g.querySelectorAll('.tb-bar, .tb-grip, .tb-width, .tb-del').forEach((x) => x.remove());
+      g.querySelectorAll('[contenteditable]').forEach((x) => x.removeAttribute('contenteditable'));
+      g.style.left = `${b.a.x}mm`;
+      g.style.top = `${b.a.y}mm`;
+      g.style.transform = '';
+      box.appendChild(g);
+    }
+  };
+  const copyMode = (on: boolean, bases: Resolved[]) => {
+    textGhosts(on ? bases : []);
+    document.body.classList.toggle('copying', on);
   };
 
   // 화면 자리 ↔ 종이 mm
@@ -624,10 +652,11 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     return n;
   };
   // 상자 m을 dx · dy만큼 옮긴 자리를 맞춘다(여러 개면 묶은 상자). 실제로 옮길 dx · dy를 돌려준다.
-  const snapBox = (m: Box | null, dx: number, dy: number, skip: Set<string>, e: Mods, lock?: 'x' | 'y'): [number, number] => {
+  // extra: 더 맞출 상자(⌥ 복제 중에는 그 자리에 남는 원본)
+  const snapBox = (m: Box | null, dx: number, dy: number, skip: Set<string>, e: Mods, lock?: 'x' | 'y', extra: Box[] = []): [number, number] => {
     ix.guides = null;
     if (!m || snapOff(e)) return [dx, dy];
-    const s = snapMove(shiftBox(m, dx, dy), snapTargets(skip), SNAP_PX / pxPerMm(), lock);
+    const s = snapMove(shiftBox(m, dx, dy), [...snapTargets(skip), ...extra], SNAP_PX / pxPerMm(), lock);
     ix.guides = s.lines.length || s.gaps.length ? s : null;
     return [dx + s.dx, dy + s.dy];
   };
@@ -688,10 +717,14 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     e.stopPropagation();
     const start = toMM(e);
     const skip = new Set([id]);
+    const canCopy = mode === 'move' && pending?.id !== id; // 아직 저장 안 된 새 글상자는 복제하지 않는다
+    let copy = false;
     const onMove = (ev: PointerEvent) => {
       const p = toMM(ev);
       if (mode === 'move') {
-        const [dx, dy] = snapBox(bboxOf(base, th), p.x - start.x, p.y - start.y, skip, ev);
+        copy = canCopy && ev.altKey;
+        copyMode(copy, [base]);
+        const [dx, dy] = snapBox(bboxOf(base, th), p.x - start.x, p.y - start.y, skip, ev, undefined, copy ? [bboxOf(base, th)] : []);
         ix.drafts = new Map([[id, translate(base, dx, dy)]]);
       } else {
         const q = snapPt({ x: p.x, y: base.a.y }, skip, [], { x: true, y: false }, ev, (n) => ({ x: base.a.x, y: base.a.y, w: n.x - base.a.x, h: th(id) }));
@@ -706,13 +739,18 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       const d = ix.drafts.get(id);
       ix.drafts = new Map();
       ix.guides = null;
+      copyMode(false, []);
       if (save && d?.t === 'text') {
-        if (pending?.id === id) setPending({ ...pending, ...(unresolve(d, lines) as TextShape) });
+        if (copy) addCopies([base], d.a.x - base.a.x, d.a.y - base.a.y);
+        else if (pending?.id === id) setPending({ ...pending, ...(unresolve(d, lines) as TextShape) });
         else putGeometry([d]);
       }
       repaint();
     };
-    const onUp = () => end(true);
+    const onUp = (ev: PointerEvent) => {
+      copy = copy && ev.altKey; // 놓기 전에 ⌥를 떼면 그냥 옮기기
+      end(true);
+    };
     const onCancel = () => end(false);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
@@ -951,7 +989,11 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
           lock = 'y';
         }
       }
-      [dx, dy] = snapBox(union(g.bases.map((b) => bboxOf(b, th))), dx, dy, new Set(g.bases.map((b) => b.id)), e, lock);
+      // ⌥: 원본은 그 자리에 두고 복사본을 끈다(원본 자리는 흐리게 남고, 원본에도 맞춰 붙는다)
+      g.copy = e.altKey && !g.bases.some((b) => b.id === pending?.id);
+      copyMode(g.copy, g.bases);
+      [dx, dy] = snapBox(union(g.bases.map((b) => bboxOf(b, th))), dx, dy, new Set(g.bases.map((b) => b.id)), e, lock, g.copy ? g.bases.map((b) => bboxOf(b, th)) : []);
+      g.d = { x: dx, y: dy };
       ix.drafts = new Map(g.bases.map((b) => [b.id, translate(b, dx, dy)]));
       return repaint();
     }
@@ -1023,7 +1065,9 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       const drafts = [...ix.drafts.values()];
       ix.drafts = new Map();
       ix.guides = null;
-      if (g.moved && drafts.length) putGeometry(drafts);
+      copyMode(false, []);
+      if (g.moved && drafts.length && g.mode === 'move' && g.copy && e.altKey && g.d) addCopies(g.bases, g.d.x, g.d.y);
+      else if (g.moved && drafts.length) putGeometry(drafts);
       else if (g.mode === 'move') {
         if (g.toggle) ix.sel = ix.sel.filter((x) => x !== g.toggle);
         else if (g.only) pickOnly([g.only]);
@@ -1379,6 +1423,14 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       onDoubleClick={(e) => e.preventDefault()}
     >
       <svg className="shapes-svg" viewBox={`0 0 ${W.toFixed(3)} ${H.toFixed(3)}`} preserveAspectRatio="xMinYMin meet" aria-hidden="true">
+        {ix.drag?.mode === 'move' && ix.drag.copy && ix.drag.moved &&
+          ix.drag.bases.map((b) =>
+            b.t === 'text' ? null : (
+              <g key={`ghost-${b.id}`} className="sh-ghost">
+                <ShapeSvg r={{ ...b, id: `ghost-${b.id}` }} />
+              </g>
+            ),
+          )}
         {resolved.map((r) => (
           <ShapeSvg key={r.id} r={r} />
         ))}
@@ -1424,6 +1476,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
           {(m.to - m.from).toFixed(1)}mm
         </span>
       ))}
+      <div ref={ghostRef} className="sh-ghosts" aria-hidden="true" />
       <div className="tboxes">
         {resolved.map((r) =>
           r.t === 'text' ? (

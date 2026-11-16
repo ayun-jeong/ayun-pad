@@ -22,7 +22,7 @@ interface Props {
   pageInfo(): PageInfo;
   onPage(op: PageOp): number | undefined; // 돌려준 반쪽은 다시 그린 뒤 잠깐 표시(어디로 갔는지 보이게)
   onPick(lineIndex: number): void;
-  onMove(id: string, dx: number, dy: number): void; // 글상자 · 그림 하나 옮기기(칼럼 mm)
+  onMove(id: string, dx: number, dy: number, copy: boolean): void; // 글상자 · 그림 하나 옮기기(칼럼 mm), copy: ⌥ 복제(원본은 그대로)
   pickAt(x: number, y: number, tol: number): string | null; // 그 자리(칼럼 mm)의 그림
   onEditBox(id: string): void; // 글상자 두 번 누르기 → 편집 화면에서 고치기
 }
@@ -79,7 +79,7 @@ function colPoint(x: number, y: number, typo: Typo): { x: number; y: number; hal
 
 // 반쪽 보기(⌥2): 반쪽을 위에서부터 차례로. A4 합침 보기(⌥3): 장마다 왼쪽 + 오른쪽 반쪽.
 // 크기는 그림처럼 키우기만 해서(transform) 줄바꿈은 인쇄와 같다. 줄을 누르면 그 자리로 편집 화면이 열린다.
-// 반쪽마다 ◀ ▶ · ＋ · × 단추. 글상자 · 그림은 하나씩 끌어서 아무 자리로나(다른 반쪽으로도) 옮긴다 — 반쪽 통째로 끌지 않는다.
+// 반쪽마다 ◀ ▶ · ＋ · × 단추. 글상자 · 그림은 하나씩 끌어서 아무 자리로나(다른 반쪽으로도) 옮긴다 — 반쪽 통째로 끌지 않는다. ⌥ 누른 채 끌면 복제.
 export function PagesView({ mode, source, typo, zoom, version, reading, pageInfo, onPage, onPick, onMove, pickAt, onEditBox }: Props) {
   const outer = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
@@ -162,11 +162,41 @@ export function PagesView({ mode, source, typo, zoom, version, reading, pageInfo
     const y0 = e.clientY;
     let moved = false;
     let d = { x: 0, y: 0 };
-    const show = () => {
-      for (const el of els) {
-        if (el instanceof SVGElement) el.setAttribute('transform', `translate(${d.x} ${d.y})`);
-        else el.style.transform = `translate(${d.x}mm, ${d.y}mm)`;
+    // ⌥(Alt)를 누르고 끌면 복제: 원본은 그 자리에 흐리게 두고, 바로 옆에 만든 복사본을 민다
+    let copies: (HTMLElement | SVGElement)[] = [];
+    let copy = false;
+    const place = (el: HTMLElement | SVGElement, x: number, y: number) => {
+      if (el instanceof SVGElement) el.setAttribute('transform', x || y ? `translate(${x} ${y})` : '');
+      else el.style.transform = x || y ? `translate(${x}mm, ${y}mm)` : '';
+    };
+    const setCopy = (on: boolean) => {
+      if (on === copy) return;
+      copy = on;
+      document.body.classList.toggle('copying', on);
+      if (on) {
+        copies = els.map((el) => {
+          const c = el.cloneNode(true) as HTMLElement | SVGElement;
+          c.removeAttribute('data-sid');
+          c.classList.add('pmove');
+          el.after(c);
+          return c;
+        });
+        els.forEach((el) => {
+          place(el, 0, 0);
+          el.classList.remove('pmove');
+          el.classList.add('pghost');
+        });
+      } else {
+        copies.forEach((c) => c.remove());
+        copies = [];
+        els.forEach((el) => {
+          el.classList.remove('pghost');
+          el.classList.add('pmove');
+        });
       }
+    };
+    const show = () => {
+      for (const el of copy ? copies : els) place(el, d.x, d.y);
     };
     const move = (ev: PointerEvent) => {
       if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < DRAG_PX) return;
@@ -176,20 +206,23 @@ export function PagesView({ mode, source, typo, zoom, version, reading, pageInfo
         document.body.classList.add('pdragging');
       }
       getSelection()?.removeAllRanges();
+      setCopy(ev.altKey);
       const p = colPoint(ev.clientX, ev.clientY, typo);
-      if (!p) return; // 반쪽 사이 · 바깥: 마지막 자리 그대로
-      d = { x: p.x - p0.x, y: p.y - p0.y };
+      if (p) d = { x: p.x - p0.x, y: p.y - p0.y }; // 반쪽 사이 · 바깥: 마지막 자리 그대로
       show();
     };
-    const up = () => {
+    const up = (ev: PointerEvent) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
-      document.body.classList.remove('pdragging');
+      document.body.classList.remove('pdragging', 'copying');
       if (!moved) return;
       dragged.current = true;
       setTimeout(() => (dragged.current = false), 0);
-      cb.current.onMove(id, d.x, d.y); // 다시 그릴 때까지는 민 자리 그대로 둔다(깜박이지 않게)
+      // 다시 그릴 때까지는 민 자리 그대로 둔다(깜박이지 않게). 놓기 전에 ⌥를 떼면 그냥 옮기기
+      const dup = copy && ev.type === 'pointerup' && ev.altKey;
+      if (copy && !dup) setCopy(false);
+      cb.current.onMove(id, d.x, d.y, dup);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
