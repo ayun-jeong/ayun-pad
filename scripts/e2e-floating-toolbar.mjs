@@ -43,6 +43,12 @@ try {
   const saved = await page.evaluate(id => window.__ayunpad.doc().shapes.get(id), id);
   assert.equal(saved.doc.content[0].content[0].text, 'ABC'); assert.ok(!saved.doc.content[0].content.at(-1).marks?.some(m => m.type === 'pen'));
   console.log('ok  떠 있는 도구 막대를 눌러도 드래그 선택을 유지하고 선택 글자만 서식 적용');
+  await page.click(`${toolbar} button[aria-label="보라 형광펜"]`);
+  await page.waitForFunction(id => window.__ayunpad.doc().shapes.get(id).doc.content[0].content[0].marks?.some(m => m.type === 'hl' && m.attrs.c === 'p'), {}, id);
+  const purple = await page.evaluate(id => window.__ayunpad.doc().shapes.get(id), id);
+  assert.equal(purple.doc.content[0].content[0].text, 'ABC');
+  assert.ok(!purple.doc.content[0].content.at(-1).marks?.some(m => m.type === 'hl'));
+  console.log('ok  보라색 형광펜 버튼 표시 · 드래그한 글자에만 적용');
   await page.$eval('.desk', e => { e.scrollTop += 30; }); await sleep(100); await verify();
   await page.mouse.move(point.x, point.y); await page.keyboard.down('Meta'); await page.mouse.wheel({ deltaY: -150 }); await page.keyboard.up('Meta'); await sleep(150); await verify();
   console.log('ok  스크롤·확대 후에도 막대가 글상자를 따라 이동하며 화면 안에 유지');
@@ -52,7 +58,7 @@ try {
   await page.keyboard.press('Escape');
   await page.setViewport({ width: 390, height: 844 });
   if (!(await page.$eval('.side', e => e.classList.contains('hidden')))) await page.$eval('.side-backdrop', e => e.click());
-  await page.waitForSelector('.side.hidden'); await page.$eval('.desk', e => { e.scrollTop = 0; e.scrollLeft = 0; });
+  await page.waitForSelector('.side.hidden'); await page.$eval('.desk', e => { e.scrollTop = 0; e.scrollLeft = 0; }); await sleep(200);
   const tb = await page.$eval(`.fold-live-window .tbox[data-sid="${id}"]`, e => { const r = e.getBoundingClientRect(); return { x: r.x + 3, y: r.y + r.height / 2 }; });
   await page.mouse.click(tb.x, tb.y, { count: 2 }); await page.waitForSelector(toolbar, { visible: true }); await sleep(150); await verify();
   assert.deepEqual(errors, []); await page.screenshot({ path: '/tmp/ayunpad-qa/floating-toolbar-mobile.png' });

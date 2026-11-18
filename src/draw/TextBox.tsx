@@ -113,7 +113,7 @@ interface BoxProps {
 }
 
 const TB_COLORS: PenKey[] = ['r', 'b', 'k', 'p', 'y', 'g'];
-const TB_HL: PenKey[] = ['y', 'r', 'b', 'g'];
+const TB_HL: PenKey[] = ['y', 'r', 'b', 'g', 'p'];
 
 // 글상자를 고르거나 고치는 동안 바로 위에 뜨는 막대. 글자를 끌어 골랐으면 고른 글자만, 아니면 글상자 전체에.
 function TbBar({ anchor, view, r, editing, onPatch, um }: { anchor: RefObject<HTMLDivElement | null>; view: EditorView | null; r: Resolved & { t: 'text' }; editing: boolean; onPatch(p: Partial<TextShape>): void; um: Y.UndoManager | null }) {

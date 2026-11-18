@@ -130,6 +130,9 @@ export function FoldedSurface({ enabled, source, typo, zoom, version, gutter, on
       // An overflowing live box still belongs to its original half, even when
       // the pointer is physically over the neighboring half.
       const targetElement = event.target as Element;
+      // React portals (the floating text tools) are outside this canvas even
+      // though their events still travel through its React ancestors.
+      if (!root.current?.contains(targetElement)) return;
       if (targetElement.closest('.fold-live-window .tbox, .fold-live-window .sh-text-width')) return;
       const point = mapPoint(event);
       if (!point) return;

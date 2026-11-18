@@ -177,5 +177,10 @@ export const schema = new Schema({
       toDOM: (m: Mark): DOMOutputSpec => ['u', m.attrs.c ? { 'data-c': m.attrs.c, style: `text-decoration-color:${colorAttr(m.attrs.c)}` } : {}, 0],
     },
     s: { parseDOM: [{ tag: 's' }, { tag: 'del' }], toDOM: (): DOMOutputSpec => ['s', 0] },
+    branchDash: {
+      inclusive: false,
+      parseDOM: [{ tag: 'span[data-branch-dash]' }],
+      toDOM: (): DOMOutputSpec => ['span', { 'data-branch-dash': '1', style: 'color:#ec3535' }, 0],
+    },
   },
 });

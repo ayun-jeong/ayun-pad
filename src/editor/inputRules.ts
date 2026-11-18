@@ -4,6 +4,14 @@ import { ctxOf, prevInfo } from './commands';
 import { ARROW_RULES } from './arrows';
 import { branchDepth } from './rules';
 import type { TreeTop } from './tree';
+import { schema } from './schema';
+
+// --- 는 가지선의 연장: 자동 색 · 화살표 설정과 관계없이 항상 빨강.
+export const branchDashRule = new InputRule(/---$/, (state, _match, start, end) => {
+  const marks = (state.storedMarks ?? state.selection.$from.marks()).filter(m => m.type !== schema.marks.branchDash);
+  const dashMarks = [...marks.filter(m => m.type !== schema.marks.pen), schema.marks.pen.create({ c: 'r' }), schema.marks.branchDash.create()];
+  return state.tr.replaceWith(start, end, schema.text('—', dashMarks)).setStoredMarks(marks);
+});
 
 // 줄 맨 앞에서 '-' + 스페이스 → 꺾쇠 줄. '-'는 지우고 줄 종류만 바꾼다. 바로 ⌫를 누르면 '- '로 돌아간다.
 const branchRule = new InputRule(/^-\s$/, (state, _match, start, end) => {
@@ -36,10 +44,10 @@ const arrow = (settings: RuleSettings, re: RegExp, ch: string) =>
 const arrows = (settings: RuleSettings) => ARROW_RULES.map(([re, ch]) => arrow(settings, re, ch));
 
 export function rulesPlugin(settings: RuleSettings = { arrows: true }): Plugin {
-  return inputRules({ rules: [branchRule, ...arrows(settings)] });
+  return inputRules({ rules: [branchDashRule, branchRule, ...arrows(settings)] });
 }
 
 // 글상자 편집기: 꺾쇠 규칙 없이 화살표만
 export function arrowRulesPlugin(settings: RuleSettings = { arrows: true }): Plugin {
-  return inputRules({ rules: arrows(settings) });
+  return inputRules({ rules: [branchDashRule, ...arrows(settings)] });
 }

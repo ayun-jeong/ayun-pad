@@ -4,6 +4,7 @@ import { ArrangeMenu } from './ArrangeMenu';
 import { leadingCmd, sizeCmd, trackCmd } from '../editor/commands';
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 import { Slice } from 'prosemirror-model';
+import { Selection } from 'prosemirror-state';
 import { createPortal, flushSync } from 'react-dom';
 import * as Y from 'yjs';
 import { clipboardTextSerializer } from '../editor/clipboard';
@@ -345,7 +346,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       const id = (e as CustomEvent<string>).detail;
       const tryFocus = (n: number) => {
         const el = src.querySelector<HTMLElement>(`.tbox[data-sid="${id}"] .tb-edit`);
-        if (el) el.focus();
+        if (el) el.focus({ preventScroll: true });
         else if (n < 30) requestAnimationFrame(() => tryFocus(n + 1));
       };
       tryFocus(0);
@@ -745,7 +746,16 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     });
 
   // 글상자 편집기로 커서(그리기 중 두 번 누르기 · Enter)
-  const focusBox = (id: string) => requestAnimationFrame(() => src.querySelector<HTMLElement>(`.tbox[data-sid="${id}"] .tb-edit`)?.focus());
+  const focusBox = (id: string, point?: { x: number; y: number }) => requestAnimationFrame(() => {
+    const el = src.querySelector<HTMLElement>(`.tbox[data-sid="${id}"] .tb-edit`);
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    const view = liveBox();
+    if (point && view?.dom === el) {
+      const hit = view.posAtCoords({ left: point.x, top: point.y });
+      if (hit) view.dispatch(view.state.tr.setSelection(Selection.near(view.state.doc.resolve(hit.pos))));
+    }
+  });
 
   // 글상자 옮기기(손잡이) · 폭 바꾸기(오른쪽 끝). 글쓰기 화면에서도 된다. 다른 것 가까이 가면 자석처럼 붙는다.
   const dragBox = (mode: 'move' | 'width', id: string, e: React.PointerEvent) => {
@@ -957,7 +967,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     }
     if (dbl && target.t === 'text') {
       pickOnly([target.id]);
-      focusBox(target.id);
+      focusBox(target.id, { x: e.clientX, y: e.clientY });
       return repaint();
     }
     // ⇧+누르기는 고름에 넣었다 빼기, 그냥 누르기는 그것만(이미 고른 것을 누르면 같이 끌 수 있게 놓을 때 정한다)
