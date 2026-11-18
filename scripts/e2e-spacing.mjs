@@ -19,6 +19,7 @@ try {
   await page.mouse.click(box.x + 100, box.y + 100);
   await page.waitForSelector('.tbox.tedit .tb-edit');
   await page.keyboard.type('AAA BBB\nCCC DDD\nEEE FFF');
+  await sleep(200);
   const positions = await page.$eval('.tb-edit .ln', e => {
     const walker = document.createTreeWalker(e, NodeFilter.SHOW_TEXT); let t;
     while (t = walker.nextNode()) if (t.textContent.includes('AAA')) break;
@@ -27,14 +28,28 @@ try {
   });
   await page.mouse.move(positions.x + .1, positions.y); await page.mouse.down(); await page.mouse.move(positions.right, positions.y, { steps: 10 }); await page.mouse.up();
   assert.equal(await page.evaluate(() => getSelection().toString()), 'AAA');
+  const shape = () => page.evaluate(() => [...window.__ayunpad.doc().shapes.values()].find(s => s.t === 'text'));
+  const original = await shape();
+  await page.click('.tb-bar-floating button[aria-label="글씨 작게"]');
+  await page.waitForFunction(() => document.querySelector('.tb-edit [data-size="0.9"]'));
+  let sized = await shape();
+  assert.equal(sized.doc.content[0].content[0].text, 'AAA');
+  assert.ok(!sized.doc.content[0].content.at(-1).marks?.length);
+  assert.equal(sized.fs, original.fs); assert.equal(sized.bw, original.bw); assert.deepEqual(sized.a, original.a);
+  assert.ok(await page.$eval('.tb-edit [data-size]', e => parseFloat(getComputedStyle(e).fontSize) < parseFloat(getComputedStyle(e.closest('.tb-edit')).fontSize)));
+  assert.equal(await page.evaluate(() => getSelection().toString()), 'AAA');
+  console.log('ok  실제 드래그 후 떠 있는 크기 버튼은 선택한 글자만 축소 · 글상자 배율·너비·좌표 유지');
   await page.keyboard.down('Alt'); await page.keyboard.press('KeyT'); await page.keyboard.up('Alt');
   await page.waitForSelector('#ty-track');
   const setNumber = async (selector, value) => {
     await page.$eval(selector, (e, value) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, value); e.dispatchEvent(new Event('input', { bubbles: true })); }, value);
   };
+  await setNumber('#ty-size', '6.4');
+  await page.waitForFunction(() => document.querySelector('.tb-edit [data-size="0.8"]'));
+  assert.equal((await shape()).fs, original.fs);
+  console.log('ok  글자 모양의 크기 입력도 선택한 글자만 변경');
   await setNumber('#ty-track', '0.08');
   await page.waitForFunction(() => [...window.__ayunpad.doc().shapes.values()].some(s => s.doc?.content[0]?.content?.some(n => n.marks?.some(m => m.type === 'track' && m.attrs.v === .08))));
-  const shape = () => page.evaluate(() => [...window.__ayunpad.doc().shapes.values()].find(s => s.t === 'text'));
   let saved = await shape();
   assert.equal(saved.doc.content[0].content[0].text, 'AAA');
   assert.ok(!saved.doc.content[0].content.at(-1).marks?.length);
@@ -60,6 +75,7 @@ try {
   assert.ok(saved.doc.content[0].attrs.leading > 1);
   assert.equal(saved.doc.content[0].content[0].marks[0].attrs.v, .08);
   assert.equal(saved.doc.content[1].attrs.leading, null);
+  assert.equal(saved.doc.content[0].content[0].marks.find(m => m.type === 'size').attrs.v, .8);
   assert.deepEqual(errors, []);
   console.log('ok  새로고침 뒤 선택 범위 서식 보존 · 실행 오류 없음');
 } finally { await browser?.close(); server.kill(); }

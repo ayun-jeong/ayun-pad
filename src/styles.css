@@ -126,9 +126,9 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
 
 /* 편집 칸 */
 .pad-text {
-  --ind: 1.2em;
+  --ind: var(--indent, .75em);
   --tw: 0.25mm;
-  --tgap: 0.15em;
+  --tgap: 0.02em;
   --tree: #ec3535;
   outline: none;
   white-space: pre-wrap;

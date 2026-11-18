@@ -12,6 +12,7 @@ export interface Typo {
   fontPt: number; // 글자 크기
   pitchMm: number; // 행간(줄 간격) 목표값. 실제 값은 반쪽 높이에 맞춰 조금 바뀐다
   tracking: number; // 자간(em)
+  indentEm: number; // Tab 한 단계의 들여쓰기(em)
   mTop: number; // 위아래 여백
   mOuter: number; // 바깥쪽 여백
   mInner: number; // 접는 선 쪽 여백
@@ -28,6 +29,7 @@ export const DEFAULT_TYPO: Typo = {
   fontPt: 8,
   pitchMm: 3.6,
   tracking: 0,
+  indentEm: .75,
   mTop: 3,
   mOuter: 3,
   mInner: 2,
@@ -38,16 +40,17 @@ export const DEFAULT_TYPO: Typo = {
   treeTop: 'corner',
 };
 
-export const PRESETS: Record<'normal' | 'dense' | 'ultra', { name: string; fontPt: number; pitchMm: number; wordBreak: Typo['wordBreak'] }> = {
-  normal: { name: '보통', fontPt: 9, pitchMm: 4.5, wordBreak: 'keep' },
-  dense: { name: '촘촘', fontPt: 8, pitchMm: 3.6, wordBreak: 'all' },
-  ultra: { name: '초고밀도', fontPt: 6.5, pitchMm: 2.9, wordBreak: 'all' },
+export const PRESETS: Record<'normal' | 'dense' | 'ultra', { name: string; fontPt: number; pitchMm: number; indentEm: number; wordBreak: Typo['wordBreak'] }> = {
+  normal: { name: '보통', fontPt: 9, pitchMm: 4.5, indentEm: 1, wordBreak: 'keep' },
+  dense: { name: '촘촘', fontPt: 8, pitchMm: 3.6, indentEm: .75, wordBreak: 'all' },
+  ultra: { name: '초고밀도', fontPt: 6.5, pitchMm: 2.9, indentEm: .55, wordBreak: 'all' },
 };
 
 export const LIMITS = {
   fontPt: [5, 14, 0.1],
   pitchMm: [2, 8, 0.1],
   tracking: [-0.1, 0.2, 0.01],
+  indentEm: [.5, 2, .05],
   margin: [0, 20, 0.5],
 } as const;
 
@@ -81,6 +84,7 @@ export function normalizeTypo(raw: Partial<Typo> | undefined): Typo {
     fontPt: clamp(Number(t.fontPt) || DEFAULT_TYPO.fontPt, LIMITS.fontPt[0], LIMITS.fontPt[1]),
     pitchMm: clamp(Number(t.pitchMm) || DEFAULT_TYPO.pitchMm, LIMITS.pitchMm[0], LIMITS.pitchMm[1]),
     tracking: clamp(Number(t.tracking) || 0, LIMITS.tracking[0], LIMITS.tracking[1]),
+    indentEm: clamp(Number.isFinite(Number(t.indentEm)) ? Number(t.indentEm) : DEFAULT_TYPO.indentEm, LIMITS.indentEm[0], LIMITS.indentEm[1]),
     mTop: clamp(Number.isFinite(Number(t.mTop)) ? Number(t.mTop) : DEFAULT_TYPO.mTop, LIMITS.margin[0], LIMITS.margin[1]),
     mOuter: clamp(Number.isFinite(Number(t.mOuter)) ? Number(t.mOuter) : DEFAULT_TYPO.mOuter, LIMITS.margin[0], LIMITS.margin[1]),
     mInner: clamp(Number.isFinite(Number(t.mInner)) ? Number(t.mInner) : DEFAULT_TYPO.mInner, LIMITS.margin[0], LIMITS.margin[1]),

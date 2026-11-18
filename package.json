@@ -23,7 +23,8 @@
     "e2e:floating-toolbar": "node scripts/e2e-floating-toolbar.mjs",
     "e2e:references": "node scripts/e2e-references.mjs",
     "e2e:arrange": "node scripts/e2e-arrange.mjs",
-    "e2e:overflow": "node scripts/e2e-overflow.mjs"
+    "e2e:overflow": "node scripts/e2e-overflow.mjs",
+    "e2e:density": "node scripts/e2e-density.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.3",

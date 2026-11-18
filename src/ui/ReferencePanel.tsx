@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { DOMSerializer } from 'prosemirror-model';
 import { yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror';
 import { schema } from '../editor/schema';
-import { openNote } from '../store/noteDoc';
+import { openNote, readTypo } from '../store/noteDoc';
 import type { Library } from '../store/library';
 import { ReferenceIcon, type ReferenceIconName } from './ReferenceIcon';
 import { referencesFor, saveReference, webAddress, type Reference } from '../store/references';
@@ -15,6 +15,7 @@ function NoteReference({ id }: { id: string }) {
     let cancelled = false;
     const render = () => {
       if (!host.current || cancelled) return;
+      host.current.style.setProperty('--indent', `${readTypo(doc).indentEm}em`);
       const node = yXmlFragmentToProseMirrorRootNode(doc.fragment, schema);
       const content = DOMSerializer.fromSchema(schema).serializeFragment(node.content);
       host.current.replaceChildren(content);

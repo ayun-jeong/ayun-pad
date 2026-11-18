@@ -358,6 +358,22 @@ export function fontCmd(f: string | null): Command {
   };
 }
 
+// 글씨 크기는 글상자 기본 크기에 대한 배수로 저장한다. 선택 밖의 글과 상자 치수는 건드리지 않는다.
+export function sizeCmd(value: number, absolute = false): Command {
+  return (state, dispatch) => {
+    if (state.selection.empty) return false;
+    const tr = state.tr;
+    for (const { from, to } of rangesOf(state.selection)) state.doc.nodesBetween(from, to, (node, pos) => {
+      if (!node.isText) return;
+      const cur = node.marks.find(m => m.type === schema.marks.size)?.attrs.v ?? 1;
+      const v = Math.round(clamp(absolute ? value : cur + value, .2, 5) * 1000) / 1000;
+      replaceMark(tr, Math.max(from, pos), Math.min(to, pos + node.nodeSize), schema.marks.size, v === 1 ? null : schema.marks.size.create({ v }));
+    });
+    if (tr.docChanged) dispatch?.(tr);
+    return true;
+  };
+}
+
 // 행간은 글자가 아닌 줄의 속성. 선택 끝이 다음 줄의 맨 앞이면 그 줄은 제외한다.
 export function leadingCmd(value: number, absolute = false): Command {
   return (state, dispatch) => {

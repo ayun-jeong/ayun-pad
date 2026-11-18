@@ -53,8 +53,8 @@ export function TypePanel({ typo, spacingScope, fonts, hasSelection, onChange, o
           <button
             key={k}
             type="button"
-            className={typo.fontPt === p.fontPt && typo.pitchMm === p.pitchMm ? 'on' : ''}
-            onClick={() => onChange({ fontPt: p.fontPt, pitchMm: p.pitchMm, wordBreak: p.wordBreak })}
+            className={typo.fontPt === p.fontPt && typo.pitchMm === p.pitchMm && typo.indentEm === p.indentEm ? 'on' : ''}
+            onClick={() => onChange({ fontPt: p.fontPt, pitchMm: p.pitchMm, indentEm: p.indentEm, wordBreak: p.wordBreak })}
           >
             {p.name}
           </button>
@@ -71,7 +71,7 @@ export function TypePanel({ typo, spacingScope, fonts, hasSelection, onChange, o
         </select>
       </div>
       <div className="row">
-        <label htmlFor="ty-size">글자 크기 pt</label>
+        <label htmlFor="ty-size">글자 크기 pt <small>({spacingScope})</small></label>
         <Num id="ty-size" value={typo.fontPt} step={LIMITS.fontPt[2]} min={LIMITS.fontPt[0]} max={LIMITS.fontPt[1]} onChange={(v) => onChange({ fontPt: v })} />
       </div>
       <div className="row">
@@ -85,6 +85,10 @@ export function TypePanel({ typo, spacingScope, fonts, hasSelection, onChange, o
       <p className="note">
         실제 줄 간격 {fit.pitch.toFixed(2)}mm · 반쪽 {fit.rows}줄 · A4 한 장 {fit.rows * 2}줄 · 글 폭 {textWidth(typo)}mm
       </p>
+      <div className="row">
+        <label htmlFor="ty-indent">들여쓰기 간격 em <small>(이 노트)</small></label>
+        <Num id="ty-indent" value={typo.indentEm} step={LIMITS.indentEm[2]} min={LIMITS.indentEm[0]} max={LIMITS.indentEm[1]} onChange={v => onChange({ indentEm: v })} />
+      </div>
       <div className="row">
         <label htmlFor="ty-mt">여백 위아래</label>
         <Num id="ty-mt" value={typo.mTop} step={LIMITS.margin[2]} min={LIMITS.margin[0]} max={LIMITS.margin[1]} onChange={(v) => onChange({ mTop: v })} />

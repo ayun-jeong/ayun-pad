@@ -1,7 +1,7 @@
 import { Plugin, type Command } from 'prosemirror-state';
 import { addRowAfter, goToNextCell, isInTable } from 'prosemirror-tables';
 import type { EditorView } from 'prosemirror-view';
-import { circleCmd, hlCmd, indentCmd, moveCmd, penCmd, sideCmd, toggleBranchCmd, trackCmd } from './commands';
+import { circleCmd, hlCmd, indentCmd, moveCmd, penCmd, sideCmd, sizeCmd, toggleBranchCmd, trackCmd } from './commands';
 import { PEN_NAME, isPenKey } from './model';
 
 export type AppAction =
@@ -135,6 +135,8 @@ export function buildShortcuts(): Map<string, Run> {
 
   map.set('alt+Comma', (v, h) => trackCmd(-0.01, (x) => h.toast(`자간 ${fmtEm(x)}`))(v.state, v.dispatch, v));
   map.set('alt+Period', (v, h) => trackCmd(0.01, (x) => h.toast(`자간 ${fmtEm(x)}`))(v.state, v.dispatch, v));
+  map.set('mod+shift+Comma', exec(sizeCmd(-.1)));
+  map.set('mod+shift+Period', exec(sizeCmd(.1)));
   map.set('alt+shift+Comma', (_v, h) => h.app('pitch-down'));
   map.set('alt+shift+Period', (_v, h) => h.app('pitch-up'));
   map.set('alt+KeyT', (_v, h) => h.app('type'));

@@ -6,7 +6,7 @@ import { Transform } from 'prosemirror-transform';
 import { EditorView } from 'prosemirror-view';
 import type * as Y from 'yjs';
 import { clipboardTextParser, clipboardTextSerializer } from '../editor/clipboard';
-import { eraseHl, penCmd } from '../editor/commands';
+import { eraseHl, penCmd, sizeCmd } from '../editor/commands';
 import { engineNodeViews, enginePlugins, markComposing } from '../editor/createEditor';
 import { autoKey, lineText } from '../editor/decorations';
 import { searchDoc, type Effect } from '../editor/find';
@@ -116,7 +116,7 @@ const TB_COLORS: PenKey[] = ['r', 'b', 'k', 'p', 'y', 'g'];
 const TB_HL: PenKey[] = ['y', 'r', 'b', 'g'];
 
 // 글상자를 고르거나 고치는 동안 바로 위에 뜨는 막대. 글자를 끌어 골랐으면 고른 글자만, 아니면 글상자 전체에.
-function TbBar({ anchor, view, r, editing, onPatch }: { anchor: RefObject<HTMLDivElement | null>; view: EditorView | null; r: Resolved & { t: 'text' }; editing: boolean; onPatch(p: Partial<TextShape>): void }) {
+function TbBar({ anchor, view, r, editing, onPatch, um }: { anchor: RefObject<HTMLDivElement | null>; view: EditorView | null; r: Resolved & { t: 'text' }; editing: boolean; onPatch(p: Partial<TextShape>): void; um: Y.UndoManager | null }) {
   // 누를 때 글상자에서 커서 · 고른 글자가 빠지지 않게
   const keep = (e: React.SyntheticEvent) => {
     e.preventDefault();
@@ -143,7 +143,15 @@ function TbBar({ anchor, view, r, editing, onPatch }: { anchor: RefObject<HTMLDi
     v.dispatch(tr);
   };
   const fs = r.fs ?? 1;
-  const size = (dir: 1 | -1) => onPatch({ fs: Math.round(Math.min(2.5, Math.max(0.6, fs + 0.1 * dir)) * 100) / 100 });
+  const size = (dir: 1 | -1) => {
+    if (editing && view && !view.state.selection.empty) {
+      um?.stopCapturing();
+      sizeCmd(.1 * dir)(view.state, view.dispatch, view);
+      um?.stopCapturing();
+    }
+    else onPatch({ fs: Math.round(Math.min(2.5, Math.max(0.6, fs + 0.1 * dir)) * 100) / 100 });
+  };
+  const selectedSize = editing && view && !view.state.selection.empty ? view.state.doc.nodeAt(view.state.selection.from)?.marks.find(m => m.type === schema.marks.size)?.attrs.v ?? 1 : 1;
   // Render above the paper's clipping windows. Only the note is clipped at a
   // half-page boundary; its controls stay inside the visible viewport.
   const bar = useRef<HTMLDivElement>(null);
@@ -219,7 +227,7 @@ function TbBar({ anchor, view, r, editing, onPatch }: { anchor: RefObject<HTMLDi
       <button type="button" title="글씨 작게" aria-label="글씨 작게" onClick={() => size(-1)}>
         가−
       </button>
-      <span className="tb-val">{Math.round(fs * 100)}%</span>
+      <span className="tb-val">{Math.round(fs * selectedSize * 100)}%</span>
       <button type="button" title="글씨 크게" aria-label="글씨 크게" onClick={() => size(1)}>
         가+
       </button>
@@ -357,11 +365,11 @@ export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFo
         onPick(e);
       }}
     >
-      {selected && !active && !reading && <TbBar anchor={box} view={view.current} r={r} editing={false} onPatch={onPatch} />}
+      {selected && !active && !reading && <TbBar anchor={box} view={view.current} r={r} editing={false} onPatch={onPatch} um={um} />}
       <div ref={mount} className="tb-mount" />
       {active && (
         <>
-          {!reading && <TbBar anchor={box} view={view.current} r={r} editing onPatch={onPatch} />}
+          {!reading && <TbBar anchor={box} view={view.current} r={r} editing onPatch={onPatch} um={um} />}
           <span className="tb-grip" title="끌어서 옮기기" aria-label="글상자 옮기기" onPointerDown={(e) => onDrag('move', e)} />
           <span className="tb-width" title="끌어서 폭 바꾸기" aria-label="글상자 폭" onPointerDown={(e) => onDrag('width', e)} />
           <button

@@ -1,7 +1,7 @@
 import { copyGroups, expandGroups } from './groups';
 import { arrange, arrangementCount, type Arrange } from './arrange';
 import { ArrangeMenu } from './ArrangeMenu';
-import { leadingCmd, trackCmd } from '../editor/commands';
+import { leadingCmd, sizeCmd, trackCmd } from '../editor/commands';
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 import { Slice } from 'prosemirror-model';
 import { createPortal, flushSync } from 'react-dom';
@@ -1138,8 +1138,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   const format = (k: FmtKey, dir: 1 | -1) => {
     const v = liveBox();
     const boxId = v?.dom.closest<HTMLElement>('.tbox')?.dataset.sid;
-    if (v && !v.state.selection.empty && boxId && (boxId === editing || ix.sel.includes(boxId)) && (k === 'ls' || k === 'lh')) {
-      const cmd = k === 'ls' ? trackCmd(FMT.ls.step * dir) : leadingCmd(FMT.lh.step * dir);
+    if (v && !v.state.selection.empty && boxId && (boxId === editing || ix.sel.includes(boxId))) {
+      const cmd = k === 'fs' ? sizeCmd(FMT.fs.step * dir) : k === 'ls' ? trackCmd(FMT.ls.step * dir) : leadingCmd(FMT.lh.step * dir);
       um?.stopCapturing();
       cmd(v.state, v.dispatch, v);
       um?.stopCapturing();

@@ -163,6 +163,12 @@ export const schema = new Schema({
       parseDOM: [{ tag: 'span[data-track]', getAttrs: (el) => ({ v: Number((el as HTMLElement).dataset.track) || 0 }) }],
       toDOM: (m: Mark): DOMOutputSpec => ['span', { 'data-track': String(m.attrs.v), style: `letter-spacing:${m.attrs.v}em` }, 0],
     },
+    size: {
+      attrs: { v: {} },
+      inclusive: false,
+      parseDOM: [{ tag: 'span[data-size]', getAttrs: el => ({ v: Math.min(5, Math.max(.2, Number((el as HTMLElement).dataset.size) || 1)) }) }],
+      toDOM: (m: Mark): DOMOutputSpec => ['span', { 'data-size': String(m.attrs.v), style: `font-size:${m.attrs.v}em` }, 0],
+    },
     b: { parseDOM: [{ tag: 'b' }, { tag: 'strong' }], toDOM: (): DOMOutputSpec => ['b', 0] },
     // 밑줄은 색을 가질 수 있다(찾기 → 일괄 강조). c가 없으면 글자색 밑줄.
     u: {

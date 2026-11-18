@@ -8,7 +8,7 @@ import { DEFAULT_DRAW, measureLines, pickedBoxes, type DrawState } from './draw/
 import { anchorAt, DEFAULT_W, hit, resolve, SHAPES, translate, unresolve, type Resolved, type Shape, type TextShape, type Tool } from './draw/model';
 import { liveBox, observeBoxSelection, penWhole, plainText, textBoxes, wholeBox } from './draw/TextBox';
 import { Fragment, type Node as PMNode } from 'prosemirror-model';
-import { circleCmd, leadingCmd, fontCmd, hlCmd, indentCmd, penCmd, sideCmd, toggleBranchCmd, trackCmd } from './editor/commands';
+import { circleCmd, leadingCmd, fontCmd, hlCmd, indentCmd, penCmd, sideCmd, toggleBranchCmd, trackCmd, sizeCmd } from './editor/commands';
 import { bottomOf, halvesFor, hasContent, measureBlocks, shiftOf, spanOf, textUnits, topOf, type HalfOp } from './editor/halves';
 import { newId } from './editor/ids';
 import { schema } from './editor/schema';
@@ -465,17 +465,20 @@ export function App() {
       const v = liveBox();
       const boxId = v?.dom.closest<HTMLElement>('.tbox')?.dataset.sid;
       const box = boxId ? d?.shapes.get(boxId) : null;
-      if (d && v && box?.t === 'text' && Object.keys(patch).length > 0 && Object.keys(patch).every((key) => key === 'tracking' || key === 'pitchMm')) {
+      if (d && v && box?.t === 'text' && (patch.fontPt !== undefined || patch.tracking !== undefined || patch.pitchMm !== undefined)) {
         const base = fitPitch(readTypo(d)).pitch * (box.fs ?? 1) * (box.lh ?? 1);
         umRef.current?.stopCapturing();
         if (!v.state.selection.empty) {
+          if (patch.fontPt !== undefined) sizeCmd(patch.fontPt / (readTypo(d).fontPt * (box.fs ?? 1)), true)(v.state, v.dispatch, v);
           if (patch.tracking !== undefined) trackCmd(patch.tracking, undefined, true)(v.state, v.dispatch, v);
           if (patch.pitchMm !== undefined) leadingCmd(patch.pitchMm / base, true)(v.state, v.dispatch, v);
         } else {
-          const updated = { ...box, ...(patch.tracking !== undefined ? { ls: patch.tracking - readTypo(d).tracking } : {}), ...(patch.pitchMm !== undefined ? { lh: Math.min(2.5, Math.max(0.5, patch.pitchMm / (fitPitch(readTypo(d)).pitch * (box.fs ?? 1)))) } : {}) };
+          const updated = { ...box, ...(patch.fontPt !== undefined ? { fs: Math.min(2.5, Math.max(.6, patch.fontPt / readTypo(d).fontPt)) } : {}), ...(patch.tracking !== undefined ? { ls: patch.tracking - readTypo(d).tracking } : {}), ...(patch.pitchMm !== undefined ? { lh: Math.min(2.5, Math.max(0.5, patch.pitchMm / (fitPitch(readTypo(d)).pitch * (box.fs ?? 1)))) } : {}) };
           d.ydoc.transact(() => d.shapes.set(box.id, updated), SHAPES);
         }
         umRef.current?.stopCapturing();
+        const { fontPt: _size, tracking: _track, pitchMm: _pitch, ...remaining } = patch;
+        if (Object.keys(remaining).length) writeTypo(d, remaining);
         return;
       }
       if (d) writeTypo(d, patch);
@@ -1150,6 +1153,7 @@ export function App() {
   const boxSelected = !!boxView && !boxView.state.selection.empty;
   const panelTypo = typo && boxView && formatBox?.t === 'text' ? {
     ...typo,
+    fontPt: typo.fontPt * (formatBox.fs ?? 1) * (boxSelected ? (boxView.state.doc.nodeAt(boxView.state.selection.from)?.marks.find(m => m.type === schema.marks.size)?.attrs.v ?? 1) : 1),
     tracking: boxSelected ? (boxView.state.doc.nodeAt(boxView.state.selection.from)?.marks.find((m) => m.type === schema.marks.track)?.attrs.v ?? typo.tracking + (formatBox.ls ?? 0)) : typo.tracking + (formatBox.ls ?? 0),
     pitchMm: fitPitch(typo).pitch * (formatBox.fs ?? 1) * (formatBox.lh ?? 1) * (boxSelected ? (boxView.state.selection.$from.parent.attrs.leading ?? 1) : 1),
   } : typo;
