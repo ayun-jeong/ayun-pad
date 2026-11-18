@@ -96,11 +96,11 @@ export function PagesView({ mode, source, typo, zoom, version, reading, pageInfo
     host.replaceChildren();
     const halves = countHalves(source, typo);
     const info = reading ? null : cb.current.pageInfo();
-    const ctl = (k: number) => (info && info.starts.has(k) ? controls(k, info, typo.pageWidth !== 'half') : null);
-    if (mode === 'half' || typo.pageWidth !== 'half') {
+    const ctl = (k: number) => (info && info.starts.has(k) ? controls(k, info, false) : null);
+    if (mode === 'half') {
       for (let k = 0; k < halves; k++) {
-        const fig = labelled(typo.pageWidth === 'half' ? buildHalf(source, typo, k) : buildSheet(source, typo, k, halves), '');
-        fig.querySelector('figcaption')!.replaceChildren(caption(typo.pageWidth === 'half' ? `${halfLabel(k)} · ${k % 2 === 0 ? '왼쪽' : '오른쪽'} 반쪽` : `${k + 1}장`, ctl(k)));
+        const fig = labelled(buildHalf(source, typo, k), '');
+        fig.querySelector('figcaption')!.replaceChildren(caption(`${halfLabel(k)} · ${k % 2 === 0 ? '왼쪽' : '오른쪽'} 반쪽`, ctl(k)));
         host.appendChild(fig);
       }
     } else {
@@ -132,7 +132,7 @@ export function PagesView({ mode, source, typo, zoom, version, reading, pageInfo
     const desk = o?.parentElement;
     if (!o || !i || !desk) return;
     const measure = () => {
-      const contentW = (mode === 'half' && typo.pageWidth === 'half' ? 105 : 210) * PX_PER_MM;
+      const contentW = (mode === 'half' ? 105 : 210) * PX_PER_MM;
       const avail = Math.max(200, desk.clientWidth - 32);
       const scale = mode === 'half' ? Math.min(zoom, avail / contentW) : Math.min(1.25, avail / contentW);
       setBox({ w: contentW * scale, h: i.offsetHeight * scale, scale });
@@ -234,7 +234,7 @@ export function PagesView({ mode, source, typo, zoom, version, reading, pageInfo
     <div ref={outer} className="zoom-outer" style={{ width: box.w, height: box.h }}>
       <div
         ref={inner}
-        className={`pages ${typo.pageWidth === 'half' ? mode : 'a4'}${reading ? ' ro' : ''}`}
+        className={`pages ${mode}${reading ? ' ro' : ''}`}
         style={{ transform: `scale(${box.scale})`, ['--inv' as string]: 1 / (box.scale || 1) } as CSSProperties}
         onPointerDown={onPointerDown}
         onDoubleClick={(e) => {
@@ -268,5 +268,5 @@ export function PagesView({ mode, source, typo, zoom, version, reading, pageInfo
 export function buildPrintSheets(host: HTMLElement, source: HTMLElement, typo: Typo) {
   host.replaceChildren();
   const halves = countHalves(source, typo);
-  for (let s = 0; s < (typo.pageWidth === 'half' ? Math.ceil(halves / 2) : halves); s++) host.appendChild(buildSheet(source, typo, s, halves));
+  for (let s = 0; s < Math.ceil(halves / 2); s++) host.appendChild(buildSheet(source, typo, s, halves));
 }

@@ -83,7 +83,7 @@ export function TypePanel({ typo, spacingScope, fonts, hasSelection, onChange, o
         <Num id="ty-pitch" value={typo.pitchMm} step={LIMITS.pitchMm[2]} min={LIMITS.pitchMm[0]} max={LIMITS.pitchMm[1]} onChange={(v) => onChange({ pitchMm: v })} />
       </div>
       <p className="note">
-        실제 줄 간격 {fit.pitch.toFixed(2)}mm · {typo.pageWidth === 'half' ? `반쪽 ${fit.rows}줄 · A4 한 장 ${fit.rows * 2}줄` : `A4 한 장 ${fit.rows}줄`} · 글 폭 {textWidth(typo)}mm
+        실제 줄 간격 {fit.pitch.toFixed(2)}mm · 반쪽 {fit.rows}줄 · A4 한 장 {fit.rows * 2}줄 · 글 폭 {textWidth(typo)}mm
       </p>
       <div className="row">
         <label htmlFor="ty-mt">여백 위아래</label>

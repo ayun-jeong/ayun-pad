@@ -1,4 +1,4 @@
-import { fitPitch, halfLabel, HALF_W, A4_W, A4_H, textWidth, type Typo } from '../editor/layout';
+import { fitPitch, halfLabel, HALF_W, A4_H, textWidth, type Typo } from '../editor/layout';
 import { fontStack } from '../editor/schema';
 import { halvesFor } from '../editor/halves';
 
@@ -53,11 +53,11 @@ export function countHalves(source: HTMLElement, typo: Typo): number {
 // k번째 반쪽(0부터). 왼쪽 반쪽은 바깥 여백이 왼쪽, 오른쪽 반쪽은 바깥 여백이 오른쪽이다.
 export function buildHalf(source: HTMLElement, typo: Typo, k: number): HTMLElement {
   const { usable } = fitPitch(typo);
-  const left = typo.pageWidth !== 'half' || k % 2 === 0;
+  const left = k % 2 === 0;
   const half = document.createElement('div');
   half.className = `phalf ${left ? 'l' : 'r'}`;
   half.dataset.half = String(k);
-  half.style.width = `${typo.pageWidth === 'half' ? HALF_W : A4_W}mm`;
+  half.style.width = `${HALF_W}mm`;
   half.style.height = `${A4_H}mm`;
   half.style.padding = `${typo.mTop}mm ${left ? typo.mInner : typo.mOuter}mm ${typo.mTop}mm ${left ? typo.mOuter : typo.mInner}mm`;
   const win = document.createElement('div');
@@ -70,25 +70,13 @@ export function buildHalf(source: HTMLElement, typo: Typo, k: number): HTMLEleme
   return half;
 }
 
-function emptyHalf(typo: Typo, k: number): HTMLElement {
-  const half = document.createElement('div');
-  half.className = `phalf ${k % 2 === 0 ? 'l' : 'r'} blank`;
-  half.style.width = `${typo.pageWidth === 'half' ? HALF_W : A4_W}mm`;
-  half.style.height = `${A4_H}mm`;
-  void typo;
-  return half;
-}
-
 // A4 한 장 = 왼쪽 반쪽 + 오른쪽 반쪽. 가운데에 접는 선.
 export function buildSheet(source: HTMLElement, typo: Typo, s: number, halves: number): HTMLElement {
+  void halves;
   const sheet = document.createElement('div');
   sheet.className = 'psheet';
   sheet.dataset.sheet = String(s);
-  if (typo.pageWidth !== 'half') {
-    sheet.appendChild(buildHalf(source, typo, s));
-    return sheet;
-  }
-  for (const k of [2 * s, 2 * s + 1]) sheet.appendChild(k < halves ? buildHalf(source, typo, k) : emptyHalf(typo, k));
+  for (const k of [2 * s, 2 * s + 1]) sheet.appendChild(buildHalf(source, typo, k));
   const fold = document.createElement('div');
   fold.className = 'pfold';
   sheet.appendChild(fold);

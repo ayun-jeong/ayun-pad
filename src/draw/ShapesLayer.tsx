@@ -79,6 +79,7 @@ interface Props {
   shapes: Y.Map<Shape>;
   um: Y.UndoManager | null;
   src: HTMLElement;
+  mapPoint?(point: { clientX: number; clientY: number }): XY | null;
   editor: HTMLElement;
   pitch: number;
   tick: number;
@@ -220,7 +221,7 @@ const snapOff = (e: Mods) => e.metaKey || e.ctrlKey; // ⌘(Ctrl)를 누르고 �
 // 직각 · 45°로 묶인 점은 묶인 방향을 빼고만 맞춘다
 const freeOf = (q: XY, last: XY | null, ortho: boolean) => ({ x: !(ortho && last && q.x === last.x), y: !(ortho && last && q.y === last.y) });
 
-export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, setDraw, onExtent, onCaret, caretXY, widgets, caught, onTextMarquee, host, settings, reading, paper = true, onLegacyEdit }: Props) {
+export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, tick, draw, setDraw, onExtent, onCaret, caretXY, widgets, caught, onTextMarquee, host, settings, reading, paper = true, onLegacyEdit }: Props) {
   const [, repaint] = useReducer((x: number) => x + 1, 0);
   const layer = useRef<HTMLDivElement>(null);
   const ix = useRef<Ix>({ sel: [], wsel: [], drawing: null, cursor: null, press: null, node: null, box: null, drag: null, drafts: new Map(), marquee: null, guides: null, last: null, pid: null }).current;
@@ -623,6 +624,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
 
   // 화면 자리 ↔ 종이 mm
   const toMM = (e: { clientX: number; clientY: number }): XY => {
+    const mapped = mapPoint?.(e);
+    if (mapped) return mapped;
     const r = layer.current!.getBoundingClientRect();
     return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
   };

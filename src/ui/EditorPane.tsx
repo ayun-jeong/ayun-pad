@@ -11,13 +11,15 @@ import { createEditor, type EditorHooks } from '../editor/createEditor';
 import { newId } from '../editor/ids';
 import { autoKey } from '../editor/decorations';
 import type { RuleSettings } from '../editor/inputRules';
-import { fitPitch, halfLabel, HALF_W, A4_W, DEFAULT_TYPO, type Typo } from '../editor/layout';
+import { fitPitch, halfLabel, HALF_W, DEFAULT_TYPO, type Typo } from '../editor/layout';
 import { EXTENT_PAD, halvesFor } from '../editor/halves';
 import { fontStack, schema } from '../editor/schema';
 import type { AppAction } from '../editor/shortcuts';
 import { mathKey, type MathMenuState } from '../editor/mathMenu';
 import { slashKey, type SlashState } from '../editor/slash';
 import { MathMenu, SlashMenu } from './Menus';
+import { FoldedSurface, type ScreenPoint } from './FoldedSurface';
+import type { XY } from '../draw/model';
 import { ensureFont } from '../store/fontSync';
 import { openNote, readHalves, readTypo, type NoteDoc } from '../store/noteDoc';
 import { hub, REMOTE } from '../store/sync';
@@ -82,6 +84,10 @@ export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, s
   const [minHalves, setMinHalves] = useState(1); // 끝에 넣은 빈 반쪽까지(노트 설정 'halves')
   const [paperH, setPaperH] = useState(0);
   const [srcH, setSrcH] = useState(0);
+  const [bodyH, setBodyH] = useState(0);
+  const [foldHeight, setFoldHeight] = useState(0);
+  const foldPoint = useRef<((point: ScreenPoint) => XY | null) | null>(null);
+  const onMap = useCallback((map: ((point: ScreenPoint) => XY | null) | null) => { foldPoint.current = map; }, []);
   const [live, setLive] = useState<Live | null>(null);
   // 본문을 끌어 고른 범위에 붙은 그림 · 글상자(같이 잡힘)
   const [caught, setCaught] = useState<string[]>([]);
@@ -292,6 +298,13 @@ export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, s
     return () => ro.disconnect();
   }, [relayout]);
 
+  useLayoutEffect(() => {
+    if (!live) return;
+    const observer = new ResizeObserver(() => setBodyH(live.view.dom.offsetHeight));
+    observer.observe(live.view.dom);
+    return () => observer.disconnect();
+  }, [live]);
+
   // 글자 모양이 바뀌면 줄 위치가 바뀐다 → 위젯 밀기 · 그림 위치 다시
   useLayoutEffect(() => relayout(), [typo, relayout]);
   // 폭을 바꾼 직후에는 자식 그림 층이 이전 DOM 폭을 읽었을 수 있다.
@@ -319,28 +332,32 @@ export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, s
     '--trk': `${typo.tracking}em`,
     '--trk0': `${typo.tracking}em`,
     '--wb': typo.wordBreak === 'all' ? 'break-all' : 'keep-all',
-    width: `${typo.pageWidth === 'half' ? HALF_W : A4_W}mm`,
+    width: `${HALF_W}mm`,
     padding: `${typo.mTop}mm ${typo.mInner}mm ${typo.mTop}mm ${typo.mOuter}mm`,
   } as CSSProperties;
-  const widthPx = ((typo.pageWidth === 'half' ? HALF_W : A4_W) + GUTTER_MM) * PX_PER_MM;
+  const widthPx = ((typo.pageWidth === 'half' ? HALF_W : 210) + GUTTER_MM) * PX_PER_MM;
+  const folded = typo.pageWidth === 'a4';
+  const contentHalves = halvesFor(Math.max(bodyH / PX_PER_MM, fit.usable * minHalves, extent + EXTENT_PAD), fit.usable);
+  const sourceMin = folded ? Math.ceil(contentHalves / 2) * 2 * fit.usable : Math.max(fit.usable * minHalves, extent + EXTENT_PAD);
   const onExtent = useCallback((b: number) => setExtent(b), []);
 
   return (
-    <div className="zoom-outer" style={{ width: widthPx * zoom, height: Math.max(paperH, halfPx) * zoom }}>
-      <div className="zoom-inner" style={{ transform: `scale(${zoom})`, paddingLeft: `${GUTTER_MM}mm`, ['--zoom' as string]: zoom } as CSSProperties}>
+    <div className="zoom-outer" style={{ width: widthPx * zoom, height: (folded ? Math.max(foldHeight, 297 * PX_PER_MM) : Math.max(paperH, halfPx)) * zoom }}>
+      <FoldedSurface enabled={folded} source={srcRef.current} typo={typo} zoom={zoom} version={tick} onHeight={setFoldHeight} onMap={onMap} gutter={
         <div className="half-nos" style={{ width: `${GUTTER_MM}mm` }} aria-hidden="true">
           {Array.from({ length: halves }, (_, k) => (
             <span key={k} className="half-no" style={{ top: `calc(${typo.mTop}mm + ${k * halfPx}px)` }}>
-              {typo.pageWidth === 'half' ? halfLabel(k) : `${k + 1}장`}
+              {halfLabel(k)}
             </span>
           ))}
         </div>
+      }>
         <div className="paper" ref={paperRef} style={vars}>
           <div className="paper-pad">
             {Array.from({ length: halves - 1 }, (_, k) => (
               <div key={k} className="guide" style={{ top: (k + 1) * halfPx, left: `-${typo.mOuter}mm`, right: `-${typo.mInner}mm` }} />
             ))}
-            <div className="sheet-src" ref={srcRef} style={{ minHeight: `${Math.max(fit.usable * minHalves, extent + EXTENT_PAD)}mm` }}>
+            <div className="sheet-src" ref={srcRef} style={{ minHeight: `${sourceMin}mm` }}>
               <div ref={mountRef} />
               {live && srcRef.current && (
                 <ShapesLayer
@@ -348,6 +365,7 @@ export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, s
                   shapes={live.doc.shapes}
                   um={live.um}
                   src={srcRef.current}
+                  mapPoint={folded ? (point) => foldPoint.current?.(point) ?? null : undefined}
                   editor={live.view.dom}
                   caretXY={() => {
                     const v = live.view;
@@ -407,7 +425,7 @@ export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, s
             </div>
           </div>
         </div>
-      </div>
+      </FoldedSurface>
       {slash && live && hostRef.current && <SlashMenu st={slash} view={live.view} host={hostRef.current} />}
       {math && live && <MathMenu st={math} view={live.view} />}
     </div>

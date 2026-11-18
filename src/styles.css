@@ -678,3 +678,14 @@ body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: non
 }
 
 .paper-width-options { display: inline-flex; gap: 3px; }
+
+/* A4 is a pair of unchanged 105mm halves: 1-1 | 1-2, 2-1 | 2-2. */
+.folded-canvas { width: 217mm; }
+.folded-snapshots { display: grid; gap: 9mm; width: 210mm; }
+.folded-snapshots .psheet { box-shadow: var(--shadow); }
+.folded-snapshots .pfig figcaption { min-height: 4mm; margin-bottom: 2mm; }
+.folded-snapshots .phalf.live-half .pcol { visibility: hidden; }
+.folded-snapshots [contenteditable], .folded-snapshots .tbox { cursor: text; }
+.fold-live-window { z-index: 3; }
+.fold-live-window .paper { box-shadow: none; }
+.folded-snapshots .pfold { z-index: 4; }

@@ -19,7 +19,7 @@ try {
   await page.goto(url, { waitUntil: 'networkidle0' });
   await page.waitForSelector('.editor');
   const paperWidth = await page.$eval('.paper', (e) => e.offsetWidth);
-  check(Math.abs(paperWidth - 210 * 96 / 25.4) < 2, '기본 편집 종이는 A4 전체 폭');
+  check(Math.abs(paperWidth - 105 * 96 / 25.4) < 2, '기본 편집은 105mm 반쪽부터 시작');
   await page.$eval('.addnote', e => e.click());
   await page.waitForFunction(() => document.querySelector('.editor')?.textContent === '', { timeout: 5000 }).catch(async e => { console.log('startup diagnostics', await page.evaluate(() => ({ title: document.querySelector('.crumb input')?.value, text: [...document.querySelectorAll('.editor')].map(e => e.textContent.slice(0, 200)), notes: [...document.querySelectorAll('.note-item')].map(e => e.textContent), html: document.querySelector('.desk')?.innerHTML.slice(0, 1000) })), errors); throw e; });
   await page.click('.paper-width-options button:first-child');
@@ -31,20 +31,20 @@ try {
   await page.waitForFunction(() => Math.abs(document.querySelector('.paper').offsetWidth - 105 * 96 / 25.4) < 2);
   check(true, '노트별 반쪽 편집 설정을 새로고침 뒤에도 유지');
   await page.click('.paper-width-options button:last-child');
-  await page.waitForFunction(() => document.querySelector('.paper').offsetWidth > 790 && document.querySelector('.shapes-svg').viewBox.baseVal.width > 200);
-  check(await page.$eval('.paper-width-options button:last-child', e => e.getAttribute('aria-pressed') === 'true'), '한 장 편집을 선택하면 210mm 전체 폭으로 전환');
+  await page.waitForFunction(() => document.querySelector('.folded-snapshots .psheet')?.offsetWidth > 790 && document.querySelector('.fold-live-window .shapes-svg').viewBox.baseVal.width < 101);
+  check(await page.$eval('.paper-width-options button:last-child', e => e.getAttribute('aria-pressed') === 'true'), '한 장 편집은 105mm 반쪽 두 개를 좌우로 펼침');
   const noteURL = page.url();
-  const layer = await page.$eval('.shapes-layer', (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width }; });
-  await page.mouse.click(layer.x + layer.w * .72, layer.y + 150);
+  const layer = await page.$eval('.folded-snapshots .phalf[data-half="1"] .pwin', (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width }; });
+  await page.mouse.click(layer.x + layer.w * .6, layer.y + 150);
   await page.waitForSelector('.tbox.tedit .tb-edit');
   await page.keyboard.type('A4 right side');
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => [...window.__ayunpad.doc().shapes.values()].some((s) => s.text === 'A4 right side'));
   const shapeX = await page.evaluate(() => [...window.__ayunpad.doc().shapes.values()][0].a.x);
-  check(shapeX > 105, '오른쪽 반쪽 공간에서도 글상자 생성 · 저장');
-  await page.click('.tbox', { count: 2 });
+  check(shapeX < 100 && await page.evaluate(() => [...window.__ayunpad.doc().shapes.values()][0].a.y > 291), '오른쪽 글상자를 1-2의 좌표로 생성 · 저장');
+  await page.click('.fold-live-window .tbox', { count: 2 });
   await page.waitForSelector('.tb-grip', { visible: true });
-  const grip = await page.$('.tb-grip');
+  const grip = await page.$('.fold-live-window .tb-grip');
   if (grip) {
     const r = await grip.boundingBox();
     await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2); await page.mouse.down(); await page.mouse.move(r.x - 100, r.y + 60, { steps: 8 }); await page.mouse.up();
@@ -118,7 +118,7 @@ try {
   // Validate full-width print: no fold or lost right side.
   await page.keyboard.down('Alt'); await page.keyboard.press('Digit3'); await page.keyboard.up('Alt');
   await page.waitForSelector('.pages .phalf');
-  check(await page.$eval('.pages .phalf', (e) => e.offsetWidth > 790), 'A4 미리보기도 전체 폭');
+  check(await page.$eval('.pages .psheet', (e) => e.offsetWidth > 790), 'A4 미리보기도 반쪽 두 개를 나란히 배치');
   // Extension gets top-level pad storage via the declared host permission.
   const extensionId = await browser.installExtension(path.resolve('extension'));
   const panel = await browser.newPage();
@@ -149,7 +149,7 @@ try {
   await pause(300);
   await page.screenshot({ path: '/tmp/ayunpad-qa/workspace.png' });
   await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')));
-  check(await page.$eval('.print-root .phalf', e => e.style.width === '210mm'), '인쇄용 종이도 A4 전체 폭을 유지');
+  check(await page.$eval('.print-root .psheet', e => e.querySelectorAll('.phalf').length === 2 && e.querySelector('.phalf').style.width === '105mm'), '인쇄도 105mm 반쪽 두 개로 A4 한 장을 구성');
   await page.setViewport({ width: 390, height: 844 });
   if (!(await page.$eval('.side', e => e.classList.contains('hidden')))) await page.$eval('.side-backdrop', e => e.click());
   await page.waitForSelector('.side.hidden');

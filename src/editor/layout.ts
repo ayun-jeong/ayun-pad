@@ -7,7 +7,7 @@ export const PT_MM = 25.4 / 72;
 export type FontId = string;
 
 export interface Typo {
-  pageWidth: 'a4' | 'half'; // 편집 · 인쇄 종이 폭
+  pageWidth: 'a4' | 'half'; // 반쪽을 세로로 이어 보거나 A4에 좌우로 펼쳐 보기
   font: FontId;
   fontPt: number; // 글자 크기
   pitchMm: number; // 행간(줄 간격) 목표값. 실제 값은 반쪽 높이에 맞춰 조금 바뀐다
@@ -23,7 +23,7 @@ export interface Typo {
 }
 
 export const DEFAULT_TYPO: Typo = {
-  pageWidth: 'a4',
+  pageWidth: 'half',
   font: 'pretendard',
   fontPt: 8,
   pitchMm: 3.6,
@@ -70,7 +70,7 @@ export function fitPitch(typo: Pick<Typo, 'pitchMm' | 'mTop' | 'fontPt'>): { row
 }
 
 export function textWidth(typo: Pick<Typo, 'mOuter' | 'mInner'> & Partial<Pick<Typo, 'pageWidth'>>): number {
-  return (typo.pageWidth === 'half' ? HALF_W : A4_W) - typo.mOuter - typo.mInner;
+  return HALF_W - typo.mOuter - typo.mInner;
 }
 
 export function normalizeTypo(raw: Partial<Typo> | undefined): Typo {

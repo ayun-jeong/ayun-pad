@@ -71,7 +71,7 @@ function initialZoom(): number {
   const saved = Number(lsGet(ZOOM));
   if (saved >= 0.25 && saved <= 3) return saved;
   const w = window.innerWidth;
-  if (w >= 1000) return 1;
+  if (w >= 1000) return 1.5;
   return Math.max(0.25, Math.min(1.5, (w - 24) / ((210 + GUTTER_MM) * PX_PER_MM)));
 }
 
@@ -286,12 +286,12 @@ export function App() {
     const desk = deskRef.current;
     if (!desk) return;
     const observer = new ResizeObserver(() => {
-      const width = (typoRef.current?.pageWidth === 'half' ? 105 : 210) + GUTTER_MM;
+      const width = (typoRef.current?.pageWidth === 'a4' ? 210 : 105) + GUTTER_MM;
       setZoom(clampZoom(Math.min(1.5, Math.max(0.25, (desk.clientWidth - 32) / (width * PX_PER_MM)))));
     });
     observer.observe(desk);
     return () => observer.disconnect();
-  }, []);
+  }, [typo?.pageWidth]);
   useEffect(() => {
     const receive = (e: MessageEvent) => {
       if (e.source !== window.parent || !e.origin.startsWith('chrome-extension://') || e.data?.type !== 'ayunpad:capture') return;
@@ -1217,7 +1217,7 @@ export function App() {
             편집
           </button>
           <button type="button" className={mode === 'half' ? 'on' : ''} onClick={() => act('view-half')} title="반쪽 보기 (⌥2)">
-            {typo?.pageWidth === 'half' ? '반쪽' : '쪽 보기'}
+            반쪽 보기
           </button>
           <button type="button" className={mode === 'a4' ? 'on' : ''} onClick={() => act('view-a4')} title="A4 합침 보기 (⌥3)">
             A4
@@ -1295,7 +1295,7 @@ export function App() {
         }} onPointerUp={(e) => e.currentTarget.releasePointerCapture(e.pointerId)} />}
       <div className="note-workspace">
       <nav className="canvas-tools" aria-label="종이 편집 도구">
-        <span>{typo?.pageWidth === 'half' ? '반쪽' : 'A4 한 장'} 편집</span>
+        <span>{typo?.pageWidth === 'half' ? '반쪽씩 편집' : 'A4 펼쳐서 편집'}</span>
         {!reading && <div className="paper-width-options" role="group" aria-label="편집 종이 폭">
           <button type="button" disabled={!typo} aria-pressed={typo?.pageWidth === 'half'} className={typo?.pageWidth === 'half' ? 'on' : ''} onClick={() => changeTypo({ pageWidth: 'half' })}>반쪽</button>
           <button type="button" disabled={!typo} aria-pressed={typo?.pageWidth === 'a4'} className={typo?.pageWidth === 'a4' ? 'on' : ''} onClick={() => changeTypo({ pageWidth: 'a4' })}>한 장</button>
