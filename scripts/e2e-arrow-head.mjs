@@ -1,0 +1,47 @@
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import puppeteer from 'puppeteer-core';
+const url='http://localhost:4347/ayun-pad/';
+const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--port','4347','--strictPort'],{stdio:'ignore'});
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));let browser;
+try{
+  for(let i=0;i<60;i++){try{if((await fetch(url)).ok)break;}catch{}await sleep(200);}
+  browser=await puppeteer.launch({executablePath:process.env.CHROME??'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,args:['--disable-gpu']});
+  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.setViewport({width:1440,height:1000});
+  await page.goto(url,{waitUntil:'networkidle0'});await page.waitForSelector('.editor');await page.$eval('.addnote',e=>e.click());await page.waitForFunction(()=>window.__ayunpad.view().state.doc.textContent==='');
+  await page.click('.insert-btn');await page.$$eval('.ins-drawing button',es=>es.find(e=>e.textContent==='화살표').click());
+  await page.waitForSelector('[aria-label="화살표 머리 크기"]');
+  assert.ok(await page.$eval('[aria-label="화살표 머리 크기"]',e=>e.textContent.includes('65%')));
+  await page.click('button[aria-label="화살표 머리 작게"]');
+  const origin=await page.$eval('.shapes-layer',e=>{const r=e.getBoundingClientRect();return{x:r.x,y:r.y,ppm:r.width/100};});
+  const p=(x,y)=>({x:origin.x+x*origin.ppm,y:origin.y+y*origin.ppm});
+  await page.mouse.click(p(15,30).x,p(15,30).y);await page.mouse.click(p(65,30).x,p(65,30).y);await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>[...window.__ayunpad.doc().shapes.values()].some(s=>s.t==='path'));
+  const fresh=await page.evaluate(()=>[...window.__ayunpad.doc().shapes.values()].find(s=>s.t==='path'));
+  assert.equal(fresh.headScale,.55);
+  console.log('ok  새 화살표 기본 머리 65% · 그리기 전 조절한 55%로 생성');
+  await page.evaluate(()=>{const a=(x,y)=>({l:null,r:0,x,y});window.__ayunpad.doc().shapes.set('old-arrow',{id:'old-arrow',t:'path',pts:[a(20,80),a(80,80)],c:'k',w:.35,head:2,z:10});});
+  await page.waitForSelector('.paper [data-sid="old-arrow"] polygon');await page.keyboard.press('Escape');
+  await page.mouse.click(p(45,80).x,p(45,80).y);await page.waitForSelector('[aria-label="화살표 머리 크기"]');
+  assert.ok(await page.$eval('[aria-label="화살표 머리 크기"]',e=>e.textContent.includes('100%')));
+  const heads=()=>page.$$eval('.paper [data-sid="old-arrow"] polygon',es=>es.map(e=>{const p=[...e.points].map(p=>({x:p.x,y:p.y}));return{tip:p[0],length:Math.hypot(p[1].x-p[0].x,p[1].y-p[0].y)};}));
+  const before=await heads();await page.click('button[aria-label="화살표 머리 작게"]');
+  await page.waitForFunction(()=>window.__ayunpad.doc().shapes.get('old-arrow').headScale===.9);
+  const after=await heads();assert.equal(after.length,2);
+  after.forEach((h,i)=>{assert.deepEqual(h.tip,before[i].tip);assert.ok(Math.abs(h.length/before[i].length-.9)<.002);});
+  const shape=await page.evaluate(()=>window.__ayunpad.doc().shapes.get('old-arrow'));assert.equal(shape.w,.35);assert.deepEqual(shape.pts.map(p=>[p.x,p.y]),[[20,80],[80,80]]);
+  console.log('ok  기존 양쪽 화살표의 머리만 축소 · 끝점과 선 굵기·위치는 유지');
+  const mod=await page.evaluate(()=>/Mac/.test(navigator.platform)?'Meta':'Control');
+  const key=async code=>{await page.keyboard.down(mod);await page.keyboard.press(code);await page.keyboard.up(mod);};
+  await key('KeyZ');await page.waitForFunction(()=>window.__ayunpad.doc().shapes.get('old-arrow').headScale===undefined);
+  assert.deepEqual(await heads(),before);
+  await page.click('button[aria-label="화살표 머리 작게"]');await key('KeyD');await page.waitForFunction(()=>window.__ayunpad.doc().shapes.size===3);
+  assert.equal(await page.evaluate(()=>[...window.__ayunpad.doc().shapes.values()].filter(s=>s.headScale===.9).length),2);
+  console.log('ok  한 번의 실행 취소로 머리 크기 복원 · 복제 시 조절값 보존');
+  await page.evaluate(()=>window.dispatchEvent(new Event('beforeprint')));
+  const print=await page.$$eval('.print-root [data-sid="old-arrow"] polygon',es=>es.slice(0,2).map(e=>e.getAttribute('points')));
+  const live=await page.$$eval('.paper [data-sid="old-arrow"] polygon',es=>es.map(e=>e.getAttribute('points')));assert.deepEqual(print,live);
+  await sleep(250);await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('.paper [data-sid="old-arrow"] polygon');
+  assert.equal(await page.evaluate(()=>window.__ayunpad.doc().shapes.get('old-arrow').headScale),.9);
+  assert.deepEqual(errors,[]);console.log('ok  인쇄에도 조절한 머리 크기 적용 · 새로고침 뒤 보존 · 실행 오류 없음');
+}finally{await browser?.close();server.kill();}

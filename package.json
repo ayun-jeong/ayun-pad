@@ -27,7 +27,8 @@
     "e2e:density": "node scripts/e2e-density.mjs",
     "e2e:box-focus": "node scripts/e2e-box-focus.mjs",
     "e2e:branch-dash": "node scripts/e2e-branch-dash.mjs",
-    "e2e:inline-memo": "node scripts/e2e-inline-memo.mjs"
+    "e2e:inline-memo": "node scripts/e2e-inline-memo.mjs",
+    "e2e:arrow-head": "node scripts/e2e-arrow-head.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.3",

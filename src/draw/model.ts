@@ -27,6 +27,7 @@ export interface PathShape extends Base {
   // 두 점 사이는 양쪽 손잡이가 다 없으면 직선, 하나라도 있으면 3차 베지어 곡선이다(펜 도구처럼 한 경로에 섞인다).
   cs?: (Ctrl | null)[];
   head: 0 | 1 | 2 | 3; // 화살촉: 없음 · 끝 · 양쪽 · 시작
+  headScale?: number; // 화살촉 크기 배율. 이전 그림은 1로 표시한다.
   dash?: boolean;
   o?: boolean; // 직각 경로: 점과 점 사이를 가로 · 세로 선으로만 잇는다(언제든 바꿀 수 있다). 곡선 구간에는 쓰지 않는다
 }
@@ -86,6 +87,9 @@ export function stepW(w: number, dir: 1 | -1): number {
 
 export const HEAD_NAME = ['없음', '끝', '양쪽', '시작'] as const;
 export const nextHead = (h: number) => ((h | 0) + 1) % 4; // 끝(1) → 양쪽(2) → 시작(3) → 없음(0) → 끝
+export const DEFAULT_HEAD_SCALE = .65;
+export const headScaleOf = (value?: number) => Number.isFinite(value) ? Math.min(1.5, Math.max(.25, value!)) : 1;
+export const stepHeadScale = (value: number | undefined, dir: 1 | -1) => Math.round(Math.min(1.5, Math.max(.25, headScaleOf(value) + dir * .1)) * 100) / 100;
 
 export const strokeOf = (c: string) => colorOf(c);
 
@@ -160,8 +164,8 @@ export function constrain(p: XY, last: XY | null, ortho: boolean, snap: boolean)
 }
 
 // 화살촉: 끝점 tip, 그 앞 점 from 방향. 굵기에 맞춰 크기를 정한다. 선은 화살촉 밑동까지만 그린다.
-export function arrowHead(from: XY, tip: XY, w: number): { poly: XY[]; base: XY } {
-  const len = Math.max(1.5, w * 4.6);
+export function arrowHead(from: XY, tip: XY, w: number, scale?: number): { poly: XY[]; base: XY } {
+  const len = Math.max(1.5, w * 4.6) * headScaleOf(scale);
   const half = len * 0.42;
   const d = dist(from, tip) || 1;
   const ux = (tip.x - from.x) / d;
@@ -320,18 +324,18 @@ function trimStart(s: DrawSeg, base: XY, len: number): DrawSeg {
 }
 
 // 화면에 그릴 경로(SVG d)와 화살촉. 화살촉은 마지막(첫) 구간의 끝 접선 방향을 따른다(곡선이면 휘어 들어온 방향).
-export function pathGeom(r: PathLike & { head?: number; w: number }): { d: string; heads: XY[][] } {
+export function pathGeom(r: PathLike & { head?: number; headScale?: number; w: number }): { d: string; heads: XY[][] } {
   const segs = drawSegs(r);
   const heads: XY[][] = [];
   if (segs.length && (r.head === 1 || r.head === 2)) {
     const s = segs[segs.length - 1];
-    const h = arrowHead(behindEnd(s), s.b, r.w);
+    const h = arrowHead(behindEnd(s), s.b, r.w, r.headScale);
     heads.push(h.poly);
     segs[segs.length - 1] = trimEnd(s, h.base, dist(h.base, s.b));
   }
   if (segs.length && (r.head === 2 || r.head === 3)) {
     const s = segs[0];
-    const h = arrowHead(behindStart(s), s.a, r.w);
+    const h = arrowHead(behindStart(s), s.a, r.w, r.headScale);
     heads.push(h.poly);
     segs[0] = trimStart(s, h.base, dist(h.base, s.a));
   }

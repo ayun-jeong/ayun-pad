@@ -20,6 +20,9 @@ import {
   boxOf,
   constrain,
   DEFAULT_W,
+  DEFAULT_HEAD_SCALE,
+  headScaleOf,
+  stepHeadScale,
   dist,
   handles,
   HEAD_NAME,
@@ -61,11 +64,12 @@ export interface DrawState {
   w: number;
   ortho: boolean;
   lock: boolean;
+  headScale?: number;
   quick?: boolean; // 글상자 한 번 넣기: 도구 막대 없이, 넣고 나면 바로 글쓰기로
   picked?: boolean; // 글쓰기 화면에서 그림을 눌러 고치는 중: 지우거나 · 빈 곳을 누르거나 · Esc 한 번이면 바로 글쓰기로
 }
 
-export const DEFAULT_DRAW: DrawState = { tool: 'select', c: 'k', w: DEFAULT_W, ortho: false, lock: false };
+export const DEFAULT_DRAW: DrawState = { tool: 'select', c: 'k', w: DEFAULT_W, ortho: false, lock: false, headScale: DEFAULT_HEAD_SCALE };
 
 // 지금 통째로 골라 둔 글상자(고치는 중이 아닌 것). 위쪽 펜 · 형광펜 · 동그라미 단추가 이 글상자 글 전체에 칠한다(App.withView)
 export const pickedBoxes: { ids: string[] } = { ids: [] };
@@ -156,7 +160,7 @@ function ShapeSvg({ r }: { r: Resolved }) {
       <g data-sid={r.id}>
         <path d={d} fill="none" stroke={stroke} strokeWidth={r.w} strokeLinejoin="round" strokeLinecap="round" strokeDasharray={dash} />
         {heads.map((h, i) => (
-          <polygon key={i} points={pts(h)} fill={stroke} stroke={stroke} strokeWidth={r.w * 0.6} strokeLinejoin="round" />
+          <polygon key={i} points={pts(h)} fill={stroke} stroke={stroke} strokeWidth={r.w * 0.6 * Math.min(1, headScaleOf(r.headScale))} strokeLinejoin="round" />
         ))}
       </g>
     );
@@ -714,7 +718,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     cancelPath();
     if (p.length >= 2 && d && dr) {
       const cs = tidyCs(dr.cs);
-      const s: PathShape = { id: newId(), t: 'path', pts: p.map((q) => anchorAt(q, lines)), ...(cs ? { cs } : {}), head: d.tool === 'line' ? 0 : 1, c: d.c, w: d.w, z: nextZ(), ...(d.ortho ? { o: true } : {}) };
+      const s: PathShape = { id: newId(), t: 'path', pts: p.map((q) => anchorAt(q, lines)), ...(cs ? { cs } : {}), head: d.tool === 'line' ? 0 : 1, headScale: d.headScale ?? DEFAULT_HEAD_SCALE, c: d.c, w: d.w, z: nextZ(), ...(d.ortho ? { o: true } : {}) };
       put(s);
       pickOnly([s.id]);
       if (!d.lock) setDraw({ tool: 'select' });
@@ -1128,7 +1132,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
 
   // 고른 것 모두에, 그 그림에 맞는 것만: 색은 모두, 굵기 · 점선은 글상자 빼고, 직각 · 화살촉은 선, 채우기는 네모 · 원, 테두리는 글상자
   const fits = (s: Shape, k: string) =>
-    k === 'c' || ((k === 'w' || k === 'dash') && s.t !== 'text') || ((k === 'o' || k === 'head') && s.t === 'path') || (k === 'fill' && (s.t === 'rect' || s.t === 'ellipse')) || (k === 'box' && s.t === 'text');
+    k === 'c' || ((k === 'w' || k === 'dash') && s.t !== 'text') || ((k === 'o' || k === 'head' || k === 'headScale') && s.t === 'path') || (k === 'fill' && (s.t === 'rect' || s.t === 'ellipse')) || (k === 'box' && s.t === 'text');
   const update = (patch: Record<string, unknown> | ((s: Shape) => Record<string, unknown>)) => {
     const list = selShapes();
     if (!list.length) return;
@@ -1775,6 +1779,14 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highligh
   const allFill = boxes.length > 0 && boxes.every((b) => b.fill);
   const allDash = strokes.length > 0 && strokes.every((s) => s.dash);
   const allBox = texts.length > 0 && texts.every((t) => t.box);
+  const arrows = paths.filter(p => p.head !== 0);
+  const headScale = headScaleOf(n ? arrows[0]?.headScale : draw.headScale ?? DEFAULT_HEAD_SCALE);
+  const headSize = <div className="dgroup" role="group" aria-label="화살표 머리 크기">
+    <span className="dlab">머리</span>
+    <button type="button" aria-label="화살표 머리 작게" title="화살표 머리 작게 · 선 굵기와 별도로 조절" disabled={n ? arrows.every(p => headScaleOf(p.headScale) <= .25) : headScale <= .25} onClick={() => n ? update(s => s.t === 'path' && s.head ? { headScale: stepHeadScale(s.headScale, -1) } : {}) : setDraw({ headScale: stepHeadScale(draw.headScale ?? DEFAULT_HEAD_SCALE, -1) })}>−</button>
+    <span className="dval" style={{ minWidth: 36 }}>{n && arrows.some(p => headScaleOf(p.headScale) !== headScale) ? '혼합' : `${Math.round(headScale * 100)}%`}</span>
+    <button type="button" aria-label="화살표 머리 크게" title="화살표 머리 크게" disabled={n ? arrows.every(p => headScaleOf(p.headScale) >= 1.5) : headScale >= 1.5} onClick={() => n ? update(s => s.t === 'path' && s.head ? { headScale: stepHeadScale(s.headScale, 1) } : {}) : setDraw({ headScale: stepHeadScale(draw.headScale ?? DEFAULT_HEAD_SCALE, 1) })}>+</button>
+  </div>;
   return (
     <div className={`drawbar${n ? ' has-sel' : ''}`} role="toolbar" aria-label="그리기 도구" onPointerDown={keep} onPointerUp={(e) => e.stopPropagation()}>
       {n ? (
@@ -1787,6 +1799,7 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highligh
           </div>
           {sel.length > 0 && swatches}
           {strokes.length > 0 && width}
+          {arrows.length > 0 && headSize}
           {sel.length > 0 && (
             <div className="dgroup">
               {paths.length > 0 && (
@@ -1876,6 +1889,7 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highligh
           </div>
           {swatches}
           {width}
+          {draw.tool === 'arrow' && headSize}
           {drawing && (
             <button type="button" className="dfinish" onClick={finish} title="지금까지 찍은 점으로 완성 (Enter)">
               완성

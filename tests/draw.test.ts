@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { anchorAt, arrowHead, constrain, cubicAt, dist, distToSeg, hit, HEAD_NAME, insertPoint, knobs, moveKnob, nearSegment, nextHead, outline, pathGeom, pieces, removePoint, resolveAnchor, segmentAt, type Lines, type Resolved, type XY } from '../src/draw/model';
+import { anchorAt, arrowHead, headScaleOf, stepHeadScale, constrain, cubicAt, dist, distToSeg, hit, HEAD_NAME, insertPoint, knobs, moveKnob, nearSegment, nextHead, outline, pathGeom, pieces, removePoint, resolveAnchor, segmentAt, type Lines, type Resolved, type XY } from '../src/draw/model';
 import { bboxOf, snapCoords, snapMove, touches } from '../src/draw/snap';
 import { matchAt, matchRank } from '../src/editor/hangul';
 
@@ -184,5 +184,31 @@ describe('곡선(베지어) 선 · 화살표', () => {
     expect(hit(curved, mid, 0.6, th)).toBe(true);
     expect(hit(curved, { x: 10, y: -2 }, 0.6, th)).toBe(false);
     expect(bboxOf(curved, th).h).toBeGreaterThan(1); // 직선이면 0, 곡선은 아래로 불룩
+  });
+});
+
+ describe('화살표 머리 크기', () => {
+  it('기존 크기는 유지하고 머리만 비례해 줄인다', () => {
+    const from = {x:0,y:0}, tip = {x:20,y:0};
+    const old = arrowHead(from,tip,.35), small = arrowHead(from,tip,.35,.5);
+    expect(small.poly[0]).toEqual(tip);
+    expect(tip.x-small.poly[1].x).toBeCloseTo((tip.x-old.poly[1].x)/2);
+    expect(small.poly[1].y).toBeCloseTo(old.poly[1].y/2);
+    expect(tip.x-small.base.x).toBeCloseTo((tip.x-old.base.x)/2);
+  });
+  it.each([1,2,3])('시작·끝·양쪽 머리 %s의 크기는 같게 조절하고 끝점을 보존한다', head => {
+    const path = {pts:[{x:0,y:0},{x:40,y:0}],w:.2,head};
+    const normal = pathGeom(path), small = pathGeom({...path,headScale:.25});
+    expect(small.heads.length).toBe(head===2?2:1);
+    small.heads.forEach((h,i)=>{
+      expect(h[0]).toEqual(normal.heads[i][0]);
+      expect(dist(h[0],h[1])).toBeCloseTo(dist(normal.heads[i][0],normal.heads[i][1])*.25);
+    });
+    expect(path.pts).toEqual([{x:0,y:0},{x:40,y:0}]);
+  });
+  it('설정은 25~150%로 제한하고 이전 자료와 잘못된 값은 기본 크기로 읽는다', () => {
+    expect(headScaleOf()).toBe(1);expect(headScaleOf(NaN)).toBe(1);
+    expect(stepHeadScale(.25,-1)).toBe(.25);expect(stepHeadScale(1.5,1)).toBe(1.5);
+    expect(stepHeadScale(undefined,-1)).toBe(.9);
   });
 });
