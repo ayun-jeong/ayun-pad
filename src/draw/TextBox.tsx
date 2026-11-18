@@ -86,6 +86,12 @@ export function withReplaced(s: TextShape, hits: { from: number; to: number }[],
 // 글씨 크기 · 행간 · 자간은 노트 값(--fs0 · --lh0 · --trk0)에 곱하고 더해서, 안쪽 트리 · 가지선도 같이 맞는다
 export function tboxStyle(r: Resolved & { t: 'text' }): CSSProperties {
   const st: Record<string, string> = { left: `${r.a.x}mm`, top: `${r.a.y}mm`, width: `${r.bw}mm`, color: strokeOf(r.c) };
+  if (r.frame) {
+    st.border = `${r.w}mm ${r.dash ? 'dashed' : 'solid'} ${strokeOf(r.stroke ?? 'k')}`;
+    st.borderRadius = r.frame === 'ellipse' ? '50%' : '0';
+    st.padding = r.frame === 'ellipse' ? `${Math.max(2, (r.bh ?? 10) * .146)}mm ${Math.max(2, r.bw * .146)}mm` : '2mm';
+    if (r.fill) st.background = `color-mix(in srgb, ${strokeOf(r.fill)} 18%, transparent)`;
+  }
   const fs = r.fs ?? 1;
   if (r.bh) st.minHeight = `max(var(--lh), ${r.bh}mm)`;
   const lh = Math.round(fs * (r.lh ?? 1) * 1000) / 1000;
@@ -234,9 +240,9 @@ function TbBar({ anchor, view, r, editing, onPatch, um }: { anchor: RefObject<HT
       </button>
       </div>
       <span className="tb-sep" />
-      <button type="button" className={r.box ? 'on' : ''} title="테두리" aria-label="테두리" onClick={() => onPatch({ box: !r.box })}>
+      {!r.frame && <button type="button" className={r.box ? 'on' : ''} title="테두리" aria-label="테두리" onClick={() => onPatch({ box: !r.box })}>
         □
-      </button>
+      </button>}
     </div>, document.body,
   );
 }
@@ -351,7 +357,7 @@ export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFo
   return (
     <div
       ref={box}
-      className={`tbox${active ? ' tedit' : ''}${r.box ? ' boxed' : ''}`}
+      className={`tbox${active ? ' tedit' : ''}${r.box ? ' boxed' : ''}${r.frame ? ' shape-text' : ''}`}
       data-sid={r.id}
       style={tboxStyle(r)}
       onFocus={onFocus}

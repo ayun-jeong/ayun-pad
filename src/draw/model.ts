@@ -49,6 +49,10 @@ export interface TextShape extends Base {
   bh?: number; // 높이 맞추기로 지정한 최소 높이(mm). 내용은 자르지 않는다.
   text: string; // 찾기 · 옛 글상자용 맨 글
   doc?: unknown; // 글상자 내용(ProseMirror JSON). 펜 · 형광펜 · 동그라미 · 밑줄이 그대로 들어간다
+  frame?: 'rect' | 'ellipse'; // 글을 담은 도형: 같은 글상자 엔진으로 편집
+  stroke?: string; // 도형 테두리 색(글자색과 독립)
+  fill?: string | null;
+  dash?: boolean;
   box?: boolean; // 테두리
   fs?: number; // 글씨 크기(노트 글씨의 배수, 기본 1)
   ls?: number; // 자간(em, 노트 자간에 더함)
@@ -460,7 +464,10 @@ export function translate(r: Resolved, dx: number, dy: number): Resolved {
 // 손잡이(고른 그림의 점 · 모서리)
 export function handles(r: Resolved, textH: (id: string) => number): XY[] {
   if (r.t === 'path') return r.pts;
-  if (r.t === 'text') return [{ x: r.a.x + r.bw, y: r.a.y + textH(r.id) / 2 }];
+  if (r.t === 'text') {
+    if (r.frame) return handles({ ...r, t: r.frame, b: {x: r.a.x + r.bw, y: r.a.y + textH(r.id)} }, textH);
+    return [{ x: r.a.x + r.bw, y: r.a.y + textH(r.id) / 2 }];
+  }
   const b = boxOf(r.a, r.b);
   // 네 모서리(0~3) + 네 변 가운데(4 위 · 5 오른쪽 · 6 아래 · 7 왼쪽)
   return [

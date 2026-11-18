@@ -193,8 +193,8 @@ function ShapeHit({ r, onPick }: { r: Resolved; onPick(e: React.PointerEvent): v
   if (r.t === 'path') return <path className="sh-hit" d={pathGeom({ ...r, head: 0 }).d} fill="none" strokeWidth={w} onPointerDown={onPick} />;
   if (r.t === 'text') return null;
   const b = boxOf(r.a, r.b);
-  const cls = `sh-hit${r.fill ? ' filled' : ''}`;
-  const fill = r.fill ? 'transparent' : 'none';
+  const cls = 'sh-hit filled';
+  const fill = 'transparent';
   if (r.t === 'rect') return <rect className={cls} x={b.x} y={b.y} width={b.w} height={b.h} fill={fill} strokeWidth={w} onPointerDown={onPick} />;
   return <ellipse className={cls} cx={b.x + b.w / 2} cy={b.y + b.h / 2} rx={b.w / 2} ry={b.h / 2} fill={fill} strokeWidth={w} onPointerDown={onPick} />;
 }
@@ -263,7 +263,16 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     // 누른 채 끌면 바로 옮기기, 곧 한 번 더 누르면 두 번 누르기(글상자는 고치기)
     const r = byId(id);
     const p = toMM(e);
-    ix.last = { t: performance.now(), p };
+    const now = performance.now();
+    const twice = !!ix.last && now - ix.last.t < DOUBLE_MS[e.pointerType === 'touch' ? 'touch' : 'mouse'] && dist(ix.last.p, p) * pxPerMm() < DOUBLE_PX;
+    ix.last = twice ? null : { t: now, p };
+    // 첫 누름에서 고르기 모드로 전환하는 렌더가 아직 끝나지 않아도 두 번째 누름을 받는다.
+    if (twice && r && r.t !== 'path') {
+      setDraw({ tool: 'select', picked: true });
+      if (r.t === 'text') focusBox(r.id, { x: e.clientX, y: e.clientY });
+      else editShape(r.id);
+      return repaint();
+    }
     if (r && layer.current && e.button === 0) {
       ix.pid = e.pointerId;
       layer.current.setPointerCapture(e.pointerId);
@@ -744,7 +753,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
         const cur = shapes.get(r.id);
         if (!cur) continue;
         const g = unresolve(r, lines);
-        const patch = g.t === 'path' ? { pts: g.pts, cs: g.cs } : g.t === 'text' ? { a: g.a, bw: g.bw } : { a: g.a, b: g.b };
+        const patch = g.t === 'path' ? { pts: g.pts, cs: g.cs } : g.t === 'text' ? { a: g.a, bw: g.bw, ...(g.bh !== undefined ? {bh: g.bh} : {}) } : { a: g.a, b: g.b };
         shapes.set(r.id, clean({ ...cur, ...patch } as Shape));
       }
     });
@@ -761,6 +770,22 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     }
   });
 
+  // 도형과 내용은 한 개의 객체로 저장한다. 이동·복제·삭제·검색·인쇄도
+  // 기존 글상자 경로를 따르고 도형 모양과 테두리 정보는 별도로 유지한다.
+  const editShape = (id: string) => {
+    const original = shapes.get(id), r = byId(id);
+    if (!original || !r || (original.t !== 'rect' && original.t !== 'ellipse') || (r.t !== 'rect' && r.t !== 'ellipse')) return;
+    const bounds = boxOf(r.a, r.b);
+    const text: TextShape = {
+      id: original.id, ...(original.group ? { group: original.group } : {}), t: 'text',
+      a: anchorAt({ x: bounds.x, y: bounds.y }, lines), bw: Math.max(1, bounds.w), bh: Math.max(1, bounds.h),
+      frame: original.t, stroke: original.c, w: original.w, z: original.z,
+      ...(original.fill ? { fill: original.fill } : {}), ...(original.dash ? { dash: true } : {}),
+      c: 'k', text: '', doc: emptyTextDoc(),
+    };
+    put(text); pickOnly([text.id]); setEditing(text.id);
+    focusBox(text.id);
+  };
   // 글상자 옮기기(손잡이) · 폭 바꾸기(오른쪽 끝). 글쓰기 화면에서도 된다. 다른 것 가까이 가면 자석처럼 붙는다.
   const dragBox = (mode: 'move' | 'width', id: string, e: React.PointerEvent) => {
     const base = byId(id);
@@ -843,7 +868,10 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   };
   const hoverCursor = (p: XY, tol: number): string => {
     const one = ix.sel.length === 1 && !ix.wsel.length ? byId(ix.sel[0]) : undefined;
-    if (one?.t === 'text') return handles(one, th).some((h) => dist(h, p) <= tol * 1.3) ? 'ew-resize' : '';
+    if (one?.t === 'text') {
+      const hi = handles(one, th).findIndex(h => dist(h, p) <= tol * 1.3);
+      return hi < 0 ? '' : one.frame ? ['nwse-resize', 'nesw-resize', 'nwse-resize', 'nesw-resize', 'ns-resize', 'ew-resize', 'ns-resize', 'ew-resize'][hi] : 'ew-resize';
+    }
     if (one?.t === 'path') return [...one.pts, ...knobs(one).map((k) => k.at)].some((h) => dist(h, p) <= tol * 1.3) ? 'move' : '';
     if (!one || (one.t !== 'rect' && one.t !== 'ellipse')) return '';
     const hi = handles(one, th).findIndex((h) => dist(h, p) <= tol * 1.3);
@@ -927,6 +955,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     // 고르기: 하나만 골랐으면 그 손잡이(곡선 손잡이 · 점 · 모서리 · 폭)부터
     const one = ix.sel.length === 1 && !ix.wsel.length ? byId(ix.sel[0]) : undefined;
     ix.node = null;
+    const insideShape = topHit(p, tol) ?? [...resolved].reverse().find(r => (r.t === 'rect' || r.t === 'ellipse') && hit({...r, fill: 'k'}, p, tol, th));
+    if (dbl && insideShape && (insideShape.t === 'rect' || insideShape.t === 'ellipse')) { editShape(insideShape.id); return repaint(); }
     if (one) {
       const hi = handles(one, th).findIndex((h) => dist(h, p) <= tol * 1.3);
       // 곡선 손잡이: 점과 겹치면 더 가까운 쪽
@@ -942,7 +972,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
         }
         if (one.t === 'path') ix.node = { id: one.id, i: hi }; // 점 고르기: ⌫로 그 점만 지운다
         ix.drag =
-          one.t === 'path' || one.t === 'text'
+          one.t === 'path' || (one.t === 'text' && !one.frame)
             ? { mode: one.t === 'path' ? 'point' : 'width', id: one.id, i: hi, start: p, base: one, moved: false }
             : { mode: hi >= 4 ? 'side' : 'corner', id: one.id, i: hi >= 4 ? hi - 4 : hi, start: p, base: one, moved: false };
         return repaint();
@@ -954,7 +984,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
         return repaint();
       }
     }
-    const target = topHit(p, tol) ?? (one && (one.t === 'rect' || one.t === 'ellipse') && inBox(p, boxOf(one.a, one.b)) ? one : undefined);
+    const target = topHit(p, tol) ?? [...resolved].reverse().find(r => (r.t === 'rect' || r.t === 'ellipse') && hit({...r, fill: 'k'}, p, 0, th));
     if (!target) {
       // 빈 곳: 끌면 영역 고르기(⇧는 더하기), 그냥 누르면 놓을 때 고름 풀기
       ix.marquee = { a: p, b: p, add: e.shiftKey, base: e.shiftKey ? [...ix.sel] : [], wbase: e.shiftKey ? [...ix.wsel] : [], moved: false };
@@ -1059,6 +1089,14 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       const q = e.shiftKey ? q0 : snapPt(q0, skip, b.pts.filter((_, i) => i !== g.i), freeOf(q0, nb, !!b.o), e, (n) => bboxOf(with_(n), th));
       if (e.shiftKey) ix.guides = null;
       next = with_(q);
+    } else if ((g.mode === 'corner' || g.mode === 'side') && b.t === 'text' && b.frame) {
+      const frame = {...b, t: b.frame, b: {x: b.a.x + b.bw, y: b.a.y + th(b.id)}};
+      const q = snapPt(p, skip, [], {x: g.mode === 'corner' || g.i % 2 === 1, y: g.mode === 'corner' || g.i % 2 === 0}, e);
+      const resized = g.mode === 'corner' ? moveCorner(frame, g.i, q) : moveSide(frame, g.i, q);
+      if (resized.t === 'rect' || resized.t === 'ellipse') {
+        const bounds = boxOf(resized.a, resized.b);
+        next = {...b, a: {x:bounds.x,y:bounds.y}, bw: Math.max(1,bounds.w), bh: Math.max(1,bounds.h)};
+      }
     } else if (g.mode === 'corner' && (b.t === 'rect' || b.t === 'ellipse')) {
       next = moveCorner(b, g.i, snapPt(p, skip, [], { x: true, y: true }, e, (n) => bboxOf(moveCorner(b, g.i, n), th)));
     } else if (g.mode === 'side' && (b.t === 'rect' || b.t === 'ellipse')) {
@@ -1132,7 +1170,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
 
   // 고른 것 모두에, 그 그림에 맞는 것만: 색은 모두, 굵기 · 점선은 글상자 빼고, 직각 · 화살촉은 선, 채우기는 네모 · 원, 테두리는 글상자
   const fits = (s: Shape, k: string) =>
-    k === 'c' || ((k === 'w' || k === 'dash') && s.t !== 'text') || ((k === 'o' || k === 'head' || k === 'headScale') && s.t === 'path') || (k === 'fill' && (s.t === 'rect' || s.t === 'ellipse')) || (k === 'box' && s.t === 'text');
+    k === 'c' || ((k === 'w' || k === 'dash') && (s.t !== 'text' || !!s.frame)) || ((k === 'o' || k === 'head' || k === 'headScale') && s.t === 'path') || (k === 'fill' && (s.t === 'rect' || s.t === 'ellipse' || (s.t === 'text' && !!s.frame))) || (k === 'box' && s.t === 'text' && !s.frame);
   const update = (patch: Record<string, unknown> | ((s: Shape) => Record<string, unknown>)) => {
     const list = selShapes();
     if (!list.length) return;
@@ -1489,7 +1527,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       return;
     }
     const s = shapes.get(id);
-    if (s?.t === 'text' && !s.text.trim()) write(() => shapes.delete(s.id));
+    if (s?.t === 'text' && !s.frame && !s.text.trim()) write(() => shapes.delete(s.id));
     repaint();
   };
 
@@ -1523,7 +1561,13 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       onPointerMove={draw ? onMove : undefined}
       onPointerUp={draw ? onUp : undefined}
       onPointerCancel={draw ? onUp : undefined}
-      onDoubleClick={(e) => e.preventDefault()}
+      onDoubleClick={(e) => {
+        if (reading || !fromLayer(e) || (e.target as Element).closest('.tbox') || (draw && draw.tool !== 'select')) return;
+        e.preventDefault();
+        const p = toMM(e);
+        const target = topHit(p, 1.2) ?? [...resolved].reverse().find(r => (r.t === 'rect' || r.t === 'ellipse') && hit({ ...r, fill: 'k' }, p, 1.2, th));
+        if (target && (target.t === 'rect' || target.t === 'ellipse')) editShape(target.id);
+      }}
     >
       <svg className="shapes-svg" viewBox={`0 0 ${W.toFixed(3)} ${H.toFixed(3)}`} preserveAspectRatio="xMinYMin meet" aria-hidden="true">
         {ix.drag?.mode === 'move' && ix.drag.copy && ix.drag.moved &&
@@ -1727,9 +1771,9 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highligh
   };
   const n = sel.length + wcount;
   const paths = sel.filter((s): s is PathShape => s.t === 'path');
-  const boxes = sel.filter((s): s is BoxShape => s.t === 'rect' || s.t === 'ellipse');
+  const boxes = sel.filter((s): s is BoxShape | TextShape => s.t === 'rect' || s.t === 'ellipse' || (s.t === 'text' && !!s.frame));
   const texts = sel.filter((s): s is TextShape => s.t === 'text');
-  const strokes = sel.filter((s) => s.t !== 'text');
+  const strokes = sel.filter((s) => s.t !== 'text' || !!s.frame);
   const c = sel[0]?.c ?? draw.c;
   const w = strokes[0]?.w ?? draw.w;
   const setW = (dir: 1 | -1) => {
@@ -1813,7 +1857,7 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highligh
                 </>
               )}
               {boxes.length > 0 && (
-                <button type="button" className={allFill ? 'on' : ''} onClick={() => update((s) => ({ fill: allFill ? null : s.c }))} title={`채우기 (${alt}⇧색, ${alt}⇧X 지우기)`}>
+                <button type="button" className={allFill ? 'on' : ''} onClick={() => update((s) => ({ fill: allFill ? null : s.t === 'text' ? s.stroke ?? 'k' : s.c }))} title={`채우기 (${alt}⇧색, ${alt}⇧X 지우기)`}>
                   채우기
                 </button>
               )}
@@ -1822,7 +1866,7 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highligh
                   점선
                 </button>
               )}
-              {texts.length > 0 && (
+              {texts.some(s => !s.frame) && (
                 <button type="button" className={allBox ? 'on' : ''} onClick={() => update({ box: !allBox })}>
                   테두리
                 </button>

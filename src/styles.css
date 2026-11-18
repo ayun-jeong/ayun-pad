@@ -758,3 +758,6 @@ body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: non
 .menu-zoom-value { display: inline-flex; align-items: center; gap: 1px; font-size: 12px; }
 .menu-zoom-value input { width: 43px; border: 1px solid var(--rule-2); border-radius: 5px; background: var(--surface); padding: 4px 2px; text-align: right; font: inherit; appearance: textfield; }
 .menu-zoom-value input::-webkit-inner-spin-button, .menu-zoom-value input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+
+.tbox.shape-text { display: flex; align-items: center; }
+.tbox.shape-text > .tb-mount { width: 100%; min-width: 0; }
