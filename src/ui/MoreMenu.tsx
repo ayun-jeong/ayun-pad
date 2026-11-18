@@ -11,6 +11,7 @@ interface Props {
   syncState: string;
   act(a: AppAction): void;
   onZoom(dir: 1 | -1): void;
+  onZoomValue(value: number): void;
   onAccount(): void;
   onExport(): void;
   onImport(): void;
@@ -23,7 +24,7 @@ const M = mac ? '⌘' : 'Ctrl+';
 const A = mac ? '⌥' : 'Alt+';
 
 // 위쪽 막대의 ⋯: 자주 안 쓰는 것을 한곳에(찾기 · 강조 · 글자 모양 · 배율 · 인쇄 · 로그인 · 백업 · 도움말)
-export function MoreMenu({ mode, pageWidth, onPageWidth, zoom, reading, syncText, syncState, act, onZoom, onAccount, onExport, onImport, onHelp, onClose }: Props) {
+export function MoreMenu({ mode, pageWidth, onPageWidth, zoom, reading, syncText, syncState, act, onZoom, onZoomValue, onAccount, onExport, onImport, onHelp, onClose }: Props) {
   const box = useRef<HTMLDivElement>(null);
   // 바깥을 누르거나 Esc면 닫는다(⋯ 단추는 스스로 열고 닫는다)
   useEffect(() => {
@@ -66,7 +67,7 @@ export function MoreMenu({ mode, pageWidth, onPageWidth, zoom, reading, syncText
         <button type="button" onClick={() => onZoom(-1)} aria-label="작게">
           −
         </button>
-        <b>{Math.round(zoom * 100)}%</b>
+        <label className="menu-zoom-value"><input key={zoom} type="number" min="25" max="300" step="1" aria-label="배율 퍼센트" defaultValue={Math.round(zoom * 100)} onFocus={e => e.currentTarget.select()} onBlur={e => { const value = e.currentTarget.valueAsNumber; if (Number.isFinite(value)) { const next = Math.max(25, Math.min(300, Math.round(value))); e.currentTarget.value = String(next); onZoomValue(next / 100); } else e.currentTarget.value = String(Math.round(zoom * 100)); }} onKeyDown={e => { e.stopPropagation(); if (e.key === 'Enter') e.currentTarget.blur(); }} />%</label>
         <button type="button" onClick={() => onZoom(1)} aria-label="크게">
           +
         </button>

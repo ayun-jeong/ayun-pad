@@ -754,3 +754,7 @@ body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: non
 .reference-markdown .selectedCell::after { content: ''; position: absolute; inset: 0; background: #0064e81a; pointer-events: none; }
 .reference-markdown th[align='center'], .reference-markdown td[align='center'] { text-align: center; }
 .reference-markdown th[align='right'], .reference-markdown td[align='right'] { text-align: right; }
+
+.menu-zoom-value { display: inline-flex; align-items: center; gap: 1px; font-size: 12px; }
+.menu-zoom-value input { width: 43px; border: 1px solid var(--rule-2); border-radius: 5px; background: var(--surface); padding: 4px 2px; text-align: right; font: inherit; appearance: textfield; }
+.menu-zoom-value input::-webkit-inner-spin-button, .menu-zoom-value input::-webkit-outer-spin-button { appearance: none; margin: 0; }

@@ -133,8 +133,7 @@ export function PagesView({ mode, source, typo, zoom, version, reading, pageInfo
     if (!o || !i || !desk) return;
     const measure = () => {
       const contentW = (mode === 'half' ? 105 : 210) * PX_PER_MM;
-      const avail = Math.max(200, desk.clientWidth - 32);
-      const scale = mode === 'half' ? Math.min(zoom, avail / contentW) : Math.min(1.25, avail / contentW);
+      const scale = zoom;
       setBox({ w: contentW * scale, h: i.offsetHeight * scale, scale });
     };
     measure();

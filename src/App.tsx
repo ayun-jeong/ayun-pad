@@ -66,7 +66,7 @@ const lsSet = (k: string, v: string) => {
 
 // PC는 150%, 폰은 화면 폭에 맞춘다. 확대는 그림처럼 키우는 방식이라 줄바꿈 위치는 인쇄와 같다.
 // ⌘+휠로 바꾼 배율은 이 기기에 기억한다.
-const ZOOM = 'ayunpad-zoom';
+const ZOOM = COMPACT ? 'ayunpad-panel-zoom' : 'ayunpad-zoom';
 const clampZoom = (z: number) => Math.min(3, Math.max(0.25, Math.round(z * 100) / 100));
 function initialZoom(): number {
   const saved = Number(lsGet(ZOOM));
@@ -127,6 +127,7 @@ export function App() {
   useEffect(() => observeBoxSelection(() => bump()), []);
   const [zoom, setZoom] = useState(initialZoom);
   const zoomNow = useRef(zoom);
+  const manualZoom = useRef(Number(lsGet(ZOOM)) >= .25);
   zoomNow.current = zoom;
   const [zoomBadge, setZoomBadge] = useState(false);
   const deskRef = useRef<HTMLElement>(null);
@@ -151,6 +152,7 @@ export function App() {
       // 마우스 아래의 종이 위 점(배율 1 기준)
       const px = paper ? (desk.scrollLeft + mx - paper.offsetLeft) / z : 0;
       const py = paper ? (desk.scrollTop + my - paper.offsetTop) / z : 0;
+      manualZoom.current = true;
       zoomNow.current = next;
       setZoom(next);
       setZoomBadge(true);
@@ -278,12 +280,13 @@ export function App() {
     const desk = deskRef.current;
     if (!desk) return;
     const observer = new ResizeObserver(() => {
-      const width = (typoRef.current?.pageWidth === 'a4' ? 210 : 105) + GUTTER_MM;
+      if (manualZoom.current || desk.clientWidth <= 32) return;
+      const width = (mode === 'a4' || (mode === 'edit' && typoRef.current?.pageWidth === 'a4') ? 210 : 105) + GUTTER_MM;
       setZoom(clampZoom(Math.min(1.5, Math.max(0.25, (desk.clientWidth - 32) / (width * PX_PER_MM)))));
     });
     observer.observe(desk);
     return () => observer.disconnect();
-  }, [typo?.pageWidth]);
+  }, [typo?.pageWidth, mode]);
   useEffect(() => {
     const receive = (e: MessageEvent) => {
       if (e.source !== window.parent || !e.origin.startsWith('chrome-extension://') || e.data?.type !== 'ayunpad:capture') return;
@@ -640,6 +643,13 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const id = keyId(e);
+      // 확장 사이드 패널에서도 브라우저 전체 대신 노트 배율을 조절한다.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && ['Equal', 'Minus', 'Digit0', 'NumpadAdd', 'NumpadSubtract'].includes(e.code)) {
+        e.preventDefault();
+        manualZoom.current = true;
+        setZoom(z => e.code === 'Digit0' ? 1 : clampZoom(z + (['Minus', 'NumpadSubtract'].includes(e.code) ? -.1 : .1)));
+        return;
+      }
       if (id === 'Escape') {
         if (drawRef.current) return; // 그리기 중 Esc는 그림 층이 받는다
         setPanel(false);
@@ -1219,7 +1229,8 @@ export function App() {
           syncText={statusText(sync)}
           syncState={sync.state}
           act={act}
-          onZoom={(d) => setZoom((z) => clampZoom(Math.round((z + d * 0.1) * 10) / 10))}
+          onZoom={(d) => { manualZoom.current = true; setZoom((z) => clampZoom(Math.round((z + d * 0.1) * 10) / 10)); }}
+          onZoomValue={(value) => { manualZoom.current = true; setZoom(clampZoom(value)); }}
           onAccount={() => {
             setPanel(false);
             setInsert(false);
