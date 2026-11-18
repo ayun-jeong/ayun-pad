@@ -99,7 +99,7 @@ try {
 
   // A(PC): 로그인 → 새 노트에 쓰기
   await A.goto(await link(email), { waitUntil: 'networkidle0' });
-  await A.waitForSelector('.tbtn.sync.synced', { timeout: 15000 });
+  await A.waitForFunction(() => window.__ayunpad.hub.status().state === 'synced', { timeout: 15000 });
   check(true, 'A 로그인 · 동기화됨');
   await A.click('.addnote');
   await A.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
@@ -109,7 +109,7 @@ try {
 
   // B(폰): 로그인 → A의 목록과 노트를 받는다(B의 손대지 않은 견본은 지워져 두 벌이 되지 않음)
   await B.goto(await link(email), { waitUntil: 'networkidle0' });
-  await B.waitForSelector('.tbtn.sync.synced', { timeout: 15000 });
+  await B.waitForFunction(() => window.__ayunpad.hub.status().state === 'synced', { timeout: 15000 });
   await B.waitForFunction(() => [...document.querySelectorAll('.note-item .t')].some((e) => e.textContent === '새 노트'), { timeout: 10000 });
   const titles = await B.$$eval('.note-item .t', (els) => els.map((e) => e.textContent));
   check(titles.filter((t) => t === '견본 · 경영학').length === 1 && titles.includes('새 노트'), `B가 A의 목록을 받음, 견본은 한 벌 (${titles.join(', ')})`);
@@ -161,7 +161,7 @@ try {
 
 
   // 버전 기록: 지금 저장 → 목록에 생김
-  await A.click('.tbtn.sync');
+  await A.click('.more-btn'); await A.click('.account-menu-item');
   await A.waitForSelector('.panel');
   await A.$$eval('.panel button', (bs) => bs.find((b) => b.textContent.includes('버전 기록'))?.click());
   await A.waitForSelector('.versions');

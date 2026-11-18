@@ -1197,18 +1197,6 @@ export function App() {
             <span className="wide-only">{penText}</span>
           </button>
         )}
-        <button
-          type="button"
-          className={`tbtn sync ${sync.state}`}
-          title={statusText(sync)}
-          aria-label={statusText(sync)}
-          onClick={() => {
-            setPanel(false);
-            setAccount((x) => !x);
-          }}
-        >
-          <i className="sync-dot" />
-        </button>
         <div className="seg paper-width-options" role="group" aria-label="보기">
           <button type="button" disabled={!typo} aria-pressed={typo?.pageWidth === 'half'} className={typo?.pageWidth === 'half' ? 'on' : ''} onClick={() => { changeTypo({ pageWidth: 'half' }); setMode('edit'); }} title="반쪽씩 보기 · 같은 자리에서 편집">반쪽</button>
           <button type="button" disabled={!typo} aria-pressed={typo?.pageWidth === 'a4'} className={typo?.pageWidth === 'a4' ? 'on' : ''} onClick={() => { changeTypo({ pageWidth: 'a4' }); setMode('edit'); }} title="한 장에 1-1 왼쪽 · 1-2 오른쪽으로 펼쳐 편집">한 장</button>
@@ -1223,19 +1211,14 @@ export function App() {
           {reading ? '읽기 중' : '읽기'}
         </button>
         {!reading && (
-          <button type="button" className={`tbtn tb-draw${draw ? ' on' : ''}`} onClick={() => act('draw')} title="그리기: 화살표 · 선 · 네모 · 원 · 글상자, 끌어서 여러 개 고르기 (⌥D)">
-            ✎<span className="wide-only"> 그리기</span>
-          </button>
-        )}
-        {!reading && (
-          <button type="button" className={`tbtn${insert ? ' on' : ''}`} onClick={() => act('insert')} title="표 · 수직선 · 연표 · 그래프 · 분수 · 글상자 · 도형 넣기 (본문에서 / 도 됨)">
+          <button type="button" className={`tbtn insert-btn${insert || draw ? ' on' : ''}`} onClick={() => act('insert')} aria-label="넣기 · 그리기" aria-expanded={insert} title="넣기 · 그리기: 글상자 · 도형 · 표 · 그래프 · 수식 (그리기 ⌥D, 본문에서 / 도 됨)">
             ＋<span className="wide-only"> 넣기</span>
           </button>
         )}
         <button type="button" className={`tbtn${find ? ' on' : ''}`} onClick={() => (find ? closeFind() : act('find'))} title="찾기: 찾은 곳에 동그라미 · 밑줄 · 형광펜, 강조 지우기, 다른 노트 결과도 (⌘F) · 전체 검색 · 명령은 ⌘K" aria-label="찾기">
           ⌕<span className="wide-only"> 찾기</span>
         </button>
-        <button type="button" className={`tbtn more-btn${menu ? ' on' : ''}`} onClick={() => setMenu((x) => !x)} aria-label="더 보기" aria-expanded={menu} title="찾기 · 강조 · 글자 모양 · 배율 · 인쇄 · 로그인 · 백업 · 도움말">
+        <button type="button" className={`tbtn more-btn${menu ? ' on' : ''}`} onClick={() => { setInsert(false); setAccount(false); setMenu((x) => !x); }} aria-label="더 보기" aria-expanded={menu} title="찾기 · 강조 · 글자 모양 · 배율 · 인쇄 · 계정 · 백업 · 도움말">
           ⋯
         </button>
       </header>
@@ -1247,11 +1230,13 @@ export function App() {
           zoom={zoom}
           reading={reading}
           paper={paper}
-          syncText={sync.state === 'local' ? '로그인 · 동기화' : statusText(sync)}
+          syncText={statusText(sync)}
+          syncState={sync.state}
           act={act}
           onZoom={(d) => setZoom((z) => clampZoom(Math.round((z + d * 0.1) * 10) / 10))}
           onAccount={() => {
             setPanel(false);
+            setInsert(false);
             setAccount(true);
           }}
           onExport={() => void onExport()}
@@ -1375,6 +1360,7 @@ export function App() {
       {help && <Help onClose={() => setHelp(false)} />}
       {insert && viewRef.current && (
         <InsertPanel
+          drawing={!!draw}
           target={activeView}
           place={(fn) => {
             // 쓰던 글상자가 없으면: 넣을 곳을 누르면 그 자리에 글상자를 만들고 거기에 넣는다

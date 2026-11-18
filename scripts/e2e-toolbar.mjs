@@ -17,6 +17,25 @@ try {
   const layout = await page.evaluate(() => ({ header: document.querySelector('.top').getBoundingClientRect().bottom, desk: document.querySelector('.desk').getBoundingClientRect().top }));
   assert.ok(Math.abs(layout.header - layout.desk) < 2);
   console.log('ok  보기 선택을 반쪽 / 한 장 한 곳으로 통합 · 보조 도구 줄 제거 · 필기 영역이 헤더 바로 아래부터 시작');
+  assert.equal(await page.$('.top .tb-draw, .top .sync-dot'), null);
+  assert.equal(await page.$$eval('.top .insert-btn', es => es.length), 1);
+  await page.click('.insert-btn'); await page.waitForSelector('.panel.insert');
+  assert.deepEqual(await page.$$eval('.ins-drawing button', es => es.map(e => e.textContent)), ['글상자', '화살표', '선', '네모', '원', '선택 · 이동']);
+  assert.ok(await page.$('.panel.insert input[aria-label="행"]'));
+  await page.$$eval('.ins-drawing button', es => es.find(e => e.textContent === '화살표').click());
+  await page.waitForSelector('.shapes-layer.tool-arrow');
+  assert.equal(await page.$('.panel.insert'), null);
+  await page.click('.drawbar .ddone');
+  await page.waitForSelector('.drawbar', { hidden: true });
+  console.log('ok  상단 넣기 하나에 그리기 · 글상자 · 표 통합 · 화살표 도구 선택과 메뉴 닫기');
+  await page.click('.insert-btn'); await page.click('.more-btn');
+  await page.waitForSelector('.account-menu-item');
+  assert.equal(await page.$('.panel.insert'), null);
+  assert.ok(await page.$eval('.account-menu-item', e => e.textContent.includes('이 기기에만 저장 중')));
+  await page.click('.account-menu-item'); await page.waitForSelector('.panel[aria-label="로그인"]');
+  assert.equal(await page.$('.menu.more'), null);
+  await page.click('.panel[aria-label="로그인"] .close');
+  console.log('ok  별도 저장 점 제거 · ⋯ 계정 메뉴에 저장 상태 표시 · 계정 화면 열기');
   await page.$eval('.addnote', e => e.click()); await page.waitForFunction(() => window.__ayunpad.view()?.state.doc.textContent === '');
   await page.evaluate(() => {
     const doc = window.__ayunpad.doc();
@@ -59,6 +78,10 @@ try {
   assert.deepEqual(await page.$$eval('.menu-row[aria-label="보기"] button', buttons => buttons.map(b => b.textContent)), ['반쪽', '한 장']);
   await page.click('.menu-row[aria-label="보기"] button:first-of-type'); await page.waitForSelector('.half-live-window');
   assert.ok(await page.$eval('.top', e => e.scrollWidth <= e.clientWidth));
+  await page.click('.insert-btn'); await page.waitForSelector('.panel.insert');
+  assert.ok(await page.$eval('.panel.insert', e => { const r = e.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; }));
+  await page.click('.more-btn'); await page.click('.account-menu-item'); await page.waitForSelector('.panel[aria-label="로그인"]');
+  await page.click('.panel[aria-label="로그인"] .close');
   await page.screenshot({ path: '/tmp/ayunpad-qa/toolbar-mobile.png' });
   assert.deepEqual(errors, []);
   console.log('ok  휴대폰은 ⋯ 메뉴에 같은 보기 선택 제공 · 도구 막대 넘침과 실행 오류 없음');

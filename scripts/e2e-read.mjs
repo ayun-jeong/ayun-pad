@@ -100,7 +100,7 @@ try {
   check((await page.$eval('.read-btn', (e) => e.textContent)) === '읽기 중', '단추가 ‘읽기 중’으로');
   check((await lockedAttr()) === 'false', '본문 편집 칸 잠김(contenteditable=false · 커서 · 폰 자판 없음)');
   check(await page.$eval('.crumb input', (e) => e.readOnly), '노트 이름 칸도 잠김');
-  check(!(await page.$('.tb-draw')) && !(await page.$('.top button[title^="표 · 수직선"]')), '그리기 · 넣기 단추 숨김');
+  check(!(await page.$('.top .insert-btn')), '통합 넣기 · 그리기 단추 숨김');
 
   // 3) 본문: 눌러서 치기 · Enter · ⌫ · ⌘Z · ⌘⇧Z
   const line0 = await (await page.$$('.editor > p'))[0].boundingBox();
@@ -227,7 +227,7 @@ try {
   // 12) ⌥L → 고치기 모드: 다시 쳐지고 ⌘Z도 됨
   await combo(['Alt'], 'KeyL');
   await sleep(150);
-  check(!(await reading()) && (await lockedAttr()) === 'true' && !!(await page.$('.tb-draw')), '⌥L → 고치기 모드(편집 칸 · 그리기 단추 돌아옴)');
+  check(!(await reading()) && (await lockedAttr()) === 'true' && !!(await page.$('.top .insert-btn')), '⌥L → 고치기 모드(편집 칸 · 통합 넣기 단추 돌아옴)');
   // 배율을 바꾼 뒤라 화면 자리가 늦게 움직일 수 있다 → 누르는 순간의 줄 자리로(요소 기준 offset)
   await sleep(300);
   const line0h = (await page.$$('.editor > p'))[0];

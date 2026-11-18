@@ -63,10 +63,9 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
 .tbtn { border: 1px solid var(--rule); background: var(--surface); border-radius: 7px; padding: 4px 9px; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; min-height: 30px; }
 .tbtn:hover { border-color: var(--rule-2); }
 .tbtn.on { border-color: var(--ink); }
-/* 위쪽 막대가 넘치지 않게: 폭이 줄면 펜 · 저장 상태 글씨 → 단추 글씨 → 이름 · 배율 순으로 숨긴다(단추는 그림 + 풍선 도움말) */
-/* 위쪽 막대: ☰ · 노트 이름 · (든 펜) · 저장 점 · 보기 · 그리기 · 넣기 · 검색 · ⋯ 만. 좁으면 글씨를 빼고 그림 단추만 */
+/* 위쪽 막대가 넘치지 않게: 폭이 줄면 펜 글씨 → 단추 글씨 → 이름 · 배율 순으로 숨긴다(단추는 그림 + 풍선 도움말) */
+/* 위쪽 막대: ☰ · 노트 이름 · (든 펜) · 보기 · 넣기(그리기 포함) · 검색 · ⋯ 만. 좁으면 글씨를 빼고 그림 단추만 */
 .top .tbtn { flex: none; }
-.top .tbtn.sync { border-color: transparent; padding: 4px 6px; }
 .top .crumb { overflow: hidden; }
 @media (max-width: 900px) { .top .wide-only { display: none; } }
 .narrow-only { display: none !important; }
@@ -209,9 +208,9 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
 
 /* 동기화 · 계정 · 버전 · 휴지통 */
 .sync-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: var(--ink-3); }
-.tbtn.sync.synced .sync-dot { background: #2f9e44; }
-.tbtn.sync.syncing .sync-dot { background: #0064e8; }
-.tbtn.sync.offline .sync-dot { background: #e8890c; }
+.account-menu-item.synced .sync-dot { background: #2f9e44; }
+.account-menu-item.syncing .sync-dot { background: #0064e8; }
+.account-menu-item.offline .sync-dot { background: #e8890c; }
 .tbtn.sync { color: var(--ink-2); font-size: 12.5px; }
 .panel input[type='email'], .panel input[type='password'] { width: 100%; border: 1px solid var(--rule-2); border-radius: 6px; padding: 7px 9px; background: var(--surface); }
 .panel button.primary, .help button.primary { border: 1px solid var(--ink); background: var(--ink); color: var(--bg); border-radius: 7px; padding: 7px 12px; font-weight: 600; }
@@ -260,8 +259,8 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
   .touchbar:not(.selbar):not(.subbar) button { padding: 6px 4px; min-width: 36px; font-size: 17px; }
   .side { position: fixed; top: 0; bottom: 0; left: 0; z-index: 35; box-shadow: var(--shadow); width: min(280px, 85vw); padding-top: max(12px, env(safe-area-inset-top)); }
   .status, .brand, .seg, .wide-only { display: none; }
-  /* 폰 위쪽: ☰ · 노트 이름 · 넣기 · 검색 · ⋯ (보기 · 저장 상태는 ⋯ 메뉴, 그리기 · 펜은 아래 막대) */
-  .top .tbtn.sync, .top .pen-now, .top .tb-draw { display: none; }
+  /* 폰 위쪽: ☰ · 노트 이름 · 넣기 · 검색 · ⋯ (보기 · 계정과 저장 상태는 ⋯ 메뉴, 그리기와 넣기는 ＋, 펜은 아래 막대) */
+  .top .pen-now { display: none; }
   .narrow-only { display: flex !important; }
   .top { gap: 6px; }
 }
@@ -719,3 +718,9 @@ body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: non
 .arrange-grid button:disabled { opacity: .35; cursor: default; }
 .arrange-menu p { margin: 10px 0 0; }
 @media print { .arrange-menu { display: none !important; } }
+
+.menu.more .account-menu-item .sync-dot { flex: none; }
+.account-menu-item small { display: block; margin-top: 3px; font-size: 11px; line-height: 1.4; color: var(--ink-3); }
+.ins-drawing { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; padding-bottom: 11px; border-bottom: 1px solid var(--rule); }
+.ins-drawing button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 7px 4px; border: 1px solid transparent; border-radius: 8px; background: var(--bg); color: var(--ink); font-size: 12px; }
+.ins-drawing button:hover, .ins-drawing button:focus-visible { color: #0064e8; border-color: #0064e8; }

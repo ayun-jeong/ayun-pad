@@ -9,6 +9,7 @@ interface Props {
   reading: boolean; // 읽기 모드면 고치는 것(강조 지우기 · 글자 모양)은 빼고 보인다
   paper: boolean; // 종이에 바로 쓰기
   syncText: string;
+  syncState: string;
   act(a: AppAction): void;
   onZoom(dir: 1 | -1): void;
   onAccount(): void;
@@ -23,7 +24,7 @@ const M = mac ? '⌘' : 'Ctrl+';
 const A = mac ? '⌥' : 'Alt+';
 
 // 위쪽 막대의 ⋯: 자주 안 쓰는 것을 한곳에(찾기 · 강조 · 글자 모양 · 배율 · 인쇄 · 로그인 · 백업 · 도움말)
-export function MoreMenu({ mode, pageWidth, onPageWidth, zoom, reading, paper, syncText, act, onZoom, onAccount, onExport, onImport, onHelp, onClose }: Props) {
+export function MoreMenu({ mode, pageWidth, onPageWidth, zoom, reading, paper, syncText, syncState, act, onZoom, onAccount, onExport, onImport, onHelp, onClose }: Props) {
   const box = useRef<HTMLDivElement>(null);
   // 바깥을 누르거나 Esc면 닫는다(⋯ 단추는 스스로 열고 닫는다)
   useEffect(() => {
@@ -76,7 +77,9 @@ export function MoreMenu({ mode, pageWidth, onPageWidth, zoom, reading, paper, s
       {mode === 'edit' && item('인쇄 미리보기 · 쪽 정리', () => act('view-a4'), `${A}3`)}
       {item('인쇄 · PDF', () => act('print'), `${M}P`)}
       <hr />
-      {item(syncText, onAccount)}
+      <button type="button" role="menuitem" className={`account-menu-item ${syncState}`} aria-label="계정 · 동기화" onClick={run(onAccount)}>
+        <i className="sync-dot" aria-hidden="true" /><span>계정 · 동기화<small>{syncText}</small></span>
+      </button>
       {item('백업 내보내기', onExport)}
       {item('백업 가져오기', onImport)}
       <hr />
