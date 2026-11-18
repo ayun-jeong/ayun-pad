@@ -210,7 +210,7 @@ try {
   await page.waitForSelector('.pages.a4 .pctl[data-half="0"]');
   await sleep(200);
   const pvHalves = await page.$$eval('.pages .phalf[data-half]', (e) => e.length);
-  check(edHalves === 3 && pvHalves === 3 && (await acts()).length === 3, `반쪽 수가 편집 화면 · 보기 화면 · 단추 모두 같음 (${edHalves} · ${pvHalves} · ${(await acts()).length})`);
+  check(edHalves === 3 && pvHalves === Math.ceil(edHalves / 2) * 2 && (await acts()).length === 3, `내용 반쪽 수와 단추는 일치하고 A4는 좌우 한 쌍으로 표시 (${edHalves} · ${pvHalves} · ${(await acts()).length})`);
   check((await acts())[1].includes('del'), `1-2는 빈 반쪽(×) — 경계를 살짝 넘은 글상자는 1-2를 차지하지 않음 (${(await acts()).join('|')})`);
   await press(2, 'prev');
   mb = await boxes();
@@ -397,10 +397,7 @@ try {
   await page.reload({ waitUntil: 'networkidle0' });
   await page.waitForSelector('.editor > p');
   await newNote();
-  await page.click('.editor');
-  await k.type('예전 본문 글');
-  await k.press('Enter');
-  await k.type('둘째 줄');
+  await page.evaluate(() => { const v = window.__ayunpad.view(); const { schema } = v.state; v.dispatch(v.state.tr.replaceWith(0, v.state.doc.content.size, [schema.nodes.line.create({ id: 'legacy-1' }, schema.text('예전 본문 글')), schema.nodes.line.create({ id: 'legacy-2' }, schema.text('둘째 줄'))])); });
   await sleep(300);
   const lineTop = await page.$eval('.editor > p', (e) => {
     const L = document.querySelector('.shapes-layer').getBoundingClientRect();
@@ -431,8 +428,7 @@ try {
   await page.reload({ waitUntil: 'networkidle0' });
   await page.waitForSelector('.editor > p');
   await newNote();
-  await page.click('.editor');
-  await k.type('옮길 본문');
+  await page.evaluate(() => { const v = window.__ayunpad.view(); v.dispatch(v.state.tr.replaceWith(0, v.state.doc.content.size, v.state.schema.nodes.line.create({ id: 'legacy-move' }, v.state.schema.text('옮길 본문')))); });
   await sleep(300);
   await page.evaluate(() => localStorage.setItem('ayunpad-paper', '0'));
   await page.reload({ waitUntil: 'networkidle0' });
@@ -446,21 +442,18 @@ try {
   await combo(['Alt'], 'Digit1');
   await sleep(300);
 
-  // 5) ⋯ 메뉴: 종이에 바로 쓰기 켜고 끄기
-  await page.click('.more-btn');
-  await page.waitForSelector('.menu.more');
-  await page.$$eval('.menu.more button[role="menuitem"]', (bs) => bs.find((b) => b.textContent.startsWith('종이에 바로 쓰기 켜기')).click());
-  await sleep(200);
-  check((await page.$eval('.editor', (e) => e.getAttribute('contenteditable'))) === 'true' && !(await page.$('.app.paper-off')), '⋯ › 종이에 바로 쓰기 켜기 → 본문에 바로 쓰기');
-  await page.click('.more-btn');
-  await page.waitForSelector('.menu.more');
-  await page.$$eval('.menu.more button[role="menuitem"]', (bs) => bs.find((b) => b.textContent.startsWith('종이에 바로 쓰기 끄기')).click());
-  await sleep(200);
-  check((await page.$eval('.editor', (e) => e.getAttribute('contenteditable'))) === 'false', '다시 끄기');
+  // 5) 이전의 직접 쓰기 설정이 남아 있어도 본문 편집을 켤 수 없다.
+  await page.evaluate(() => localStorage.setItem('ayunpad-paper', '1'));
+  await page.reload({ waitUntil: 'networkidle0' });
+  await page.waitForSelector('.editor');
+  check((await page.$eval('.editor', e => e.getAttribute('contenteditable'))) === 'false', '이전 직접 쓰기 설정을 무시하고 본문은 항상 잠금');
+  await page.click('.more-btn'); await page.waitForSelector('.menu.more');
+  check(await page.$$eval('.menu.more button', bs => bs.every(b => !/종이에 바로|읽기 모드/.test(b.textContent))), '⋯ 메뉴에서 종이에 바로 쓰기와 중복 읽기 모드 제거');
+  await k.press('Escape');
 
   // 6) ＋ 넣기(쓰던 글상자 없음): 넣을 곳을 누르면 그 자리 새 글상자에 표
   await newNote();
-  await page.click('.top button[title^="표 · 수직선"]');
+  await page.click('.top .insert-btn');
   await page.waitForSelector('.panel.insert');
   await page.$$eval('.panel.insert .ins-row button.primary', (bs) => bs[0].click());
   await sleep(200);

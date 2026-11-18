@@ -32,8 +32,7 @@ interface Props {
   noteId: string;
   zoom: number;
   reading: boolean; // 읽기 모드: 눌러도 · 쳐도 노트가 안 바뀐다(확대 · 축소 · 스크롤만)
-  paper: boolean; // 종이(본문)에 바로 쓰기. 끄면 빈 종이를 눌러 글상자로 쓴다
-  onLegacyEdit(clientX: number, clientY: number): void; // 종이에 바로 쓰지 않을 때 본문 글을 두 번 누름 → 그 반쪽 본문 글을 글상자로
+  onLegacyEdit(clientX: number, clientY: number): void; // 기존 본문 글을 두 번 누름 → 그 반쪽 본문 글을 글상자로
   draw: DrawState | null;
   setDraw(patch: Partial<DrawState> | null): void;
   toast(msg: string): void;
@@ -76,7 +75,7 @@ function pushWidgets(editor: HTMLElement, usablePx: number, lhPx: number, zoom: 
 
 // 노트 하나를 105mm 칼럼에 연다. 반쪽이 끝나는 곳마다 점선과 쪽 번호(1-1, 1-2 …)를 그린다.
 // 칼럼(.sheet-src) = 편집 칸 + 그림 층. 반쪽 보기 · A4 보기 · 인쇄는 이 칼럼을 그대로 복제한다.
-export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, setDraw, toast, app, onState, onEdit, onDoc }: Props) {
+export function EditorPane({ noteId, zoom, reading, onLegacyEdit, draw, setDraw, toast, app, onState, onEdit, onDoc }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const srcRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
@@ -147,7 +146,7 @@ export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, s
   // 가지선 모양은 그리는 동안(자식 글상자 효과보다 먼저) 바뀌어 있어야 해서 여기서 바로 넣는다
   settings.treeTop = typo.treeTop;
   settings.readOnly = reading;
-  settings.paper = paper;
+  settings.paper = false;
   const frame = useRef(0);
   const liveRef = useRef<Live | null>(null);
   liveRef.current = live;
@@ -271,8 +270,8 @@ export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, s
     if (!sel.empty) v.dispatch(v.state.tr.setSelection(TextSelection.near(sel.$head)));
     v.setProps({});
     const a = document.activeElement as HTMLElement | null;
-    if (a && srcRef.current?.contains(a) && (reading || (!paper && v.dom.contains(a)))) a.blur();
-  }, [reading, paper, live]);
+    if (a && srcRef.current?.contains(a) && (reading || v.dom.contains(a))) a.blur();
+  }, [reading, live]);
   // 읽기 모드: 위젯 글칸(그래프 · 연표 이름표 · 분수 칸)처럼 따로 고칠 수 있는 칸에도 글자가 들어가지 않게
   useEffect(() => {
     const s = srcRef.current;
@@ -418,7 +417,7 @@ export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, s
                   host={hostRef.current!}
                   settings={settings}
                   reading={reading}
-                  paper={paper}
+                  paper={false}
                   onLegacyEdit={onLegacyEdit}
                 />
               )}

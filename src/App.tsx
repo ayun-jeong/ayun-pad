@@ -86,8 +86,7 @@ function initialReading(): boolean {
 const READ_HINT = '읽기 모드예요. 고치려면 위쪽 ‘읽기 중’을 눌러 끄세요 (⌥L)';
 // 읽기 모드에서 막는 것(노트를 고치는 판 · 도구)
 const EDIT_ACTIONS = new Set<AppAction>(['type', 'draw', 'draw-text', 'draw-arrow', 'draw-line', 'draw-rect', 'draw-ellipse', 'insert', 'emph', 'pitch-down', 'pitch-up', 'pen-picker', 'hl-picker']);
-// 종이(본문)에 바로 쓰기: 기본은 끔 — 글은 글상자로 쓴다(빈 종이를 누르면 그 자리에 글상자). 기기마다 기억.
-const PAPER = 'ayunpad-paper';
+// 글은 글상자로 쓴다. 빈 종이를 누르면 그 자리에 글상자가 생긴다.
 const BOX_HINT = '글상자에서 써요 · 빈 종이를 누르면 그 자리에 글상자가 생겨요';
 // 사파리(gesture 이벤트)가 아닌 폰 · 태블릿(안드로이드 등)은 두 손가락 오므리기 · 벌리기를 직접 받아 노트 배율로
 const OWN_PINCH = !('GestureEvent' in window);
@@ -136,10 +135,6 @@ export function App() {
   const readingRef = useRef(reading);
   readingRef.current = reading;
   useEffect(() => lsSet(READ, reading ? '1' : '0'), [reading]);
-  const [paper, setPaper] = useState(() => lsGet(PAPER) === '1');
-  const paperRef = useRef(paper);
-  paperRef.current = paper;
-  useEffect(() => lsSet(PAPER, paper ? '1' : '0'), [paper]);
   // ⌘(Ctrl)+휠 · 트랙패드 오므리기/벌리기: 노트 배율(브라우저 전체 확대 대신). 마우스 아래 자리가 그대로 있게 스크롤도 맞춘다.
   useEffect(() => {
     const desk = deskRef.current;
@@ -426,12 +421,8 @@ export function App() {
     return () => clearInterval(t);
   }, []);
 
-  // 지금 글을 쓰는 편집기: 커서가 든 글상자 → (종이에 바로 쓰지 않으면) 마지막에 쓴 글상자 → 본문
-  const activeView = useCallback((): EditorView | null => {
-    const box = liveBox();
-    if (box && (box.dom.contains(document.activeElement) || !paperRef.current)) return box;
-    return paperRef.current ? viewRef.current : null;
-  }, []);
+  // 필기는 글상자에서만 한다. 마지막에 쓰던 글상자의 커서를 유지한다.
+  const activeView = useCallback((): EditorView | null => liveBox(), []);
   // 편집기에 명령 하나(펜 · 형광펜 · 들여쓰기 · 되돌리기 …). 읽기 모드에서는 하지 않는다.
   // whole: 글자 꾸미기(펜 · 형광펜 · 동그라미 · 글꼴 · 자간). 글상자를 통째로 골라 둔 상태면(고치는 중 아님)
   // 그 글상자 글 전체에 한다 — 펜은 자동 빨강 · 직접 칠한 색까지 그 색으로(pen: 색, null = 자동). 되돌리기 한 번.
@@ -499,13 +490,6 @@ export function App() {
         return;
       }
       switch (a) {
-        case 'paper': {
-          const next = !paperRef.current;
-          paperRef.current = next;
-          setPaper(next);
-          toast(next ? '종이에 바로 쓰기: 켬 — 본문을 눌러 바로 써요' : '종이에 바로 쓰기: 끔 — 빈 종이를 누르면 그 자리에 글상자');
-          break;
-        }
         case 'read': {
           const next = !readingRef.current;
           readingRef.current = next;
@@ -1116,7 +1100,6 @@ export function App() {
   const commands = useMemo<PaletteCommand[]>(
     () => [
       { name: '읽기 모드 켜기 · 끄기(눌러도 노트가 안 바뀌게, 확대 · 축소만)', keys: '⌥L', alias: ['읽기', 'read', '잠금', '보기 전용', 'lock'], run: () => act('read') },
-      { name: '종이에 바로 쓰기 켜기 · 끄기(끄면 빈 종이를 눌러 글상자로 · 본문 글은 두 번 눌러 글상자로)', alias: ['본문', '종이', 'paper', '바로 쓰기', '글상자로만'], run: () => act('paper') },
       { name: '편집 화면', keys: '⌥1', run: () => act('view-edit') },
       { name: '반쪽 보기', keys: '⌥2', run: () => act('view-half') },
       { name: 'A4 합침 보기', keys: '⌥3', run: () => act('view-a4') },
@@ -1173,7 +1156,7 @@ export function App() {
   const penText = pen ? (isPenKey(pen) ? `${PEN_NAME[pen]} 펜` : '고른 색 펜') : '자동 펜';
 
   return (
-    <div className={`app${COMPACT ? ' compact' : ''}${reading ? ' reading' : ''}${paper ? '' : ' paper-off'}`}>
+    <div className={`app${COMPACT ? ' compact' : ''}${reading ? ' reading' : ''} paper-off`}>
       <header className="top">
         <button type="button" className={`tbtn references-btn${references ? ' on' : ''}`} aria-label="참고 자료 열고 닫기" aria-expanded={references} onClick={() => setReferences((v) => !v)}><ReferenceIcon name="panel" /><span className="wide-only"> 자료</span></button>
         <button type="button" className="tbtn" onClick={() => setSidebar((s) => !s)} aria-label="과목 목록 열고 닫기">
@@ -1229,7 +1212,6 @@ export function App() {
           onPageWidth={(pageWidth) => { changeTypo({ pageWidth }); setMode('edit'); }}
           zoom={zoom}
           reading={reading}
-          paper={paper}
           syncText={statusText(sync)}
           syncState={sync.state}
           act={act}
@@ -1307,7 +1289,6 @@ export function App() {
                 noteId={noteId}
                 zoom={zoom}
                 reading={reading}
-                paper={paper}
                 onLegacyEdit={onLegacyEdit}
                 draw={mode === 'edit' ? draw : null}
                 setDraw={setDraw}

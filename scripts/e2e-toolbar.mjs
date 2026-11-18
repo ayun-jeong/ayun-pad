@@ -68,7 +68,7 @@ try {
   await page.click('.paper-width-options button:last-child'); await page.waitForSelector('.fold-live-window'); assert.equal(await page.$('.pages.a4'), null);
   console.log('ok  인쇄 미리보기는 ⋯ 메뉴에서 열고 보기 버튼으로 바로 필기에 복귀');
   await page.click('.more-btn');
-  assert.ok(await page.$$eval('.menu.more button', buttons => buttons.every(b => !b.textContent.includes('미니 pad'))));
+  assert.ok(await page.$$eval('.menu.more button', buttons => buttons.every(b => !/미니 pad|종이에 바로|읽기 모드/.test(b.textContent))));
   await page.keyboard.press('Escape');
   console.log('ok  불필요한 별도 미니 pad 기능 제거');
   mkdirSync('/tmp/ayunpad-qa', { recursive: true }); await page.screenshot({ path: '/tmp/ayunpad-qa/toolbar.png' });

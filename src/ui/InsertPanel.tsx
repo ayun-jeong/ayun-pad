@@ -7,7 +7,7 @@ import type { GraphTpl } from '../editor/widgets';
 
 interface Props {
   drawing: boolean;
-  target(): EditorView | null; // 넣을 편집기(쓰던 글상자 · 종이에 바로 쓸 때는 본문)
+  target(): EditorView | null; // 넣을 편집기(쓰던 글상자)
   place(fn: (v: EditorView) => void): void; // 넣을 편집기가 없으면: 누른 자리에 새 글상자를 만들고 거기에
   app(action: AppAction): void;
   onClose(): void;
@@ -22,7 +22,7 @@ const GRAPHS: [GraphTpl, string][] = [
 
 const n = (v: string, d: number) => (v.trim() !== '' && Number.isFinite(Number(v)) ? Number(v) : d);
 
-// '＋ 넣기': 표 · 수직선 · 연표 · 그래프 · 분수 · 루트 · 글상자. 쓰던 글상자(종이에 바로 쓸 때는 본문)의 커서 줄 다음에 넣는다.
+// '＋ 넣기': 표 · 수직선 · 연표 · 그래프 · 분수 · 루트 · 글상자. 쓰던 글상자의 커서 줄 다음에 넣는다.
 // 쓰던 글상자가 없으면 넣을 곳을 누르게 하고 그 자리 새 글상자에 넣는다. 본문에서 / 를 쳐도 같다(/표 3x4, /연표 2016 10).
 export function InsertPanel({ drawing, target, place, app, onClose }: Props) {
   const [rows, setRows] = useState('3');
