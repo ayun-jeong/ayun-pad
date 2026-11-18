@@ -71,6 +71,20 @@ export function FoldedSurface({ enabled, source, typo, zoom, version, gutter, on
       const fragment = document.createDocumentFragment();
       for (let page = 0; page < pages; page++) {
         const fig = labelled(buildSheet(source, typo, page, count), '');
+        // Keep snapshot text boxes above the live half so an overflowing box
+        // remains clickable even while the neighboring half is active.
+        for (const el of fig.querySelectorAll<HTMLElement>('.phalf')) {
+          const boxes = el.querySelector<HTMLElement>('.tboxes');
+          const col = el.querySelector<HTMLElement>('.pcol');
+          if (!boxes || !col) continue;
+          const overlay = document.createElement('div');
+          overlay.className = 'fold-box-window';
+          overlay.style.cssText = col.style.cssText;
+          Object.assign(overlay.style, { left: el.style.paddingLeft, top: `${typo.mTop}mm`, height: `${fitPitch(typo).usable}mm` });
+          const content = document.createElement('div');
+          content.style.cssText = `position:relative;top:${-Number(el.dataset.half) * fitPitch(typo).usable}mm`;
+          content.appendChild(boxes); overlay.appendChild(content); el.appendChild(overlay);
+        }
         const caption = fig.querySelector('figcaption')!;
         caption.classList.add('two');
         for (const half of [page * 2, page * 2 + 1]) {
@@ -113,9 +127,14 @@ export function FoldedSurface({ enabled, source, typo, zoom, version, gutter, on
   return <div ref={root} className={`zoom-inner${enabled ? ' folded-canvas' : ''}`} style={{ transform: `scale(${zoom})`, paddingLeft: '7mm', '--zoom': zoom } as CSSProperties}
     onPointerDownCapture={(event) => {
       if (!enabled || event.button !== 0 || !snapshots.current) return;
+      // An overflowing live box still belongs to its original half, even when
+      // the pointer is physically over the neighboring half.
+      const targetElement = event.target as Element;
+      if (targetElement.closest('.fold-live-window .tbox')) return;
       const point = mapPoint(event);
       if (!point) return;
-      const next = Math.floor((point.y + .00001) / fitPitch(typo).usable);
+      const origin = targetElement.closest('.tbox')?.closest<HTMLElement>('.phalf[data-half]');
+      const next = origin ? Number(origin.dataset.half) : Math.floor((point.y + .00001) / fitPitch(typo).usable);
       if (next === half) return;
       // Replay the initial press onto the live DOM after moving it into place.
       // The following move/up events still belong to the original pointer.
@@ -132,7 +151,7 @@ export function FoldedSurface({ enabled, source, typo, zoom, version, gutter, on
     <div ref={snapshots} className="folded-snapshots" hidden={!enabled} />
     {!enabled && gutter}
     <div className={enabled ? 'fold-live-window' : 'half-live-window'} data-live-half={enabled ? half : undefined}
-      style={enabled ? { ...placement, position: 'absolute', overflow: 'hidden' } : undefined}>
+      style={enabled ? { ...placement, position: 'absolute', overflow: 'visible', clipPath: 'inset(0 -3000mm)' } : undefined}>
       <div className="fold-live-content" style={enabled ? { position: 'relative', left: `${-typo.mOuter}mm`, top: `${-half * fitPitch(typo).usable - typo.mTop}mm` } : undefined}>
         {children}
       </div>

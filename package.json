@@ -20,7 +20,10 @@
     "e2e:groups": "node scripts/e2e-groups.mjs",
     "e2e:folded": "node scripts/e2e-folded.mjs",
     "e2e:toolbar": "node scripts/e2e-toolbar.mjs",
-    "e2e:floating-toolbar": "node scripts/e2e-floating-toolbar.mjs"
+    "e2e:floating-toolbar": "node scripts/e2e-floating-toolbar.mjs",
+    "e2e:references": "node scripts/e2e-references.mjs",
+    "e2e:arrange": "node scripts/e2e-arrange.mjs",
+    "e2e:overflow": "node scripts/e2e-overflow.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.3",

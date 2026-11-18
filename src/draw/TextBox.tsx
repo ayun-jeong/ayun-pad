@@ -86,6 +86,7 @@ export function withReplaced(s: TextShape, hits: { from: number; to: number }[],
 export function tboxStyle(r: Resolved & { t: 'text' }): CSSProperties {
   const st: Record<string, string> = { left: `${r.a.x}mm`, top: `${r.a.y}mm`, width: `${r.bw}mm`, color: strokeOf(r.c) };
   const fs = r.fs ?? 1;
+  if (r.bh) st.minHeight = `max(var(--lh), ${r.bh}mm)`;
   const lh = Math.round(fs * (r.lh ?? 1) * 1000) / 1000;
   if (fs !== 1) st['--fs'] = `calc(var(--fs0) * ${fs})`;
   if (lh !== 1) st['--lh'] = `calc(var(--lh0) * ${lh})`;

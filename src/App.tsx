@@ -42,6 +42,7 @@ import { Sidebar } from './ui/Sidebar';
 import { TypePanel } from './ui/TypePanel';
 import { Versions } from './ui/Versions';
 import { ReferencePanel } from './ui/ReferencePanel';
+import { ReferenceIcon } from './ui/ReferenceIcon';
 import { ExtensionHelp } from './ui/ExtensionHelp';
 import { saveReference } from './store/references';
 
@@ -1174,7 +1175,7 @@ export function App() {
   return (
     <div className={`app${COMPACT ? ' compact' : ''}${reading ? ' reading' : ''}${paper ? '' : ' paper-off'}`}>
       <header className="top">
-        <button type="button" className={`tbtn references-btn${references ? ' on' : ''}`} aria-label="참고 자료 열고 닫기" aria-expanded={references} onClick={() => setReferences((v) => !v)}>▤<span className="wide-only"> 자료</span></button>
+        <button type="button" className={`tbtn references-btn${references ? ' on' : ''}`} aria-label="참고 자료 열고 닫기" aria-expanded={references} onClick={() => setReferences((v) => !v)}><ReferenceIcon name="panel" /><span className="wide-only"> 자료</span></button>
         <button type="button" className="tbtn" onClick={() => setSidebar((s) => !s)} aria-label="과목 목록 열고 닫기">
           ☰
         </button>

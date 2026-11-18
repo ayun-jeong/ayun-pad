@@ -1,0 +1,66 @@
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
+import puppeteer from 'puppeteer-core';
+const url = 'http://localhost:4342/ayun-pad/';
+const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', '4342', '--strictPort'], { stdio: 'ignore' });
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let browser;
+try {
+  for (let i = 0; i < 60; i++) { try { if ((await fetch(url)).ok) break; } catch {} await sleep(200); }
+  browser = await puppeteer.launch({ executablePath: process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--disable-gpu'] });
+  const page = await browser.newPage(); const errors = []; page.on('pageerror', e => errors.push(e.message));
+  await page.setViewport({ width: 1440, height: 1000 }); await page.goto(url, { waitUntil: 'networkidle0' });
+  await page.waitForSelector('.editor'); await page.$eval('.addnote', e => e.click());
+  await page.waitForFunction(() => window.__ayunpad.view()?.state.doc.textContent === '');
+  await page.click('.paper-width-options button:last-child'); await page.waitForSelector('.fold-live-window');
+  await page.evaluate(() => {
+    const a = { l: null, r: 0, x: 80, y: 20 };
+    window.__ayunpad.doc().shapes.set('wide', { id: 'wide', t: 'text', a, bw: 15, text: 'Text crosses the fold naturally', c: 'k', w: .2, z: 1, box: true });
+  });
+  await page.waitForSelector('.fold-live-window .tbox[data-sid="wide"]');
+  await page.click('.fold-live-window .tbox[data-sid="wide"]', { count: 2 });
+  await page.waitForSelector('.fold-live-window .tbox.tedit .tb-width');
+  const handle = await page.$eval('.fold-live-window .tbox.tedit .tb-width', e => { const r = e.getBoundingClientRect(); const src = document.querySelector('.fold-live-window .sheet-src'); return { x: r.x + r.width / 2, y: r.y + r.height / 2, ppm: src.getBoundingClientRect().width / 100 }; });
+  await page.mouse.move(handle.x, handle.y); await page.mouse.down();
+  await page.mouse.move(handle.x + 40 * handle.ppm, handle.y, { steps: 20 }); await page.mouse.up();
+  await page.waitForFunction(() => window.__ayunpad.doc().shapes.get('wide').bw > 50);
+  const saved = await page.evaluate(() => window.__ayunpad.doc().shapes.get('wide'));
+  assert.ok(saved.bw < 58); assert.equal(saved.a.x, 80); assert.equal(saved.a.y, 20);
+  assert.equal(await page.$eval('.fold-live-window', e => e.dataset.liveHalf), '0');
+  const tail = async selector => page.$eval(selector, e => { const r = e.getBoundingClientRect(); return { x: r.right - 20, y: r.top + r.height / 2 }; });
+  let point = await tail('.fold-live-window .tbox[data-sid="wide"]');
+  const hit = point => page.evaluate(p => document.elementFromPoint(p.x, p.y)?.closest('.tbox')?.getAttribute('data-sid'), point);
+  assert.equal(await hit(point), 'wide');
+  console.log('ok  1-1 글상자 폭을 가운데 경계 너머로 확장 · 좌표 점프나 너비 제한 없음 · 1-2 위에서 표시·클릭 가능');
+  await page.keyboard.press('Escape');
+  const right = await page.$eval('.folded-snapshots .phalf[data-half="1"] .pwin', e => { const r = e.getBoundingClientRect(); return { x: r.x + 40, y: r.y + 230 }; });
+  await page.mouse.click(right.x, right.y); await page.waitForSelector('.fold-live-window[data-live-half="1"]');
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => { const e = document.querySelector('.folded-snapshots .phalf[data-half="0"] .tbox[data-sid="wide"]'); if (!e) return false; const r = e.getBoundingClientRect(); return document.elementFromPoint(r.right - 20, r.top + r.height / 2)?.closest('.tbox')?.getAttribute('data-sid') === 'wide'; });
+  point = await tail('.folded-snapshots .phalf[data-half="0"] .tbox[data-sid="wide"]');
+  assert.equal(await hit(point), 'wide');
+  await page.mouse.click(point.x, point.y, { count: 2 });
+  await page.waitForSelector('.fold-live-window[data-live-half="0"] .tbox[data-sid="wide"].tedit', {timeout: 8000});
+  await page.keyboard.press('End'); await page.keyboard.type(' edited'); await page.keyboard.press('Escape');
+  await page.waitForFunction(() => window.__ayunpad.doc().shapes.get('wide').text.includes('edited'));
+  mkdirSync('/tmp/ayunpad-qa', { recursive: true });
+  await page.screenshot({ path: '/tmp/ayunpad-qa/overflow-a4.png' });
+  console.log('ok  다른 반쪽을 활성화한 뒤에도 넘친 글상자 끝을 눌러 원래 1-1 글상자를 직접 편집');
+  const geometry = await page.evaluate(() => { const s = window.__ayunpad.doc().shapes.get('wide'); return { a: s.a, bw: s.bw }; });
+  await page.click('.paper-width-options button:first-child'); await page.waitForSelector('.half-live-window');
+  point = await tail('.half-live-window .tbox[data-sid="wide"]');
+  const paperRight = await page.$eval('.half-live-window .paper', e => e.getBoundingClientRect().right);
+  assert.ok(point.x > paperRight + 20); assert.equal(await hit(point), 'wide');
+  await page.screenshot({ path: '/tmp/ayunpad-qa/overflow-half.png' });
+  const after = await page.evaluate(() => { const s = window.__ayunpad.doc().shapes.get('wide'); return { a: s.a, bw: s.bw }; });
+  assert.deepEqual(after, geometry);
+  console.log('ok  반쪽 보기에서는 종이 밖 회색 여백 위로 표시 · 전환해도 좌표·너비 그대로');
+  await sleep(250); await page.reload({ waitUntil: 'networkidle0' }); await page.waitForSelector('.half-live-window .tbox[data-sid="wide"]');
+  assert.equal(await hit(await tail('.half-live-window .tbox[data-sid="wide"]')), 'wide');
+  assert.deepEqual(errors, []);
+  console.log('ok  새로고침 뒤 너비 보존 · 실행 오류 없음');
+} catch (e) {
+  if (browser) { const page = (await browser.pages()).at(-1); console.log('failure state', await page.evaluate(() => ({ half: document.querySelector('.fold-live-window')?.dataset.liveHalf, shapes: [...window.__ayunpad.doc().shapes.values()], live: document.querySelector('.fold-live-window')?.getAttribute('style'), boxes:[...document.querySelectorAll('.fold-live-window .tbox')].map(e=>({ id:e.dataset.sid, style:e.getAttribute('style') })) }))); await page?.screenshot({ path: '/tmp/ayunpad-qa/overflow-failure.png' }).catch(() => {}); }
+  throw e;
+} finally { await browser?.close(); server.kill(); }

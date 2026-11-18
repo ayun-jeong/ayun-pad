@@ -43,7 +43,7 @@ export function bboxOf(r: Resolved, textH: (id: string) => number): Box {
     const y = Math.min(...ys);
     return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
   }
-  if (r.t === 'text') return { x: r.a.x, y: r.a.y, w: r.bw, h: textH(r.id) };
+  if (r.t === 'text') return { x: r.a.x, y: r.a.y, w: r.bw, h: Math.max(textH(r.id), r.bh ?? 0) };
   return boxOf(r.a, r.b);
 }
 

@@ -1,0 +1,41 @@
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
+import puppeteer from 'puppeteer-core';
+const url = 'http://localhost:4340/ayun-pad/';
+const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', '4340', '--strictPort'], { stdio: 'ignore' });
+const wait = ms => new Promise(r => setTimeout(r, ms)); let browser;
+try {
+  for (let i = 0; i < 60; i++) { try { if ((await fetch(url)).ok) break; } catch {} await wait(200); }
+  browser = await puppeteer.launch({ executablePath: process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--disable-gpu'] });
+  const page = await browser.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
+  await page.setViewport({ width: 1440, height: 1000 }); await page.goto(url, { waitUntil: 'networkidle0' }); await page.waitForSelector('.editor');
+  await page.click('.references-btn'); await page.waitForFunction(() => !document.querySelector('.reference-actions button').disabled);
+  await page.click('button[aria-label="웹사이트 추가"]'); await page.waitForSelector('#reference-address');
+  await page.type('#reference-address', url + 'lab/keys.html'); await page.click('.reference-form button[type=submit]');
+  await page.waitForSelector('.reference-frame');
+  const measure = () => page.evaluate(() => { const p = document.querySelector('.reference-panel').getBoundingClientRect(), c = document.querySelector('.reference-content').getBoundingClientRect(); return { top: c.top, bottom: c.bottom, overhead: c.top - p.top, lostBottom: p.bottom - c.bottom, ratio: c.height / p.height }; });
+  let layout = await measure(); assert.ok(layout.overhead <= 76); assert.ok(layout.lostBottom < 1); assert.ok(layout.ratio > .9);
+  assert.equal(await page.$$eval('.reference-title, .reference-footer, .reference-web-hint', es => es.length), 0);
+  console.log('ok  자료 위쪽 도구를 72px 이내로 압축 · 하단 여백 없음 · PC에서 패널의 90% 이상을 자료에 사용');
+  const style = await page.$eval('.reference-actions button', e => ({ radius: getComputedStyle(e).borderRadius, icon: !!e.querySelector('svg') })); assert.equal(style.radius, '7px'); assert.ok(style.icon);
+  await page.click('button[aria-label="기존 노트 추가"]'); await page.waitForSelector('#reference-note');
+  assert.deepEqual(await measure(), layout); assert.equal(await page.$eval('.reference-popover', e => getComputedStyle(e).position), 'absolute');
+  await page.keyboard.press('Escape'); await page.waitForSelector('.reference-popover', { hidden: true });
+  console.log('ok  노트 선택은 자료를 밀어내지 않는 팝업 · Escape로 닫기 · 아이콘과 둥근 버튼 적용');
+  await page.click('button[aria-label="자료 옵션"]'); await page.waitForSelector('.reference-options'); assert.deepEqual(await measure(), layout);
+  assert.ok(await page.$eval('.reference-options', e => e.textContent.includes('이 브라우저')));
+  await page.keyboard.press('Escape');
+  mkdirSync('/tmp/ayunpad-qa', { recursive: true }); await page.screenshot({ path: '/tmp/ayunpad-qa/references-compact.png' });
+  await page.click('button[aria-label="메모 추가"]'); await page.waitForSelector('textarea[aria-label="참고 메모"]'); await page.type('textarea[aria-label="참고 메모"]', 'Kept compact memo');
+  await page.click('button[aria-label="자료 옵션"]'); await page.click('button[aria-label="현재 자료 삭제"]'); await page.waitForSelector('.reference-frame');
+  console.log('ok  저장 안내·삭제는 옵션으로 이동하고 메모 추가·삭제 후 원래 자료 복귀');
+  await page.setViewport({ width: 390, height: 844 });
+  if (!(await page.$eval('.side', e => e.classList.contains('hidden')))) await page.$eval('.side-backdrop', e => e.click());
+  await page.waitForSelector('.side.hidden'); await wait(100);
+  layout = await measure(); assert.ok(layout.overhead <= 76); assert.ok(layout.lostBottom < 1);
+  assert.ok(await page.$eval('.reference-heading', e => e.scrollWidth <= e.clientWidth));
+  for (const label of ['파일 추가', '메모 추가', '기존 노트 추가', '웹사이트 추가']) assert.ok(await page.$eval(`button[aria-label="${label}"]`, e => { const r = e.getBoundingClientRect(); return r.width >= 28 && r.right <= innerWidth; }));
+  assert.deepEqual(errors, []); await page.screenshot({ path: '/tmp/ayunpad-qa/references-compact-mobile.png' });
+  console.log('ok  휴대폰에서도 추가 버튼이 한 줄에 유지되고 자료 영역 최대 확보 · 실행 오류 없음');
+} finally { await browser?.close(); server.kill(); }

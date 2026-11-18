@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { DOMSerializer } from 'prosemirror-model';
 import { yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror';
 import { schema } from '../editor/schema';
 import { openNote } from '../store/noteDoc';
 import type { Library } from '../store/library';
+import { ReferenceIcon, type ReferenceIconName } from './ReferenceIcon';
 import { referencesFor, saveReference, webAddress, type Reference } from '../store/references';
 
 function NoteReference({ id }: { id: string }) {
@@ -31,7 +33,7 @@ function NoteReference({ id }: { id: string }) {
   return <div className="reference-note pad-text" ref={host} />;
 }
 
-function FileReference({ item }: { item: Reference }) {
+function FileReference({ item, actionHost }: { item: Reference; actionHost: HTMLElement | null }) {
   const [url, setUrl] = useState('');
   useEffect(() => {
     if (!item.blob) return;
@@ -41,7 +43,7 @@ function FileReference({ item }: { item: Reference }) {
   }, [item.blob]);
   if (!url) return null;
   return item.kind === 'image' ? <img className="reference-image" src={url} alt={item.title} /> : <>
-    <a className="reference-file-link" href={url} target="_blank" rel="noreferrer">PDF 별도 창으로 열기 ↗</a>
+    {actionHost && createPortal(<a className="reference-icon-button reference-file-link" href={url} target="_blank" rel="noreferrer" aria-label="PDF 별도 창으로 열기" title="PDF 별도 창으로 열기"><ReferenceIcon name="external" /></a>, actionHost)}
     <iframe className="reference-frame" src={url} title={item.title} />
   </>;
 }
@@ -53,6 +55,9 @@ export function ReferencePanel({ noteId, lib, onClose, onExtension, toast, initi
   const [active, setActive] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [form, setForm] = useState<'web' | 'note' | null>(null);
+  const [options, setOptions] = useState(false);
+  const [fileAction, setFileAction] = useState<HTMLSpanElement | null>(null);
+  const popover = useRef<HTMLDivElement>(null);
   const [address, setAddress] = useState('');
   const [error, setError] = useState('');
   const [drag, setDrag] = useState(false);
@@ -66,6 +71,21 @@ export function ReferencePanel({ noteId, lib, onClose, onExtension, toast, initi
     }).catch(() => { if (alive.current) { setError('저장된 자료를 열지 못했어요. 다시 열어 주세요.'); } });
     return () => { alive.current = false; };
   }, [noteId]);
+  useEffect(() => {
+    if (!form && !options) return;
+    const close = () => { setForm(null); setOptions(false); };
+    const outside = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (popover.current?.contains(target) || target?.closest('.reference-actions, .reference-options-toggle')) return;
+      close();
+    };
+    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); close(); } };
+    document.addEventListener('pointerdown', outside, true);
+    document.addEventListener('keydown', key, true);
+    const frameFocus = () => { if (document.activeElement?.tagName === 'IFRAME') close(); };
+    window.addEventListener('blur', frameFocus);
+    return () => { document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', key, true); window.removeEventListener('blur', frameFocus); };
+  }, [form, options]);
   const add = async (fields: Omit<Reference, 'id' | 'noteId'>) => {
     const item: Reference = { ...fields, id: crypto.randomUUID(), noteId };
     try {
@@ -88,36 +108,51 @@ export function ReferencePanel({ noteId, lib, onClose, onExtension, toast, initi
     onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDrag(true); } }}
     onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDrag(false); }}
     onDrop={(e) => { e.preventDefault(); setDrag(false); if (ready) void files(e.dataTransfer.files); }}>
-    <header className="reference-heading"><strong>참고 자료</strong><span>보면서 정리하기</span><button className="mini" onClick={onClose} aria-label="참고 자료 닫기">✕</button></header>
-    <nav className="reference-actions" aria-label="자료 추가">
-      <button disabled={!ready} onClick={() => picker.current?.click()}>＋ 파일</button>
-      <button disabled={!ready} onClick={() => void add({ kind: 'memo', title: '새 메모', text: '' })}>메모</button>
-      <button disabled={!ready} onClick={() => setForm(form === 'note' ? null : 'note')}>기존 노트</button>
-      <button disabled={!ready} onClick={() => setForm(form === 'web' ? null : 'web')}>웹사이트</button>
-    </nav>
-    {form === 'web' && <form className="reference-form" onSubmit={(e) => { e.preventDefault(); const url = webAddress(address.trim()); if (!url) { setError('http 또는 https 웹주소를 입력해 주세요'); return; } void add({ kind: 'web', title: new URL(url).hostname, text: url }); }}>
-      <label htmlFor="reference-address">웹주소</label><input id="reference-address" autoFocus value={address} onChange={(e) => setAddress(e.target.value)} placeholder="https://…" required /><button>열기</button>
-    </form>}
-    {form === 'note' && <div className="reference-form"><label htmlFor="reference-note">옆에서 볼 노트</label><select id="reference-note" defaultValue="" onChange={(e) => { const n = lib.notes.get(e.target.value); if (n) void add({ kind: 'note', title: n.title, text: n.id }); }}><option value="" disabled>노트를 골라 주세요</option>{[...lib.notes.values()].filter((n) => !n.deleted && n.id !== noteId).map((n) => <option key={n.id} value={n.id}>{n.title}</option>)}</select></div>}
+    <header className="reference-heading">
+      <strong>참고 자료</strong>
+      <nav className="reference-actions" aria-label="자료 추가">
+        <button type="button" disabled={!ready} aria-label="파일 추가" title="PDF · 이미지 · 텍스트 파일 추가" onClick={() => { setForm(null); setOptions(false); picker.current?.click(); }}><ReferenceIcon name="file" /><span className="reference-action-label">파일</span></button>
+        <button type="button" disabled={!ready} aria-label="메모 추가" title="참고 메모 추가" onClick={() => { setForm(null); setOptions(false); void add({ kind: 'memo', title: '새 메모', text: '' }); }}><ReferenceIcon name="memo" /><span className="reference-action-label">메모</span></button>
+        <button type="button" disabled={!ready} className={form === 'note' ? 'on' : ''} aria-label="기존 노트 추가" aria-expanded={form === 'note'} title="기존 노트 참고하기" onClick={() => { setOptions(false); setForm(form === 'note' ? null : 'note'); }}><ReferenceIcon name="note" /><span className="reference-action-label">기존 노트</span></button>
+        <button type="button" disabled={!ready} className={form === 'web' ? 'on' : ''} aria-label="웹사이트 추가" aria-expanded={form === 'web'} title="웹사이트 주소로 열기" onClick={() => { setOptions(false); setForm(form === 'web' ? null : 'web'); }}><ReferenceIcon name="web" /><span className="reference-action-label">웹사이트</span></button>
+      </nav>
+      <button type="button" className="reference-icon-button" onClick={onClose} aria-label="참고 자료 닫기" title="참고 자료 닫기"><ReferenceIcon name="close" /></button>
+    </header>
+    {form && <div ref={popover} className="reference-popover" role="dialog" aria-label={form === 'web' ? '웹사이트 추가' : '기존 노트 추가'}>
+      <div className="reference-popover-heading"><strong>{form === 'web' ? '웹사이트 열기' : '참고할 노트'}</strong><button type="button" className="reference-icon-button" onClick={() => setForm(null)} aria-label="자료 추가 닫기"><ReferenceIcon name="close" /></button></div>
+      {form === 'web' ? <form className="reference-form" onSubmit={(e) => { e.preventDefault(); const url = webAddress(address.trim()); if (!url) { setError('http 또는 https 웹주소를 입력해 주세요'); return; } void add({ kind: 'web', title: new URL(url).hostname, text: url }); }}>
+        <label className="reference-sr-only" htmlFor="reference-address">웹주소</label><input id="reference-address" autoFocus value={address} onChange={(e) => setAddress(e.target.value)} placeholder="https://…" required /><button type="submit">열기</button>
+      </form> : <div className="reference-form"><label className="reference-sr-only" htmlFor="reference-note">옆에서 볼 노트</label><select id="reference-note" autoFocus defaultValue="" onChange={(e) => { const n = lib.notes.get(e.target.value); if (n) void add({ kind: 'note', title: n.title, text: n.id }); }}><option value="" disabled>노트를 골라 주세요</option>{[...lib.notes.values()].filter((n) => !n.deleted && n.id !== noteId).map((n) => <option key={n.id} value={n.id}>{n.title}</option>)}</select></div>}
+    </div>}
     {error && <p className="reference-error" role="alert">{error}</p>}
-    {items.length > 0 && <div className="reference-tabs" role="tablist" aria-label="열린 자료">{items.map((row) => <button key={row.id} role="tab" aria-selected={row.id === active} onClick={() => setActive(row.id)}>{row.title}</button>)}</div>}
-    {item ? <>
-      <div className="reference-title"><span>{item.title}</span><button className="mini" aria-label="현재 자료 삭제" onClick={async () => {
-        try { await saveReference(item, true); if (!alive.current) return; setItems((rows) => rows.filter((r) => r.id !== item.id)); setActive(items.find((r) => r.id !== item.id)?.id ?? null); }
+    {items.length > 0 && <div className="reference-tabbar">
+      <div className="reference-tabs" role="tablist" aria-label="열린 자료">{items.map((row) => <button type="button" key={row.id} role="tab" aria-selected={row.id === active} title={row.title} onClick={() => { setActive(row.id); setForm(null); setOptions(false); }}><ReferenceIcon name={({ pdf: 'file', image: 'file', memo: 'memo', web: 'web', note: 'note' } satisfies Record<Reference['kind'], ReferenceIconName>)[row.kind]} /><span>{row.title}</span></button>)}</div>
+      {item?.kind === 'pdf' && <span className="reference-file-action" ref={setFileAction} />}
+      {item?.kind === 'web' && <a className="reference-icon-button reference-external" href={item.text} target="_blank" rel="noreferrer" aria-label="현재 웹사이트 새 탭으로 열기" title="새 탭으로 열기"><ReferenceIcon name="external" /></a>}
+      {item?.kind === 'note' && <span className="reference-readonly" title="본문 · 글상자 읽기 전용" aria-label="읽기 전용"><ReferenceIcon name="lock" /></span>}
+      <button type="button" className={`reference-icon-button reference-options-toggle${options ? ' on' : ''}`} aria-label="자료 옵션" aria-expanded={options} title="자료 옵션 · 저장 안내" onClick={() => { setForm(null); setOptions((value) => !value); }}><ReferenceIcon name="more" /></button>
+    </div>}
+    {options && <div ref={popover} className="reference-popover reference-options" role="dialog" aria-label="자료 옵션">
+      <p>자료는 이 브라우저에 저장돼요.</p>
+      {item?.kind === 'web' && <p>사이트가 내부 표시를 막으면 새 탭이나 사이드 패널에서 볼 수 있어요.</p>}
+      <button type="button" onClick={() => { setOptions(false); onExtension(); }}><ReferenceIcon name="panel" />사이드 패널 안내</button>
+      {item && <button type="button" className="reference-remove" aria-label="현재 자료 삭제" onClick={async () => {
+        try { await saveReference(item, true); if (!alive.current) return; setItems((rows) => rows.filter((r) => r.id !== item.id)); setActive(items.find((r) => r.id !== item.id)?.id ?? null); setOptions(false); }
         catch { setError('자료를 삭제하지 못했어요'); }
-      }}>삭제</button></div>
+      }}><ReferenceIcon name="trash" />자료 삭제</button>}
+    </div>}
+    {item ? <>
       <div className="reference-content" role="tabpanel" aria-label={item.title}>
-        {(item.kind === 'pdf' || item.kind === 'image') && <FileReference item={item} />}
+        {(item.kind === 'pdf' || item.kind === 'image') && <FileReference item={item} actionHost={fileAction} />}
         {item.kind === 'memo' && <textarea aria-label="참고 메모" placeholder="옆에 두고 참고할 내용을 적어 주세요" value={item.text ?? ''} onChange={(e) => {
           const next = { ...item, text: e.target.value };
           setItems((rows) => rows.map((r) => r.id === item.id ? next : r));
           void saveReference(next).catch(() => setError('메모를 저장하지 못했어요. 내용을 복사해서 보관해 주세요.'));
         }} />}
-        {item.kind === 'web' && <><div className="reference-web-hint">사이트에 따라 내부 표시가 막힐 수 있어요. <a href={item.text} target="_blank" rel="noreferrer">새 창으로 열기 ↗</a><button className="mini" onClick={onExtension}>사이드 패널 안내</button></div><iframe className="reference-frame" title={item.title} src={item.text} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" referrerPolicy="no-referrer" /></>}
-        {item.kind === 'note' && item.text && <><p className="reference-web-hint">본문 · 글상자 읽기 전용</p><NoteReference id={item.text} /></>}
+        {item.kind === 'web' && <><iframe className="reference-frame" title={item.title} src={item.text} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" referrerPolicy="no-referrer" /></>}
+        {item.kind === 'note' && item.text && <NoteReference id={item.text} />}
       </div>
     </> : <div className="reference-empty"><div className="reference-empty-icon">▤</div><h2>자료는 옆에, 정리는 여기에</h2><p>PDF나 이미지를 끌어다 놓거나<br />메모 · 기존 노트 · 웹사이트를 열어 보세요.</p><button className="tbtn" disabled={!ready} onClick={() => picker.current?.click()}>자료 파일 고르기</button></div>}
-    <footer className="reference-footer"><span>자료는 이 브라우저에 저장돼요</span><button className="mini" onClick={onExtension}>사이드 패널</button></footer>
     <input hidden ref={picker} type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp,image/gif,.pdf,.txt,.md" onChange={(e) => { if (e.target.files) void files(e.target.files); e.target.value = ''; }} />
   </aside>;
 }

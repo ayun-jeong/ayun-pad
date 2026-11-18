@@ -1,4 +1,6 @@
 import { copyGroups, expandGroups } from './groups';
+import { arrange, arrangementCount, type Arrange } from './arrange';
+import { ArrangeMenu } from './ArrangeMenu';
 import { leadingCmd, trackCmd } from '../editor/commands';
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 import { Slice } from 'prosemirror-model';
@@ -194,7 +196,7 @@ function ShapeHit({ r, onPick }: { r: Resolved; onPick(e: React.PointerEvent): v
 
 // 끌기: 고른 것 모두 옮기기(toggle · only는 끌지 않고 놓았을 때 고름을 고치는 것), 또는 하나의 점 · 모서리 · 폭
 // copy: ⌥(Alt)를 누른 채 끌면 원본은 그 자리에 두고 놓은 자리에 복사본(d = 지금까지 옮긴 만큼)
-type MoveDrag = { mode: 'move'; start: XY; bases: Resolved[]; moved: boolean; toggle?: string; only?: string; copy?: boolean; d?: XY };
+type MoveDrag = { mode: 'move'; start: XY; bases: Resolved[]; moved: boolean; toggle?: string; only?: string; copy?: boolean; d?: XY; continuous?: boolean };
 // ctrl: 곡선 손잡이(점 i의 들어오는 0 · 나가는 1 손잡이)
 type EditDrag = { mode: 'point' | 'corner' | 'side' | 'width' | 'ctrl'; id: string; i: number; side?: 0 | 1; start: XY; base: Resolved; moved: boolean };
 
@@ -260,7 +262,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     if (r && layer.current && e.button === 0) {
       ix.pid = e.pointerId;
       layer.current.setPointerCapture(e.pointerId);
-      ix.drag = { mode: 'move', start: p, bases: ix.sel.map(byId).filter(isR), moved: false };
+      ix.drag = { mode: 'move', start: p, bases: ix.sel.map(byId).filter(isR), moved: false, continuous: p.x < 0 || p.x > W };
     }
     setDraw({ tool: 'select', picked: true });
     repaint();
@@ -643,8 +645,12 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   };
 
   // 화면 자리 ↔ 종이 mm
-  const toMM = (e: { clientX: number; clientY: number }): XY => {
-    const mapped = mapPoint?.(e);
+  const toMM = (e: { clientX: number; clientY: number; target?: EventTarget | null }, continuous = false): XY => {
+    // Width gestures use one continuous plane across the fold. Remapping to
+    // the next half here would reset x and jump y by a whole page.
+    const ownBox = e.target instanceof Element && !!e.target.closest('.fold-live-window .tbox');
+    const raw = continuous || ownBox || ix.drag?.mode === 'width' || (ix.drag?.mode === 'move' && ix.drag.continuous);
+    const mapped = raw ? null : mapPoint?.(e);
     if (mapped) return mapped;
     const r = layer.current!.getBoundingClientRect();
     return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
@@ -747,12 +753,12 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     if (!base || base.t !== 'text' || !layer.current) return;
     e.preventDefault();
     e.stopPropagation();
-    const start = toMM(e);
+    const start = toMM(e, mode === 'width');
     const skip = new Set([id]);
     const canCopy = mode === 'move' && pending?.id !== id; // 아직 저장 안 된 새 글상자는 복제하지 않는다
     let copy = false;
     const onMove = (ev: PointerEvent) => {
-      const p = toMM(ev);
+      const p = toMM(ev, mode === 'width');
       if (mode === 'move') {
         copy = canCopy && ev.altKey;
         copyMode(copy, [base]);
@@ -760,7 +766,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
         ix.drafts = new Map([[id, translate(base, dx, dy)]]);
       } else {
         const q = snapPt({ x: p.x, y: base.a.y }, skip, [], { x: true, y: false }, ev, (n) => ({ x: base.a.x, y: base.a.y, w: n.x - base.a.x, h: th(id) }));
-        ix.drafts = new Map([[id, { ...base, bw: Math.max(6, Math.min(W - base.a.x + 2, q.x - base.a.x)) }]]);
+        ix.drafts = new Map([[id, { ...base, bw: Math.max(6, q.x - base.a.x) }]]);
       }
       repaint();
     };
@@ -963,7 +969,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       else ix.sel = expandGroups(shapes.values(), [...ix.sel, target.id]);
     } else if (!inSel) pickOnly([target.id]);
     else if (ix.sel.length > 1 || ix.wsel.length) only = target.id;
-    ix.drag = { mode: 'move', start: p, bases: ix.sel.map(byId).filter(isR), moved: false, toggle, only };
+    ix.drag = { mode: 'move', start: p, bases: ix.sel.map(byId).filter(isR), moved: false, toggle, only, continuous: p.x < 0 || p.x > W };
     repaint();
   };
 
@@ -1210,6 +1216,11 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     repaint();
   };
   const duplicate = () => addCopies(ix.sel.map(byId).filter(isR), 2, pitch);
+  const arrangeSelection = (action: Arrange) => {
+    const rs = ix.sel.map(byId).filter(isR);
+    write(() => arrange(rs, action, th).forEach(r => shapes.set(r.id, clean(unresolve(r, lines)))));
+    repaint();
+  };
 
   const nudge = (dx: number, dy: number) => {
     const rs = ix.sel.map(byId).filter(isR);
@@ -1299,6 +1310,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     }
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
+      if (t?.closest('.arrange-menu, .reference-popover') || (e.key === 'Escape' && document.querySelector('.arrange-menu'))) return;
       if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       const d = drawRef.current;
       if (!d) return;
@@ -1592,7 +1604,10 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
                 else if (pending?.id === r.id) setPending({ ...pending, ...p });
               }}
               selected={!!draw && ix.sel.length === 1 && ix.sel[0] === r.id && !ix.wsel.length}
-              onPick={(e) => pickShape(r.id, e)}
+              onPick={(e) => {
+                if (drawRef.current) { e.stopPropagation(); onDown(e); }
+                else pickShape(r.id, e);
+              }}
               reading={!!reading}
             />
           ) : null,
@@ -1616,6 +1631,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
             remove={remove}
             duplicate={duplicate}
             groupSelection={groupSelection}
+            arrangeSelection={arrangeSelection}
             finish={finishPath}
             toTools={() => {
               pickOnly([]);
@@ -1678,6 +1694,7 @@ interface BarProps {
   remove(): void;
   duplicate(): void;
   groupSelection(ungroup?: boolean): void;
+  arrangeSelection(action: Arrange): void;
   finish(): void;
   toTools(): void;
 }
@@ -1688,7 +1705,7 @@ const mod = isMac ? '⌘' : 'Ctrl+';
 
 // 그리기 막대. 무엇이든 고르면 고른 것(여러 개면 모두)의 색 · 굵기 · 직각 · 화살촉 · 점선 · 글씨 · 형광펜 · 복제 · 지우기,
 // 고른 게 없으면 새로 그릴 도구와 설정.
-function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highlight, remove, duplicate, groupSelection, finish, toTools }: BarProps) {
+function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highlight, remove, duplicate, groupSelection, arrangeSelection, finish, toTools }: BarProps) {
   // 커서를 뺏지 않고, 누름이 그림 층(종이)으로 올라가지 않게
   const keep = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -1810,6 +1827,7 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highligh
             </div>
           )}
           <div className="dgroup">
+            {arrangementCount(sel) >= 2 && <ArrangeMenu count={arrangementCount(sel)} onArrange={arrangeSelection} />}
             {sel.length >= 2 && <button type="button" onClick={() => groupSelection()} title={`그룹 묶기 (${mod}G)`}>그룹 묶기</button>}
             {sel.some((s) => s.group) && <button type="button" onClick={() => groupSelection(true)} title={`그룹 해제 (${mod}⇧G)`}>그룹 해제</button>}
             {sel.length > 0 && (

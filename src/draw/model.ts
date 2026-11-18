@@ -45,6 +45,7 @@ export interface TextShape extends Base {
   t: 'text';
   a: Anchor;
   bw: number; // 글상자 폭(mm)
+  bh?: number; // 높이 맞추기로 지정한 최소 높이(mm). 내용은 자르지 않는다.
   text: string; // 찾기 · 옛 글상자용 맨 글
   doc?: unknown; // 글상자 내용(ProseMirror JSON). 펜 · 형광펜 · 동그라미 · 밑줄이 그대로 들어간다
   box?: boolean; // 테두리

@@ -97,7 +97,7 @@ try {
   const divider = await page.$('.reference-resizer');
   await divider.focus(); await page.keyboard.press('ArrowRight');
   check(await divider.evaluate((e) => Number(e.getAttribute('aria-valuenow')) === 44), '키보드로 자료 · 필기 폭 조절');
-  await page.click('.reference-heading button');
+  await page.click('button[aria-label="참고 자료 닫기"]');
   const other = await browser.newPage();
   await other.setViewport({ width: 520, height: 850 });
   await other.goto(noteURL + '&panel=1', { waitUntil: 'networkidle0' });
