@@ -62,7 +62,7 @@ export interface DrawState {
   picked?: boolean; // 글쓰기 화면에서 그림을 눌러 고치는 중: 지우거나 · 빈 곳을 누르거나 · Esc 한 번이면 바로 글쓰기로
 }
 
-export const DEFAULT_DRAW: DrawState = { tool: 'select', c: 'r', w: DEFAULT_W, ortho: false, lock: false };
+export const DEFAULT_DRAW: DrawState = { tool: 'select', c: 'k', w: DEFAULT_W, ortho: false, lock: false };
 
 // 지금 통째로 골라 둔 글상자(고치는 중이 아닌 것). 위쪽 펜 · 형광펜 · 동그라미 단추가 이 글상자 글 전체에 칠한다(App.withView)
 export const pickedBoxes: { ids: string[] } = { ids: [] };
@@ -1489,7 +1489,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
           <ShapeSvg key={r.id} r={r} />
         ))}
         {!draw && !reading && resolved.map((r) => (r.t === 'text' ? null : <ShapeHit key={`hit-${r.id}`} r={r} onPick={(e) => pickShape(r.id, e)} />))}
-        {preview && <path className="sh-ui sh-preview" d={preview} fill="none" stroke={strokeOf(draw?.c ?? 'r')} strokeWidth={draw?.w ?? DEFAULT_W} strokeLinejoin="round" strokeLinecap="round" strokeOpacity={0.75} />}
+        {preview && <path className="sh-ui sh-preview" d={preview} fill="none" stroke={strokeOf(draw?.c ?? 'k')} strokeWidth={draw?.w ?? DEFAULT_W} strokeLinejoin="round" strokeLinecap="round" strokeOpacity={0.75} />}
         {dr && lastCs && (
           <Knobs at={dr.pts[dr.pts.length - 1]} c={lastCs} />
         )}
