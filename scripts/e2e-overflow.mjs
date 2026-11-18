@@ -56,10 +56,34 @@ try {
   const after = await page.evaluate(() => { const s = window.__ayunpad.doc().shapes.get('wide'); return { a: s.a, bw: s.bw }; });
   assert.deepEqual(after, geometry);
   console.log('ok  반쪽 보기에서는 종이 밖 회색 여백 위로 표시 · 전환해도 좌표·너비 그대로');
+  // 회색 여백의 선택 손잡이와 편집 손잡이 모두 종이 안으로 줄일 수 있어야 한다.
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('.drawbar', { hidden: true });
+  await page.click('.half-live-window .tbox[data-sid="wide"]');
+  await page.waitForSelector('.half-live-window .sh-handle');
+  const resize = async selector => {
+    const p = await page.$eval(selector, e => { const r = e.getBoundingClientRect(); const src = document.querySelector('.half-live-window .sheet-src').getBoundingClientRect(); return { x: r.right - .5, y: r.top + r.height / 2, endX: src.left + 100 * src.width / 100 }; });
+    const scroll = await page.$eval('.desk', e => ({ x: e.scrollLeft, y: e.scrollTop }));
+    await page.mouse.move(p.x, p.y); await page.mouse.down(); await page.mouse.move(p.endX, p.y, { steps: 20 }); await page.mouse.up();
+    await page.waitForFunction(() => window.__ayunpad.doc().shapes.get('wide').bw < 25, { timeout: 3000 });
+    const shape = await page.evaluate(() => window.__ayunpad.doc().shapes.get('wide'));
+    assert.ok(shape.bw > 17); assert.deepEqual(shape.a, geometry.a); assert.ok(shape.text.includes('edited'));
+    assert.deepEqual(await page.$eval('.desk', e => ({ x: e.scrollLeft, y: e.scrollTop })), scroll);
+  };
+  await resize('.half-live-window .sh-handle');
+  console.log('ok  회색 여백의 선택 손잡이 바깥쪽을 잡아 종이 안까지 폭 축소 · 화면 이동과 좌표 변경 없음');
+  const mod = await page.evaluate(() => /Mac/.test(navigator.platform) ? 'Meta' : 'Control');
+  await page.keyboard.down(mod); await page.keyboard.press('KeyZ'); await page.keyboard.up(mod);
+  await page.waitForFunction(() => window.__ayunpad.doc().shapes.get('wide').bw > 50);
+  await page.click('.half-live-window .tbox[data-sid="wide"]', { count: 2 });
+  await page.waitForSelector('.half-live-window .tbox.tedit .tb-width');
+  await resize('.half-live-window .tbox.tedit .tb-width');
+  console.log('ok  실행 취소 뒤 편집 중 폭 손잡이로도 회색 여백에서 종이 안까지 축소');
+  await page.keyboard.press('Escape');
   await sleep(250); await page.reload({ waitUntil: 'networkidle0' }); await page.waitForSelector('.half-live-window .tbox[data-sid="wide"]');
-  assert.equal(await hit(await tail('.half-live-window .tbox[data-sid="wide"]')), 'wide');
+  assert.ok(await page.evaluate(() => window.__ayunpad.doc().shapes.get('wide').bw < 25));
   assert.deepEqual(errors, []);
-  console.log('ok  새로고침 뒤 너비 보존 · 실행 오류 없음');
+  console.log('ok  새로고침 뒤 줄인 너비 보존 · 실행 오류 없음');
 } catch (e) {
   if (browser) { const page = (await browser.pages()).at(-1); console.log('failure state', await page.evaluate(() => ({ half: document.querySelector('.fold-live-window')?.dataset.liveHalf, shapes: [...window.__ayunpad.doc().shapes.values()], live: document.querySelector('.fold-live-window')?.getAttribute('style'), boxes:[...document.querySelectorAll('.fold-live-window .tbox')].map(e=>({ id:e.dataset.sid, style:e.getAttribute('style') })) }))); await page?.screenshot({ path: '/tmp/ayunpad-qa/overflow-failure.png' }).catch(() => {}); }
   throw e;

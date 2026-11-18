@@ -318,6 +318,8 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
 .shapes-layer.on.tool-text { cursor: text; }
 .shapes-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .sh-handle { fill: #fff; stroke: #0064e8; stroke-width: 0.22; }
+/* 종이 밖에서도 손잡이가 배경 이동보다 먼저 포인터를 받는다. */
+.shapes-layer.on .sh-text-width { pointer-events: all; cursor: ew-resize; touch-action: none; }
 .sh-handle.on { fill: #0064e8; } /* 고른 점(⌫로 그 점만 지움) */
 .sh-knob { fill: #fff; stroke: #0064e8; stroke-width: 0.2; } /* 곡선 손잡이 끝 */
 .sh-knobline { stroke: #0064e8; stroke-width: 1px; vector-effect: non-scaling-stroke; stroke-opacity: 0.7; }

@@ -648,8 +648,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   const toMM = (e: { clientX: number; clientY: number; target?: EventTarget | null }, continuous = false): XY => {
     // Width gestures use one continuous plane across the fold. Remapping to
     // the next half here would reset x and jump y by a whole page.
-    const ownBox = e.target instanceof Element && !!e.target.closest('.fold-live-window .tbox');
-    const raw = continuous || ownBox || ix.drag?.mode === 'width' || (ix.drag?.mode === 'move' && ix.drag.continuous);
+    const ownControl = e.target instanceof Element && !!e.target.closest('.fold-live-window .tbox, .fold-live-window .sh-text-width');
+    const raw = continuous || ownControl || ix.drag?.mode === 'width' || (ix.drag?.mode === 'move' && ix.drag.continuous);
     const mapped = raw ? null : mapPoint?.(e);
     if (mapped) return mapped;
     const r = layer.current!.getBoundingClientRect();
@@ -1548,7 +1548,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
             <line key={`kl${k.i}-${k.side}`} className="sh-ui sh-knobline" x1={one.pts[k.i].x} y1={one.pts[k.i].y} x2={k.at.x} y2={k.at.y} />
           ))}
         {hs.map((h, i) => (
-          <rect key={i} className={`sh-ui sh-handle${nodeOn(i) ? ' on' : ''}`} x={h.x - hsz / 2} y={h.y - hsz / 2} width={hsz} height={hsz} rx={0.25} />
+          <rect key={i} className={`sh-ui sh-handle${one?.t === 'text' ? ' sh-text-width' : ''}${nodeOn(i) ? ' on' : ''}`} x={h.x - hsz / 2} y={h.y - hsz / 2} width={hsz} height={hsz} rx={0.25} />
         ))}
         {ks.map((k) => (
           <circle key={`k${k.i}-${k.side}`} className="sh-ui sh-knob" cx={k.at.x} cy={k.at.y} r={0.65} />
