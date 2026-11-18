@@ -62,6 +62,8 @@ try {
   await page.reload({ waitUntil: 'networkidle0' });
   await page.waitForSelector('.editor');
   await page.click('.references-btn');
+  await page.waitForSelector('button[aria-label="메모 편집"]');
+  await page.click('button[aria-label="메모 편집"]');
   await page.waitForSelector('textarea[aria-label="참고 메모"]');
   check(await page.$eval('textarea[aria-label="참고 메모"]', (e) => e.value === 'Reference saved'), '참고 메모가 새로고침 뒤에도 복원');
   await action('기존 노트');
@@ -136,8 +138,8 @@ try {
   await page.waitForFunction(() => [...window.__ayunpad.doc().shapes.values()].some((s) => s.text === 'From extension'));
   check(true, '확장 사이드 패널과 본창 실시간 동기화');
   await panel.evaluate(() => document.querySelector('#pad').contentWindow.postMessage({ type: 'ayunpad:capture', title: 'Captured source', url: 'https://example.com/article', text: 'Selected passage' }, new URL(document.querySelector('#pad').src).origin));
-  await pad.waitForSelector('textarea[aria-label="참고 메모"]');
-  check(await pad.$eval('textarea[aria-label="참고 메모"]', e => e.value.includes('Selected passage') && e.value.includes('https://example.com/article')), '확장에서 선택한 글과 출처를 노트 참고 자료에 저장');
+  await pad.waitForSelector('.reference-markdown');
+  check(await pad.$eval('.reference-markdown', e => e.textContent.includes('Selected passage') && e.textContent.includes('https://example.com/article')), '확장에서 선택한 글과 출처를 노트 참고 자료에 저장');
   check(errors.length === 0, `앱 실행 오류 없음: ${errors.join(', ')}`);
   await other.close();
   await page.bringToFront();

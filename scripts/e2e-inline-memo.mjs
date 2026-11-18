@@ -1,0 +1,53 @@
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import puppeteer from 'puppeteer-core';
+const url='http://localhost:4346/ayun-pad/';
+const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--port','4346','--strictPort'],{stdio:'ignore'});
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));let browser;
+try{
+  for(let i=0;i<60;i++){try{if((await fetch(url)).ok)break;}catch{}await sleep(200);}
+  browser=await puppeteer.launch({executablePath:process.env.CHROME??'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,args:['--disable-gpu']});
+  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.setViewport({width:1440,height:1000});await page.goto(url,{waitUntil:'networkidle0'});await page.waitForSelector('.editor');
+  await page.$eval('.addnote',e=>e.click());await page.waitForFunction(()=>window.__ayunpad.view().state.doc.textContent==='');
+  const tail='EERS 에너지 공급자 효율 향상 의무화 제도';
+  await page.evaluate(tail=>{
+    const content=[{type:'text',text:'효율향상',marks:[{type:'hl',attrs:{c:'g'}}]},{type:'text',text:'—',marks:[{type:'pen',attrs:{c:'r'}},{type:'branchDash'}]},{type:'text',text:tail}];
+    window.__ayunpad.doc().shapes.set('inline',{id:'inline',t:'text',a:{l:null,r:0,x:10,y:20},bw:80,text:`효율향상—${tail}`,doc:{type:'doc',content:[{type:'line',content}]},c:'k',w:.2,z:0});
+  },tail);
+  await page.waitForSelector('.tbox .hl-p');
+  assert.equal(await page.$eval('.tbox [data-branch-dash]',e=>e.textContent),'–');
+  assert.equal(await page.$eval('.tbox .hl-p',e=>e.textContent),tail);
+  await page.click('.tbox',{count:2});await page.waitForSelector('.tbox.tedit');await sleep(150);
+  const p=await page.$eval('.tb-edit',e=>{const w=document.createTreeWalker(e,NodeFilter.SHOW_TEXT);let t;while(t=w.nextNode())if(t.textContent==='효율향상')break;const range=document.createRange();range.setStart(t,0);range.setEnd(t,4);const r=range.getBoundingClientRect();return{x:r.x+.1,y:r.y+r.height/2,right:r.right};});
+  await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.move(p.right,p.y,{steps:10});await page.mouse.up();
+  assert.equal(await page.evaluate(()=>getSelection().toString()),'효율향상');
+  await page.click('.tb-bar button[aria-label="파랑 형광펜"]');await page.waitForFunction(tail=>document.querySelector('.tb-edit .hl-g')?.textContent===tail,{},tail);
+  await page.click('.tb-bar button[aria-label="초록 형광펜"]');await page.waitForFunction(tail=>document.querySelector('.tb-edit .hl-p')?.textContent===tail,{},tail);
+  await page.keyboard.press('Escape');
+  console.log('ok  기존 —는 짧은 –로 표시 · 앞 가지 초록→뒤 보라 · 파랑→뒤 초록으로 즉시 연동');
+  await page.click('.references-btn');await page.waitForSelector('button[aria-label="메모 추가"]');await page.waitForFunction(()=>!document.querySelector('button[aria-label="메모 추가"]').disabled);
+  await page.click('button[aria-label="메모 추가"]');await page.waitForSelector('textarea[aria-label="참고 메모"]');
+  const markdown='# EERS 정리\n\n**의무화 제도**\n\n- 공급자 효율 향상\n\n| 항목 | 내용 |\n| --- | --- |\n| 대상 | 에너지 공급자 |\n\n<script>window.__memoUnsafe=1</script>\n<img src="x" onerror="window.__memoUnsafe=1">\n[실행](javascript:alert(1))';
+  await page.type('textarea[aria-label="참고 메모"]',markdown);await page.click('button[aria-label="마크다운 보기"]');await page.waitForSelector('.reference-markdown table');
+  assert.equal(await page.$eval('.reference-markdown h1',e=>e.textContent),'EERS 정리');
+  assert.equal(await page.$$eval('.reference-markdown td',es=>es.length),2);
+  assert.equal(await page.$eval('.reference-markdown strong',e=>e.textContent),'의무화 제도');
+  assert.equal(await page.$('.reference-markdown script, .reference-markdown [onerror], .reference-markdown a[href^="javascript:"]'),null);
+  assert.equal(await page.evaluate(()=>window.__memoUnsafe),undefined);
+  const overhead=await page.$eval('.reference-panel',e=>e.querySelector('.reference-content').getBoundingClientRect().top-e.getBoundingClientRect().top);assert.ok(overhead<=76);
+  console.log('ok  참고 메모의 제목·강조·목록·표 자동 표시 · 실행 가능한 HTML 제거 · 도구 줄 높이 유지');
+  await page.click('button[aria-label="메모 편집"]');assert.equal(await page.$eval('textarea[aria-label="참고 메모"]',e=>e.value),markdown);
+  await page.$eval('textarea[aria-label="참고 메모"]',(e,text)=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,text+'\n\n추가 메모');e.dispatchEvent(new Event('input',{bubbles:true}));},markdown);
+  await page.click('.read-btn');await page.waitForSelector('.reference-markdown');assert.ok(await page.$eval('.reference-markdown',e=>e.textContent.includes('추가 메모')));
+  await sleep(250);await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('.editor');await page.click('.references-btn');await page.waitForSelector('.reference-markdown table');
+  assert.ok(await page.$eval('.reference-markdown',e=>e.textContent.includes('추가 메모')));
+  console.log('ok  메모 밖을 누르면 자동 서식 적용 · 원문 편집과 새로고침 뒤 표 보존');
+  mkdirSync('/tmp/ayunpad-qa',{recursive:true});writeFileSync('/tmp/ayunpad-qa/reference-markdown.md','# 파일 메모\n\n| A | B |\n|---|---|\n| 1 | 2 |');
+  await (await page.$('.reference-panel input[type=file]')).uploadFile('/tmp/ayunpad-qa/reference-markdown.md');
+  await page.waitForFunction(()=>document.querySelector('.reference-markdown h1')?.textContent==='파일 메모');assert.ok(await page.$('.reference-markdown table'));
+  await page.screenshot({path:'/tmp/ayunpad-qa/markdown-memo.png'});
+  await page.setViewport({width:390,height:844});await sleep(200);assert.ok(await page.$eval('.reference-content',e=>e.scrollWidth<=e.clientWidth));
+  assert.deepEqual(errors,[]);console.log('ok  MD 파일도 표로 자동 표시 · 모바일 패널 안에 표시 · 실행 오류 없음');
+}finally{await browser?.close();server.kill();}

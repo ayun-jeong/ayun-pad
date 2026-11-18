@@ -9,6 +9,7 @@ import { clipboardTextParser, clipboardTextSerializer } from '../editor/clipboar
 import { eraseHl, penCmd, sizeCmd } from '../editor/commands';
 import { engineNodeViews, enginePlugins, markComposing } from '../editor/createEditor';
 import { autoKey, lineText } from '../editor/decorations';
+import { normalizeBranchDashes } from '../editor/inlineBranches';
 import { searchDoc, type Effect } from '../editor/find';
 import type { RuleSettings } from '../editor/inputRules';
 import { mathKey, type MathMenuState } from '../editor/mathMenu';
@@ -23,7 +24,7 @@ import { strokeOf, type Resolved, type TextShape } from './model';
 export function textDoc(s: Pick<TextShape, 'doc' | 'text'>): Node {
   if (s.doc) {
     try {
-      return Node.fromJSON(schema, s.doc);
+      return normalizeBranchDashes(Node.fromJSON(schema, s.doc));
     } catch {
       /* 깨진 내용은 맨 글로 */
     }

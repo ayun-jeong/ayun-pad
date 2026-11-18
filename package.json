@@ -26,10 +26,13 @@
     "e2e:overflow": "node scripts/e2e-overflow.mjs",
     "e2e:density": "node scripts/e2e-density.mjs",
     "e2e:box-focus": "node scripts/e2e-box-focus.mjs",
-    "e2e:branch-dash": "node scripts/e2e-branch-dash.mjs"
+    "e2e:branch-dash": "node scripts/e2e-branch-dash.mjs",
+    "e2e:inline-memo": "node scripts/e2e-inline-memo.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.3",
+    "dompurify": "3.4.18",
+    "marked": "18.2.1",
     "prosemirror-commands": "1.7.2",
     "prosemirror-inputrules": "1.5.1",
     "prosemirror-keymap": "1.2.3",

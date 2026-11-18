@@ -10,7 +10,7 @@ import { schema } from './schema';
 export const branchDashRule = new InputRule(/---$/, (state, _match, start, end) => {
   const marks = (state.storedMarks ?? state.selection.$from.marks()).filter(m => m.type !== schema.marks.branchDash);
   const dashMarks = [...marks.filter(m => m.type !== schema.marks.pen), schema.marks.pen.create({ c: 'r' }), schema.marks.branchDash.create()];
-  return state.tr.replaceWith(start, end, schema.text('—', dashMarks)).setStoredMarks(marks);
+  return state.tr.replaceWith(start, end, schema.text('–', dashMarks)).setStoredMarks(marks);
 });
 
 // 줄 맨 앞에서 '-' + 스페이스 → 꺾쇠 줄. '-'는 지우고 줄 종류만 바꾼다. 바로 ⌫를 누르면 '- '로 돌아간다.

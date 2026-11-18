@@ -726,3 +726,21 @@ body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: non
 .ins-drawing { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; padding-bottom: 11px; border-bottom: 1px solid var(--rule); }
 .ins-drawing button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 7px 4px; border: 1px solid transparent; border-radius: 8px; background: var(--bg); color: var(--ink); font-size: 12px; }
 .ins-drawing button:hover, .ins-drawing button:focus-visible { color: #0064e8; border-color: #0064e8; }
+
+.reference-memo-toggle { display: inline-flex; align-items: center; gap: 4px; flex: none; height: 27px; padding: 3px 7px; border: 0; border-radius: 6px; background: var(--bg); color: var(--ink-2); font-size: 11px; }
+.reference-memo-toggle:hover { color: #0064e8; }
+.reference-markdown { flex: 1; min-width: 0; padding: 16px; background: var(--surface); color: var(--ink); font: 14px/1.75 var(--ui); overflow-wrap: anywhere; }
+.reference-markdown > :first-child { margin-top: 0; }
+.reference-markdown h1, .reference-markdown h2, .reference-markdown h3 { line-height: 1.35; margin: 1.1em 0 .5em; }
+.reference-markdown h1 { font-size: 24px; } .reference-markdown h2 { font-size: 20px; } .reference-markdown h3 { font-size: 17px; }
+.reference-markdown p, .reference-markdown ul, .reference-markdown ol { margin: .65em 0; }
+.reference-markdown ul, .reference-markdown ol { padding-left: 1.5em; }
+.reference-markdown blockquote { margin: 1em 0; padding: 4px 12px; border-left: 3px solid var(--rule-2); color: var(--ink-2); background: var(--bg); }
+.reference-markdown table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 13px; }
+.reference-markdown th, .reference-markdown td { border: 1px solid var(--rule-2); padding: 7px 9px; text-align: left; }
+.reference-markdown th { background: var(--bg); font-weight: 600; }
+.reference-markdown pre { max-width: 100%; overflow-x: auto; padding: 12px; background: var(--bg); border-radius: 8px; }
+.reference-markdown code { font: .9em/1.6 var(--mono); background: var(--bg); border-radius: 4px; padding: 2px 4px; }
+.reference-markdown pre code { padding: 0; }
+.reference-markdown img { max-width: 100%; height: auto; }
+.reference-markdown a { color: #0064e8; }

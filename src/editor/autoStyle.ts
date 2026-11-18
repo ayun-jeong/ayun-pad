@@ -1,4 +1,5 @@
 import type { Kind } from './model';
+import { inlineBranches } from './inlineBranches';
 
 export interface Span {
   from: number;
@@ -9,6 +10,7 @@ export interface AutoStyle {
   red: Span | null; // 빨간 볼펜(주제어)
   blue: Span[]; // 파란 볼펜(예시)
   hl: Span | null; // 깊이별 자동 형광펜이 들어갈 곳 = 빨간 주제어
+  branches?: Span[]; // 한 줄에서 대시로 이어진 하위 가지
 }
 
 const EXAMPLE_LINE = /^\s*(?:예시?|ex|e\.g\.?)\s*[:)：]/i;
@@ -40,8 +42,11 @@ export function autoStyle(text: string, kind: Kind, isTitle: boolean): AutoStyle
     return out;
   }
   const colon = findColon(text);
-  const headActive = kind === 'branch' || isTitle || colon > 0;
-  const headEnd = colon > 0 ? colon : text.length;
+  const branches = inlineBranches(text);
+  const headActive = kind === 'branch' || isTitle || colon > 0 || branches.length > 0;
+  const dashEnd = branches.length ? branches[0].to : text.length;
+  const headEnd = colon > 0 ? Math.min(colon, dashEnd) : dashEnd;
+  if (branches.length) out.branches = branches.slice(1);
   if (headActive) {
     let from = 0;
     while (from < headEnd && /\s/.test(text[from])) from++;

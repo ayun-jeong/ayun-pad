@@ -18,13 +18,13 @@ try {
   await page.keyboard.type('--');
   assert.equal(await page.$eval('.tb-edit',e=>e.textContent),'--');
   await page.keyboard.type('-');await page.waitForSelector('.tb-edit [data-branch-dash]');
-  assert.equal(await page.$eval('.tb-edit',e=>e.textContent),'—');
+  assert.equal(await page.$eval('.tb-edit',e=>e.textContent),'–');
   assert.equal(await page.$eval('.tb-edit [data-branch-dash]',e=>getComputedStyle(e).color),'rgb(236, 53, 53)');
-  console.log('ok  두 번까지는 -- 유지 · 세 번째에 — 변환 · 자동 색·화살표를 꺼도 파란 펜과 관계없이 빨강');
+  console.log('ok  두 번까지는 -- 유지 · 세 번째에 – 변환 · 자동 색·화살표를 꺼도 파란 펜과 관계없이 빨강');
   await page.keyboard.press('Backspace');assert.equal(await page.$eval('.tb-edit',e=>e.textContent),'---');
   assert.equal(await page.$('.tb-edit [data-branch-dash]'),null);
   await page.keyboard.press('Backspace');await page.keyboard.type('-B');await page.waitForSelector('.tb-edit [data-branch-dash]');
-  assert.equal(await page.$eval('.tb-edit',e=>e.textContent),'—B');
+  assert.equal(await page.$eval('.tb-edit',e=>e.textContent),'–B');
   assert.equal(await page.$eval('.tb-edit .ln',e=>{return getComputedStyle(e.querySelector('[data-pen="b"]:last-child')??e.lastElementChild).color;}),'rgb(0, 100, 232)');
   console.log('ok  바로 Backspace는 ---로 복원 · 다음 글자는 원래 파란 펜 유지');
   await page.keyboard.press('Escape');await page.click('.tbox');await page.waitForSelector('.tb-bar-floating');await page.click('.tb-bar-floating button[aria-label="파랑 글자"]');

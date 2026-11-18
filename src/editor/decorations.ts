@@ -184,6 +184,13 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
       const cls = `hl hl-${c} v${(i % 3) + 1}`;
       for (const s of subtract(st.hl, block.hl)) decos.push(Decoration.inline(start + s.from, start + s.to, { class: cls }, { autoHl: c }));
     }
+    // 같은 줄의 하위 가지도 앞 가지의 형광펜 다음 색을 이어받는다.
+    let inlineLevel = manualLevel(node, st.hl) ?? level;
+    for (const span of st.branches ?? []) {
+      inlineLevel = manualLevel(node, span) ?? inlineLevel + 1;
+      const c = HL_BY_DEPTH[inlineLevel];
+      if (c) for (const s of subtract(span, block.hl)) decos.push(Decoration.inline(start + s.from, start + s.to, { class: `hl hl-${c} v${(i % 3) + 1}` }, { autoHl: c }));
+    }
     i++;
   });
 }
@@ -216,7 +223,7 @@ export function headRange(state: EditorState): { from: number; to: number } {
   const node = $f.parent;
   const kind = node.attrs.kind as Kind;
   const st = autoStyle(lineText(node), kind, kind !== 'branch' && tree[idx].hasBranchChild);
-  const span = st.hl ?? { from: 0, to: node.content.size };
+  const span = st.branches?.find(s => s.from <= $f.parentOffset && s.to >= $f.parentOffset) ?? st.hl ?? { from: 0, to: node.content.size };
   const start = $f.start();
   return { from: start + span.from, to: start + span.to };
 }
