@@ -44,6 +44,9 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body, #root { height: 100%; margin: 0; }
+/* 휴대폰의 읽기 전용 텍스트 자동 확대가 고정 행간·그림 좌표를 깨지 않게 한다.
+   사용자가 조절하는 노트 배율과 핀치 확대는 그대로 유지한다. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body { background: var(--bg); color: var(--ink); font-family: var(--ui); font-size: 14px; line-height: 1.5; word-break: keep-all; -webkit-font-smoothing: antialiased; }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }

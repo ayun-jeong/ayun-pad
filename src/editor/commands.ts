@@ -4,6 +4,8 @@ import { NodeSelection, TextSelection, type Command, type EditorState, type Sele
 import { CellSelection } from 'prosemirror-tables';
 import { autoHlSpans, buildDecorations, headRange, infoOf, lineInfos, lineText } from './decorations';
 import { clamp } from './layout';
+import { findColon } from './autoStyle';
+import { inlineBranches } from './inlineBranches';
 import { MAX_DEPTH } from './model';
 import { penKey } from './pen';
 import { branchDepth, emptyEnter, planIndent, planMove, type PrevLine } from './rules';
@@ -130,6 +132,30 @@ export const enterCmd: Command = (state, dispatch) => {
     const next = emptyEnter(lineInfos(c.container), c.index);
     if (next) {
       dispatch?.(state.tr.setNodeMarkup($f.before(), undefined, { ...$f.parent.attrs, ...next }));
+      return true;
+    }
+  }
+  // 같은 줄의 A–B:설명은 실제로 A의 옆 가지 B다. 첫 Enter에서
+  // 옆 가지 구조로 펼치고 B 아래 첫 자식을 만든다. 다음 Enter는 그 자식의 형제다.
+  if (sel.empty && c?.depth === 0 && $f.parentOffset === $f.parent.content.size) {
+    const line = $f.parent;
+    const text = lineText(line);
+    const colon = findColon(text);
+    const branches = inlineBranches(colon >= 0 ? text.slice(0, colon) : text);
+    const depth = line.attrs.depth as number;
+    const next = c.container.maybeChild(c.index + 1);
+    if (branches.length && depth + branches.length <= MAX_DEPTH && (!next || next.attrs.depth <= depth)) {
+      if (dispatch) {
+        const rows = branches.map((span, i) => schema.nodes.line.create({
+          ...line.attrs, id: i === 0 ? line.attrs.id : null, depth: depth + i,
+          kind: i === 0 ? line.attrs.kind : 'branch', side: i < branches.length - 1,
+        }, line.content.cut(span.from, i === branches.length - 1 ? line.content.size : span.to)));
+        rows.push(schema.nodes.line.create({ depth: depth + branches.length, kind: 'branch' }));
+        const pos = $f.before();
+        const tr = state.tr.replaceWith(pos, $f.after(), rows);
+        const head = pos + rows.slice(0, -1).reduce((size, row) => size + row.nodeSize, 0) + 1;
+        dispatch(tr.setSelection(TextSelection.create(tr.doc, head)).scrollIntoView());
+      }
       return true;
     }
   }

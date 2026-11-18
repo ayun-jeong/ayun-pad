@@ -28,7 +28,9 @@
     "e2e:box-focus": "node scripts/e2e-box-focus.mjs",
     "e2e:branch-dash": "node scripts/e2e-branch-dash.mjs",
     "e2e:inline-memo": "node scripts/e2e-inline-memo.mjs",
-    "e2e:arrow-head": "node scripts/e2e-arrow-head.mjs"
+    "e2e:arrow-head": "node scripts/e2e-arrow-head.mjs",
+    "e2e:mobile-reading-size": "node scripts/e2e-mobile-reading-size.mjs",
+    "e2e:branch-enter": "node scripts/e2e-branch-enter.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.3",
