@@ -1,0 +1,68 @@
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
+import puppeteer from 'puppeteer-core';
+const url = 'http://localhost:4338/ayun-pad/';
+const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', '4338', '--strictPort'], { stdio: 'ignore' });
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let browser;
+try {
+  for (let i = 0; i < 60; i++) { try { if ((await fetch(url)).ok) break; } catch {} await sleep(200); }
+  browser = await puppeteer.launch({ executablePath: process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--disable-gpu'] });
+  const page = await browser.newPage(); const errors = []; page.on('pageerror', e => errors.push(e.message));
+  await page.setViewport({ width: 1440, height: 1000 }); await page.goto(url, { waitUntil: 'networkidle0' }); await page.waitForSelector('.editor');
+  assert.equal(await page.$$eval('.canvas-tools, .modes', es => es.length), 0);
+  assert.equal(await page.$$eval('.top .paper-width-options', es => es.length), 1);
+  assert.ok(await page.$$eval('.top button', es => es.every(e => !/폭 맞춤|이동|미니 pad|반쪽 보기/.test(e.textContent))));
+  const layout = await page.evaluate(() => ({ header: document.querySelector('.top').getBoundingClientRect().bottom, desk: document.querySelector('.desk').getBoundingClientRect().top }));
+  assert.ok(Math.abs(layout.header - layout.desk) < 2);
+  console.log('ok  보기 선택을 반쪽 / 한 장 한 곳으로 통합 · 보조 도구 줄 제거 · 필기 영역이 헤더 바로 아래부터 시작');
+  await page.$eval('.addnote', e => e.click()); await page.waitForFunction(() => window.__ayunpad.view()?.state.doc.textContent === '');
+  await page.evaluate(() => {
+    const doc = window.__ayunpad.doc();
+    const a = (x, y) => ({ l: null, r: 0, x, y });
+    for (let i = 0; i < 2; i++) doc.shapes.set(`pan-test-${i}`, { id: `pan-test-${i}`, t: 'rect', a: a(10 + i * 20, 20), b: a(20 + i * 20, 30), c: 'k', w: .2, z: i });
+  });
+  await page.click('.paper-width-options button:last-child'); await page.waitForSelector('.folded-snapshots .psheet');
+  const saved = await page.evaluate(() => JSON.stringify([...window.__ayunpad.doc().shapes.values()]));
+  const gray = await page.$eval('.desk', e => { const r = e.getBoundingClientRect(); return { x: r.x + 5, y: r.y + 240 }; });
+  await page.mouse.move(gray.x, gray.y); await page.mouse.down(); await page.mouse.move(gray.x, gray.y - 130, { steps: 10 }); await page.mouse.up();
+  assert.ok(await page.$eval('.desk', e => e.scrollTop > 100));
+  assert.equal(await page.evaluate(() => JSON.stringify([...window.__ayunpad.doc().shapes.values()])), saved);
+  assert.equal(await page.$$eval('.canvas-dragging', es => es.length), 0);
+  console.log('ok  편집 중 회색 배경을 바로 끌어 화면 이동 · 필기와 도형은 바뀌지 않음');
+  await page.$eval('.desk', e => { e.scrollTop = 0; }); await sleep(150);
+  const point = await page.$eval('.fold-live-window .shapes-layer', e => { const r = e.getBoundingClientRect(); const ppm = r.width / 100; return { x: r.x + 10.2 * ppm, y: r.y + 25 * ppm, ppm }; });
+  await page.mouse.move(point.x, point.y); await page.mouse.down(); await page.mouse.move(point.x + 10 * point.ppm, point.y, { steps: 8 }); await page.mouse.up();
+  await page.waitForFunction(() => window.__ayunpad.doc().shapes.get('pan-test-0').a.x > 19);
+  assert.equal(await page.evaluate(() => window.__ayunpad.doc().shapes.get('pan-test-1').a.x), 30);
+  console.log('ok  도형은 별도 이동 모드 없이 직접 끌어 옮김');
+  await page.mouse.click(gray.x, gray.y); await page.waitForSelector('.drawbar', { hidden: true });
+  console.log('ok  회색 배경을 클릭하면 기존 선택 해제 동작 유지');
+  const rect = await page.$eval('.fold-live-window .shapes-layer', e => { const r = e.getBoundingClientRect(); const ppm = r.width / 100; return { x: r.x, y: r.y, ppm }; });
+  await page.mouse.move(rect.x + 1 * rect.ppm, rect.y + 10 * rect.ppm); await page.mouse.down(); await page.mouse.move(rect.x + 45 * rect.ppm, rect.y + 40 * rect.ppm, { steps: 10 }); await page.mouse.up();
+  await page.waitForFunction(() => [...document.querySelectorAll('.drawbar button')].some(b => b.textContent === '그룹 묶기'));
+  console.log('ok  종이 위에서는 영역 드래그로 여러 도형 선택을 유지');
+  await page.mouse.click(gray.x, gray.y); await page.waitForSelector('.drawbar', { hidden: true });
+  const menuItem = async text => { await page.click('.more-btn'); await page.$$eval('.menu.more > button', (buttons, text) => buttons.find(b => b.textContent.startsWith(text)).click(), text); };
+  await menuItem('인쇄 미리보기'); await page.waitForSelector('.pages.a4');
+  await page.click('.paper-width-options button:last-child'); await page.waitForSelector('.fold-live-window'); assert.equal(await page.$('.pages.a4'), null);
+  console.log('ok  인쇄 미리보기는 ⋯ 메뉴에서 열고 보기 버튼으로 바로 필기에 복귀');
+  await page.click('.more-btn');
+  assert.ok(await page.$$eval('.menu.more button', buttons => buttons.every(b => !b.textContent.includes('미니 pad'))));
+  await page.keyboard.press('Escape');
+  console.log('ok  불필요한 별도 미니 pad 기능 제거');
+  mkdirSync('/tmp/ayunpad-qa', { recursive: true }); await page.screenshot({ path: '/tmp/ayunpad-qa/toolbar.png' });
+  await page.setViewport({ width: 390, height: 844 });
+  if (!(await page.$eval('.side', e => e.classList.contains('hidden')))) await page.$eval('.side-backdrop', e => e.click());
+  await page.waitForSelector('.side.hidden'); await page.click('.more-btn');
+  assert.deepEqual(await page.$$eval('.menu-row[aria-label="보기"] button', buttons => buttons.map(b => b.textContent)), ['반쪽', '한 장']);
+  await page.click('.menu-row[aria-label="보기"] button:first-of-type'); await page.waitForSelector('.half-live-window');
+  assert.ok(await page.$eval('.top', e => e.scrollWidth <= e.clientWidth));
+  await page.screenshot({ path: '/tmp/ayunpad-qa/toolbar-mobile.png' });
+  assert.deepEqual(errors, []);
+  console.log('ok  휴대폰은 ⋯ 메뉴에 같은 보기 선택 제공 · 도구 막대 넘침과 실행 오류 없음');
+} catch (error) {
+  if (browser) { const page = (await browser.pages()).at(-1); mkdirSync('/tmp/ayunpad-qa', { recursive: true }); await page?.screenshot({ path: '/tmp/ayunpad-qa/toolbar-failure.png' }).catch(() => {}); }
+  throw error;
+} finally { await browser?.close(); server.kill(); }

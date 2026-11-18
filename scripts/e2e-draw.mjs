@@ -454,7 +454,7 @@ try {
   await page.mouse.up();
   await sleep(150);
   const moved1 = (await boxes()).find((b) => b.id === memo.id);
-  check(Math.abs(moved1.a.x - memo.a.x - 10) < 0.6 && !(await page.$('.tbox.tedit')) && !!(await page.$('.tbox .tb-bar')), `글상자를 한 번 눌러 끌면 바로 옮기기 · 고치기는 아님 · 꾸미기 막대 (x ${memo.a.x.toFixed(1)} → ${moved1.a.x.toFixed(1)})`);
+  check(Math.abs(moved1.a.x - memo.a.x - 10) < 0.6 && !(await page.$('.tbox.tedit')) && !!(await page.$('.tb-bar')), `글상자를 한 번 눌러 끌면 바로 옮기기 · 고치기는 아님 · 꾸미기 막대 (x ${memo.a.x.toFixed(1)} → ${moved1.a.x.toFixed(1)})`);
   // 두 번 누르면 고치기
   const mb2 = await (await page.$(`.tbox[data-sid="${memo.id}"]`)).boundingBox();
   await page.mouse.click(mb2.x + mb2.width / 2, mb2.y + mb2.height / 2, { count: 2 });
@@ -605,7 +605,7 @@ try {
   // 글상자 막대 '형광펜 지우기'(×): 꺾쇠 줄 자동 형광펜까지
   const boxHl = () => page.$$eval('.tbox.tedit .tb-edit .hl', (e) => e.map((x) => x.textContent).join(','));
   const hlBefore = await boxHl();
-  await (await page.$('.tbox.tedit .tb-bar [aria-label="형광펜 지우기"]')).click();
+  await (await page.$('.tb-bar[data-editing="true"] [aria-label="형광펜 지우기"]')).click();
   await sleep(150);
   const hlAfter = await boxHl();
   check(hlBefore === '장점,단점' && hlAfter === '', `글상자 막대 × → 자동 형광펜까지 지움 (${hlBefore} → ${hlAfter || '없음'})`);
@@ -1161,7 +1161,7 @@ try {
   const boxNow = () => page.evaluate(() => Object.values(window.__ayunpad.doc().shapes.toJSON()).find((s) => s.t === 'text'));
   await page.mouse.click(...at7(55, 12), { count: 2 });
   await page.waitForSelector('.tbox.tedit .tb-edit');
-  check(!!(await page.$('.tbox.tedit .tb-bar')), '글상자를 고치면 바로 위에 꾸미기 막대');
+  check(!!(await page.$('.tb-bar[data-editing="true"]')), '글상자를 고치면 바로 위에 꾸미기 막대');
   await k.type('가나다라');
   await k.down('Shift');
   await k.press('ArrowLeft');
@@ -1293,16 +1293,18 @@ try {
   // 회색 바깥(종이 왼쪽)에서 둘째 줄 위부터 셋째 줄 아래까지 끌기
   const gx = L8.x - 60;
   await page.mouse.move(gx, rows8[1].t - 3);
+  await k.down('Shift');
   await page.mouse.down();
   await page.mouse.move(L8.x + L8.w - 10, rows8[2].b + 3, { steps: 10 });
   const mqShown = !!(await page.$('.shapes-layer .sh-marquee'));
   await page.mouse.up();
+  await k.up('Shift');
   await sleep(200);
   const grabbed = await page.evaluate(() => {
     const v = window.__ayunpad.view();
     return { text: v.state.doc.textBetween(v.state.selection.from, v.state.selection.to, '|'), caught: document.querySelectorAll('.shapes-layer .sh-caught').length };
   });
-  check(mqShown && grabbed.text === '배경 둘째 줄|배경 셋째 줄' && grabbed.caught === 2, `회색 배경부터 끌면 사각형에 걸친 줄 · 화살표 · 글상자가 한꺼번에 (${JSON.stringify(grabbed)})`);
+  check(mqShown && grabbed.text === '배경 둘째 줄|배경 셋째 줄' && grabbed.caught === 2, `⇧+회색 배경부터 끌면 사각형에 걸친 줄 · 화살표 · 글상자가 한꺼번에 (${JSON.stringify(grabbed)})`);
   // 잡힌 채 회색 배경을 그냥 누르면 → 다 풀리고 누른 줄에 커서
   const caretState = () =>
     page.evaluate(() => {
@@ -1315,9 +1317,11 @@ try {
   const freed = await caretState();
   check(freed.empty && freed.caught === 0 && freed.line === '배경 넷째 줄', `잡힌 채 회색 배경 누르기 → 고른 글 · 그림 풀리고 누른 줄에 커서 (${JSON.stringify(freed)})`);
   await page.mouse.move(gx, rows8[1].t - 3);
+  await k.down('Shift');
   await page.mouse.down();
   await page.mouse.move(L8.x + L8.w - 10, rows8[2].b + 3, { steps: 10 });
   await page.mouse.up();
+  await k.up('Shift');
   await sleep(200);
   const n8 = () => page.evaluate(() => Object.keys(window.__ayunpad.doc().shapes.toJSON()).length);
   await k.press('Backspace');
@@ -1340,9 +1344,11 @@ try {
   await press('.drawbar .ddone', () => true);
   await sleep(150);
   await page.mouse.move(gx, lastB + 40);
+  await k.down('Shift');
   await page.mouse.down();
   await page.mouse.move(L8.x + 220, lastB + 150, { steps: 8 });
   await page.mouse.up();
+  await k.up('Shift');
   await sleep(200);
   check(!!(await page.$('.drawbar.has-sel')) && (await page.$$('.shapes-layer .sh-selbox')).length === 1, '글 없는 빈 곳에서 그림만 잡으면 바로 고른 상태(옮기기 · 색 · 지우기)');
   // 고른 상태에서 회색 배경을 그냥 누르면 → 풀리고 글쓰기로, 누른 줄에 커서(화면이 밀려 다른 줄로 가지 않게)

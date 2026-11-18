@@ -317,6 +317,26 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', stop);
   };
+  const clearSelection = useRef<(event: Event) => void>(() => undefined);
+  clearSelection.current = (event) => {
+    if (readRef.current) return;
+    const point = (event as CustomEvent<{ x: number; y: number }>).detail;
+    const focused = document.activeElement as HTMLElement | null;
+    if (focused?.closest('.tbox')) focused.blur();
+    getSelection()?.removeAllRanges();
+    ix.sel = []; ix.wsel = []; ix.node = null; ix.marquee = null; ix.guides = null;
+    setEditing(null);
+    const drawing = drawRef.current;
+    if (drawing?.picked) setDraw(null);
+    if (point && (!drawing || drawing.picked)) onCaret?.(point.x, point.y);
+    repaint();
+  };
+  useEffect(() => {
+    const on = (event: Event) => clearSelection.current(event);
+    window.addEventListener('ayunpad-clear-selection', on);
+    return () => window.removeEventListener('ayunpad-clear-selection', on);
+  }, []);
+
   // 밖(본문 글을 글상자로 바꾼 뒤 등)에서 글상자 하나를 고치게: 그려질 때까지 몇 번 기다렸다가 커서를 넣는다
   useEffect(() => {
     const on = (e: Event) => {
@@ -403,7 +423,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     const c = out ? hoverCursor(toMM(e), e.pointerType === 'touch' ? 2.4 : 1.2) : '';
     if (desk.style.cursor !== c) desk.style.cursor = c;
   };
-  // 글쓰기 화면: 배경(회색 바깥 · 종이 여백 · 글 아래 빈 곳)에서 끌면 사각형으로 글 줄 · 표 · 그래프 · 그림 · 글상자를 한꺼번에.
+  // 글쓰기 화면: 종이 빈 곳(회색 바깥에서는 ⇧+끌기)에서 끌면 사각형으로 글 줄 · 표 · 그래프 · 그림 · 글상자를 한꺼번에.
   // 글 위에서 끌면 원래대로 글 고르기, 그냥 누르기 · 두 번 누르기(글상자 만들기)도 그대로.
   const writingMarquee = (e: PointerEvent) => {
     const host = layer.current;

@@ -125,7 +125,7 @@ try {
   const tb = await (await page.$('.tbox')).boundingBox();
   await page.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2);
   await sleep(120);
-  check(!(await page.$('.shapes-layer.on')) && !(await page.$('.tbox .tb-bar')), '글상자를 눌러도 안 골라짐(막대 없음)');
+  check(!(await page.$('.shapes-layer.on')) && !(await page.$('.tb-bar')), '글상자를 눌러도 안 골라짐(막대 없음)');
   await page.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2, { count: 2 });
   await sleep(150);
   check(!(await page.$('.tbox.tedit')), '두 번 눌러도 안 고쳐짐');

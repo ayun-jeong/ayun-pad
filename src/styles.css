@@ -614,13 +614,6 @@ body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: non
 .workspace { grid-column: 2; grid-row: 2; display: flex; min-width: 0; min-height: 0; overflow: hidden; }
 .note-workspace { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
 .note-workspace .desk { flex: 1; min-height: 0; }
-.canvas-tools { display: flex; align-items: center; gap: 6px; padding: 7px 12px; border-bottom: 1px solid var(--rule); background: var(--surface); flex-wrap: wrap; font-size: 12px; }
-.canvas-tools > span { margin-right: auto; color: var(--ink-2); }
-.canvas-tools button, .reference-actions button, .reference-form button { border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); padding: 4px 8px; color: var(--ink); }
-.canvas-tools button.on { background: var(--ink); color: var(--bg); }
-.desk.panning { touch-action: none; }
-.desk.panning, .desk.panning * { cursor: grab !important; }
-.desk.panning:active, .desk.panning:active * { cursor: grabbing !important; }
 .reference-panel { flex: 0 0 var(--reference-width, 42%); display: flex; flex-direction: column; min-width: 240px; min-height: 0; background: var(--surface); overflow: hidden; }
 .reference-panel.drop { outline: 3px solid var(--focus); outline-offset: -4px; }
 .reference-heading { display: flex; align-items: center; gap: 10px; padding: 14px 16px 8px; }
@@ -673,11 +666,9 @@ body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: non
   .reference-actions { padding-bottom: 6px; }
   .reference-footer > span { display: none; }
   .reference-frame { min-height: 100px; }
-  .canvas-tools { gap: 4px; padding: 6px 8px; }
-  .canvas-tools > span { display: none; }
 }
 
-.paper-width-options { display: inline-flex; gap: 3px; }
+.top .paper-width-options { gap: 0; }
 
 /* A4 is a pair of unchanged 105mm halves: 1-1 | 1-2, 2-1 | 2-2. */
 .folded-canvas { width: 217mm; }
@@ -689,3 +680,13 @@ body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: non
 .fold-live-window { z-index: 3; }
 .fold-live-window .paper { box-shadow: none; }
 .folded-snapshots .pfold { z-index: 4; }
+
+.desk.direct-pan { cursor: grab; }
+.desk.direct-pan > .zoom-outer { cursor: auto; }
+.desk.canvas-dragging, .desk.canvas-dragging * { cursor: grabbing !important; user-select: none !important; }
+
+/* Text-box controls escape the paper/half-page clipping windows. */
+.tb-bar.tb-bar-floating { position: fixed; right: auto; bottom: auto; transform: none; transform-origin: initial; z-index: 25; pointer-events: auto; }
+@media print { .tb-bar-floating { display: none !important; } }
+
+.tb-control-group { display: inline-flex; align-items: center; gap: 2px; flex: none; }

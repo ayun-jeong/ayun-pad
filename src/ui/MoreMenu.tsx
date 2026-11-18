@@ -3,6 +3,8 @@ import type { AppAction } from '../editor/shortcuts';
 
 interface Props {
   mode: 'edit' | 'half' | 'a4';
+  pageWidth: 'half' | 'a4';
+  onPageWidth(width: 'half' | 'a4'): void;
   zoom: number;
   reading: boolean; // 읽기 모드면 고치는 것(강조 지우기 · 글자 모양)은 빼고 보인다
   paper: boolean; // 종이에 바로 쓰기
@@ -21,7 +23,7 @@ const M = mac ? '⌘' : 'Ctrl+';
 const A = mac ? '⌥' : 'Alt+';
 
 // 위쪽 막대의 ⋯: 자주 안 쓰는 것을 한곳에(찾기 · 강조 · 글자 모양 · 배율 · 인쇄 · 로그인 · 백업 · 도움말)
-export function MoreMenu({ mode, zoom, reading, paper, syncText, act, onZoom, onAccount, onExport, onImport, onHelp, onClose }: Props) {
+export function MoreMenu({ mode, pageWidth, onPageWidth, zoom, reading, paper, syncText, act, onZoom, onAccount, onExport, onImport, onHelp, onClose }: Props) {
   const box = useRef<HTMLDivElement>(null);
   // 바깥을 누르거나 Esc면 닫는다(⋯ 단추는 스스로 열고 닫는다)
   useEffect(() => {
@@ -52,18 +54,10 @@ export function MoreMenu({ mode, zoom, reading, paper, syncText, act, onZoom, on
     <div className="menu more" role="menu" aria-label="더 보기" ref={box}>
       <div className="menu-row narrow-only" role="group" aria-label="보기">
         <span>보기</span>
-        {(
-          [
-            ['edit', '편집', 'view-edit'],
-            ['half', '반쪽', 'view-half'],
-            ['a4', 'A4', 'view-a4'],
-          ] as const
-        ).map(([m, label, a]) => (
-          <button key={m} type="button" className={mode === m ? 'on' : ''} onClick={run(() => act(a))}>
-            {label}
-          </button>
-        ))}
+        <button type="button" className={pageWidth === 'half' ? 'on' : ''} aria-pressed={pageWidth === 'half'} onClick={run(() => onPageWidth('half'))}>반쪽</button>
+        <button type="button" className={pageWidth === 'a4' ? 'on' : ''} aria-pressed={pageWidth === 'a4'} onClick={run(() => onPageWidth('a4'))}>한 장</button>
       </div>
+      {mode !== 'edit' && item('필기로 돌아가기', () => act('view-edit'), `${A}1`)}
       {item(reading ? '읽기 모드 끄기(고치기)' : '읽기 모드(눌러도 안 바뀜)', () => act('read'), `${A}L`)}
       {item('전체 검색 · 명령', () => act('search'), `${M}K`)}
       {!reading && item('강조 모아 보기 · 지우기', () => act('emph'))}
@@ -79,6 +73,7 @@ export function MoreMenu({ mode, zoom, reading, paper, syncText, act, onZoom, on
           +
         </button>
       </div>
+      {mode === 'edit' && item('인쇄 미리보기 · 쪽 정리', () => act('view-a4'), `${A}3`)}
       {item('인쇄 · PDF', () => act('print'), `${M}P`)}
       <hr />
       {item(syncText, onAccount)}

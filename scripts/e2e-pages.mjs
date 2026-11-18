@@ -349,16 +349,16 @@ try {
   const pickBox = async () => {
     const bb = await (await page.$(`.tbox[data-sid="${cbx.id}"]`)).boundingBox();
     await page.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2);
-    await page.waitForSelector(`.tbox[data-sid="${cbx.id}"] .tb-bar`, { timeout: 2000 }).catch(() => {});
+    await page.waitForSelector(`.tb-bar[data-box-id="${cbx.id}"]`, { timeout: 2000 }).catch(() => {});
     await sleep(100);
   };
   await pickBox();
-  check(!!(await page.$(`.tbox[data-sid="${cbx.id}"]:not(.tedit) .tb-bar`)), '한 번 누르면 글상자 통째로 고름(꾸미기 막대)');
-  await (await page.$(`.tbox[data-sid="${cbx.id}"] .tb-bar button[aria-label="파랑 글자"]`)).click();
+  check(!!(await page.$(`.tb-bar[data-box-id="${cbx.id}"][data-editing="false"]`)), '한 번 누르면 글상자 통째로 고름(꾸미기 막대)');
+  await (await page.$(`.tb-bar[data-box-id="${cbx.id}"] button[aria-label="파랑 글자"]`)).click();
   await sleep(250);
   const sh = () => page.evaluate((id) => window.__ayunpad.doc().shapes.get(id), cbx.id);
   check(JSON.stringify(await inkOf()) === JSON.stringify([BLUE]) && (await sh()).c === 'b', `꾸미기 막대 파랑 → 글상자 글 전체가 파랑(자동 빨강 꺾쇠 줄까지) (${await inkOf()})`);
-  check(!!(await page.$(`.tbox[data-sid="${cbx.id}"]:not(.tedit) .tb-bar`)), '색을 바꿔도 고른 상태 그대로(고치기로 안 넘어감)');
+  check(!!(await page.$(`.tb-bar[data-box-id="${cbx.id}"][data-editing="false"]`)), '색을 바꿔도 고른 상태 그대로(고치기로 안 넘어감)');
   await combo(['Meta'], 'KeyZ');
   await sleep(300);
   check(JSON.stringify(await inkOf()) === JSON.stringify([RED]), `⌘Z 한 번 → 원래 색 (${await inkOf()})`);
@@ -384,9 +384,9 @@ try {
   const hln = await hlOf();
   check(hly === 'y' && hln === 'e', `고른 채 ⌥⇧Y → 전체 노랑 형광펜 (${hly}), ⌘K 형광펜 지우기 → 글상자 전체(자동 형광펜까지) (${hln})`);
   await pickBox();
-  await (await page.$(`.tbox[data-sid="${cbx.id}"] .tb-bar button[aria-label="초록 글자"]`)).click();
+  await (await page.$(`.tb-bar[data-box-id="${cbx.id}"] button[aria-label="초록 글자"]`)).click();
   await sleep(200);
-  await (await page.$(`.tbox[data-sid="${cbx.id}"] .tb-bar button[aria-label="자동 색"]`)).click();
+  await (await page.$(`.tb-bar[data-box-id="${cbx.id}"] button[aria-label="자동 색"]`)).click();
   await sleep(250);
   check(JSON.stringify(await inkOf()) === JSON.stringify([RED]), `꾸미기 막대 '자동 색' → 원래 자동 빨강 (${await inkOf()})`);
   await k.press('Escape');

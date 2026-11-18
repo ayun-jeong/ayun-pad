@@ -46,8 +46,8 @@ function FileReference({ item }: { item: Reference }) {
   </>;
 }
 
-export function ReferencePanel({ noteId, lib, onClose, onPopup, onExtension, toast, initialActiveId }: {
-  initialActiveId?: string | null; noteId: string; lib: Library; onClose(): void; onPopup(): void; onExtension(): void; toast(s: string): void;
+export function ReferencePanel({ noteId, lib, onClose, onExtension, toast, initialActiveId }: {
+  initialActiveId?: string | null; noteId: string; lib: Library; onClose(): void; onExtension(): void; toast(s: string): void;
 }) {
   const [items, setItems] = useState<Reference[]>([]);
   const [active, setActive] = useState<string | null>(null);
@@ -117,7 +117,7 @@ export function ReferencePanel({ noteId, lib, onClose, onPopup, onExtension, toa
         {item.kind === 'note' && item.text && <><p className="reference-web-hint">본문 · 글상자 읽기 전용</p><NoteReference id={item.text} /></>}
       </div>
     </> : <div className="reference-empty"><div className="reference-empty-icon">▤</div><h2>자료는 옆에, 정리는 여기에</h2><p>PDF나 이미지를 끌어다 놓거나<br />메모 · 기존 노트 · 웹사이트를 열어 보세요.</p><button className="tbtn" disabled={!ready} onClick={() => picker.current?.click()}>자료 파일 고르기</button></div>}
-    <footer className="reference-footer"><span>자료는 이 브라우저에 저장돼요</span><button className="mini" onClick={onPopup}>미니 pad ↗</button><button className="mini" onClick={onExtension}>사이드 패널</button></footer>
+    <footer className="reference-footer"><span>자료는 이 브라우저에 저장돼요</span><button className="mini" onClick={onExtension}>사이드 패널</button></footer>
     <input hidden ref={picker} type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp,image/gif,.pdf,.txt,.md" onChange={(e) => { if (e.target.files) void files(e.target.files); e.target.value = ''; }} />
   </aside>;
 }

@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { Fragment, Node, Slice, type Mark } from 'prosemirror-model';
 import { AllSelection, EditorState, Selection, type Command } from 'prosemirror-state';
 import { Transform } from 'prosemirror-transform';
@@ -114,7 +115,7 @@ const TB_COLORS: PenKey[] = ['r', 'b', 'k', 'p', 'y', 'g'];
 const TB_HL: PenKey[] = ['y', 'r', 'b', 'g'];
 
 // 글상자를 고르거나 고치는 동안 바로 위에 뜨는 막대. 글자를 끌어 골랐으면 고른 글자만, 아니면 글상자 전체에.
-function TbBar({ view, r, editing, onPatch }: { view: EditorView | null; r: Resolved & { t: 'text' }; editing: boolean; onPatch(p: Partial<TextShape>): void }) {
+function TbBar({ anchor, view, r, editing, onPatch }: { anchor: RefObject<HTMLDivElement | null>; view: EditorView | null; r: Resolved & { t: 'text' }; editing: boolean; onPatch(p: Partial<TextShape>): void }) {
   // 누를 때 글상자에서 커서 · 고른 글자가 빠지지 않게
   const keep = (e: React.SyntheticEvent) => {
     e.preventDefault();
@@ -142,23 +143,56 @@ function TbBar({ view, r, editing, onPatch }: { view: EditorView | null; r: Reso
   };
   const fs = r.fs ?? 1;
   const size = (dir: 1 | -1) => onPatch({ fs: Math.round(Math.min(2.5, Math.max(0.6, fs + 0.1 * dir)) * 100) / 100 });
-  // 글상자 위에 자리가 없으면(화면 · 종이 맨 위) 글상자 아래에
+  // Render above the paper's clipping windows. Only the note is clipped at a
+  // half-page boundary; its controls stay inside the visible viewport.
   const bar = useRef<HTMLDivElement>(null);
-  const [below, setBelow] = useState(false);
+  const [placement, setPlacement] = useState({ left: 0, top: 0, maxWidth: 0, visible: false, below: false });
   useLayoutEffect(() => {
-    const el = bar.current;
-    const desk = el?.closest('.desk');
-    if (!el) return;
-    const check = () => {
-      const top = desk ? desk.getBoundingClientRect().top : 0;
-      setBelow(el.parentElement!.getBoundingClientRect().top - el.getBoundingClientRect().height - 10 < top);
+    const el = bar.current, box = anchor.current;
+    if (!el || !box) return;
+    const desk = box.closest<HTMLElement>('.desk');
+    const viewport = window.visualViewport;
+    let frame = 0;
+    const position = () => {
+      frame = 0;
+      const bounds = desk?.getBoundingClientRect();
+      const visual = { left: viewport?.offsetLeft ?? 0, top: viewport?.offsetTop ?? 0, width: viewport?.width ?? innerWidth, height: viewport?.height ?? innerHeight };
+      const left = Math.max(visual.left, bounds?.left ?? 0) + 8;
+      const right = Math.min(visual.left + visual.width, bounds?.right ?? innerWidth) - 8;
+      const top = Math.max(visual.top, bounds?.top ?? 0) + 8;
+      const bottom = Math.min(visual.top + visual.height, bounds?.bottom ?? innerHeight) - 8;
+      const maxWidth = Math.max(120, right - left);
+      el.style.maxWidth = `${maxWidth}px`;
+      const r = box.getBoundingClientRect(), size = el.getBoundingClientRect();
+      const clip = box.closest('.fold-live-window')?.getBoundingClientRect() ?? bounds;
+      const visible = r.bottom > top && r.top < bottom && r.right > left && r.left < right &&
+        (!clip || (r.bottom > clip.top && r.top < clip.bottom && r.right > clip.left && r.left < clip.right));
+      const handleTop = [...box.querySelectorAll<HTMLElement>('.tb-grip, .tb-del')].reduce((value, handle) => Math.min(value, handle.getBoundingClientRect().top), r.top);
+      const above = handleTop - size.height - 6;
+      const below = above < top;
+      const preferred = below ? r.bottom + 8 : above;
+      const next = { left: Math.max(left, Math.min(r.left - 4, right - size.width)), top: Math.max(top, Math.min(preferred, bottom - size.height)), maxWidth, visible, below };
+      setPlacement((old) => Object.keys(next).every((key) => old[key as keyof typeof old] === next[key as keyof typeof next]) ? old : next);
     };
-    check();
-    desk?.addEventListener('scroll', check, { passive: true });
-    return () => desk?.removeEventListener('scroll', check);
-  }, []);
-  return (
-    <div ref={bar} className={`tb-bar${below ? ' below' : ''}`} role="toolbar" aria-label="글상자 꾸미기" onPointerDown={keep} onMouseDown={keep}>
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(position); };
+    position();
+    const resize = new ResizeObserver(schedule); resize.observe(box); resize.observe(el); if (desk) resize.observe(desk);
+    const mutation = new MutationObserver(schedule);
+    // Zoom and folded-page activation move ancestors without resizing the box.
+    for (let node: HTMLElement | null = box; node && node !== desk; node = node.parentElement) mutation.observe(node, { attributes: true, attributeFilter: ['style', 'class'] });
+    window.addEventListener('scroll', schedule, true); window.addEventListener('resize', schedule);
+    viewport?.addEventListener('resize', schedule); viewport?.addEventListener('scroll', schedule);
+    return () => {
+      cancelAnimationFrame(frame); resize.disconnect(); mutation.disconnect();
+      window.removeEventListener('scroll', schedule, true); window.removeEventListener('resize', schedule);
+      viewport?.removeEventListener('resize', schedule); viewport?.removeEventListener('scroll', schedule);
+    };
+  }, [anchor, view]);
+  return createPortal(
+    <div ref={bar} className={`tb-bar tb-bar-floating${placement.below ? ' below' : ''}`} data-box-id={r.id} data-editing={editing ? 'true' : 'false'}
+      style={{ left: placement.left, top: placement.top, maxWidth: placement.maxWidth || undefined, visibility: placement.visible ? 'visible' : 'hidden' }}
+      role="toolbar" aria-label="글상자 꾸미기" onPointerDown={keep} onMouseDown={keep}>
+      <div className="tb-control-group" role="group" aria-label="글자색">
       {TB_COLORS.map((k) => (
         <button key={k} type="button" className={r.c === k ? 'on' : ''} title={`${PEN_NAME[k]} 글자(끌어 고른 글자만, 아니면 글상자 전체)`} aria-label={`${PEN_NAME[k]} 글자`} onClick={() => color(k)}>
           <i style={{ background: strokeOf(k) }} />
@@ -167,7 +201,9 @@ function TbBar({ view, r, editing, onPatch }: { view: EditorView | null; r: Reso
       <button type="button" className="tb-auto" title="자동 색(직접 칠한 색 지우기 — 꺾쇠 줄 · 대제목은 자동 빨강)" aria-label="자동 색" onClick={() => color(null)}>
         <i className="pen-auto" />
       </button>
+      </div>
       <span className="tb-sep" />
+      <div className="tb-control-group" role="group" aria-label="형광펜">
       {TB_HL.map((k) => (
         <button key={`h${k}`} type="button" title={`${PEN_NAME[k]} 형광펜(고른 글자만, 아니면 전체)`} aria-label={`${PEN_NAME[k]} 형광펜`} onClick={() => hl(k)}>
           <i className="hl-i" style={{ background: strokeOf(k) }} />
@@ -176,7 +212,9 @@ function TbBar({ view, r, editing, onPatch }: { view: EditorView | null; r: Reso
       <button type="button" title="형광펜 지우기" aria-label="형광펜 지우기" onClick={() => hl(null)}>
         ×
       </button>
+      </div>
       <span className="tb-sep" />
+      <div className="tb-control-group" role="group" aria-label="글씨 크기">
       <button type="button" title="글씨 작게" aria-label="글씨 작게" onClick={() => size(-1)}>
         가−
       </button>
@@ -184,11 +222,12 @@ function TbBar({ view, r, editing, onPatch }: { view: EditorView | null; r: Reso
       <button type="button" title="글씨 크게" aria-label="글씨 크게" onClick={() => size(1)}>
         가+
       </button>
+      </div>
       <span className="tb-sep" />
       <button type="button" className={r.box ? 'on' : ''} title="테두리" aria-label="테두리" onClick={() => onPatch({ box: !r.box })}>
         □
       </button>
-    </div>
+    </div>, document.body,
   );
 }
 
@@ -208,6 +247,7 @@ export const liveBox = () => {
 
 export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFocus, onBlur, onDrag, onDelete, onPatch, selected, onPick, reading }: BoxProps) {
   const mount = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const [math, setMath] = useState<MathMenuState | null>(null);
   const cb = useRef({ onSave });
@@ -300,12 +340,14 @@ export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFo
   // 손잡이 · 폭 · 지우기 단추는 누를 때 커서가 빠지지 않게(preventDefault)
   return (
     <div
+      ref={box}
       className={`tbox${active ? ' tedit' : ''}${r.box ? ' boxed' : ''}`}
       data-sid={r.id}
       style={tboxStyle(r)}
       onFocus={onFocus}
       onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) onBlur();
+        const target = e.relatedTarget as HTMLElement | null;
+        if (!e.currentTarget.contains(target) && target?.closest('.tb-bar')?.getAttribute('data-box-id') !== r.id) onBlur();
       }}
       onPointerDown={(e) => {
         // 한 번 누르기는 고르기(끌면 바로 옮김), 두 번 눌러야 고치기. 고치는 중이면 그대로 글을 고친다.
@@ -314,11 +356,11 @@ export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFo
         onPick(e);
       }}
     >
-      {selected && !active && <TbBar view={view.current} r={r} editing={false} onPatch={onPatch} />}
+      {selected && !active && !reading && <TbBar anchor={box} view={view.current} r={r} editing={false} onPatch={onPatch} />}
       <div ref={mount} className="tb-mount" />
       {active && (
         <>
-          <TbBar view={view.current} r={r} editing onPatch={onPatch} />
+          {!reading && <TbBar anchor={box} view={view.current} r={r} editing onPatch={onPatch} />}
           <span className="tb-grip" title="끌어서 옮기기" aria-label="글상자 옮기기" onPointerDown={(e) => onDrag('move', e)} />
           <span className="tb-width" title="끌어서 폭 바꾸기" aria-label="글상자 폭" onPointerDown={(e) => onDrag('width', e)} />
           <button

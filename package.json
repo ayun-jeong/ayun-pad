@@ -18,7 +18,9 @@
     "e2e:workspace": "node scripts/e2e-workspace.mjs",
     "e2e:spacing": "node scripts/e2e-spacing.mjs",
     "e2e:groups": "node scripts/e2e-groups.mjs",
-    "e2e:folded": "node scripts/e2e-folded.mjs"
+    "e2e:folded": "node scripts/e2e-folded.mjs",
+    "e2e:toolbar": "node scripts/e2e-toolbar.mjs",
+    "e2e:floating-toolbar": "node scripts/e2e-floating-toolbar.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.3",

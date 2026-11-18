@@ -141,7 +141,7 @@ try {
   check(errors.length === 0, `앱 실행 오류 없음: ${errors.join(', ')}`);
   await other.close();
   await page.bringToFront();
-  await page.click('.modes button:first-child');
+  await page.click('.paper-width-options button:last-child');
   await page.click('.references-btn');
   await page.waitForSelector('.reference-tabs');
   await page.$$eval('.reference-tabs button', buttons => buttons.find(b => b.textContent === '새 메모').click());

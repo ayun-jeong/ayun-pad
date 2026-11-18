@@ -105,7 +105,8 @@ export function App() {
   const [referenceEpoch, setReferenceEpoch] = useState(0);
   const [capturedReference, setCapturedReference] = useState<string | null>(null);
   const [extensionHelp, setExtensionHelp] = useState(false);
-  const [pan, setPan] = useState(false);
+  const panCleanup = useRef<() => void>(() => {});
+  useEffect(() => () => panCleanup.current(), []);
   const [referenceWidth, setReferenceWidth] = useState(() => Number(lsGet('ayunpad-reference-width')) || 42);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const [help, setHelp] = useState(false);
@@ -277,11 +278,6 @@ export function App() {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 2200);
   }, []);
 
-  const popupPad = () => {
-    const url = new URL(location.href);
-    url.searchParams.set('panel', '1');
-    if (!window.open(url.href, 'ayunpad-mini', 'popup,width=520,height=860')) toast('팝업을 허용한 뒤 다시 열어 주세요');
-  };
   useEffect(() => {
     const desk = deskRef.current;
     if (!desk) return;
@@ -472,7 +468,7 @@ export function App() {
 
   const changeTypo = useCallback(
     (patch: Partial<Typo>) => {
-      if (readingRef.current) return toast(READ_HINT);
+      if (readingRef.current && Object.keys(patch).some((key) => key !== 'pageWidth')) return toast(READ_HINT);
       const d = docRef.current;
       const v = liveBox();
       const boxId = v?.dom.closest<HTMLElement>('.tbox')?.dataset.sid;
@@ -1212,16 +1208,9 @@ export function App() {
         >
           <i className="sync-dot" />
         </button>
-        <div className="seg modes" role="group" aria-label="보기">
-          <button type="button" className={mode === 'edit' ? 'on' : ''} onClick={() => act('view-edit')} title="편집 (⌥1)">
-            편집
-          </button>
-          <button type="button" className={mode === 'half' ? 'on' : ''} onClick={() => act('view-half')} title="반쪽 보기 (⌥2)">
-            반쪽 보기
-          </button>
-          <button type="button" className={mode === 'a4' ? 'on' : ''} onClick={() => act('view-a4')} title="A4 합침 보기 (⌥3)">
-            A4
-          </button>
+        <div className="seg paper-width-options" role="group" aria-label="보기">
+          <button type="button" disabled={!typo} aria-pressed={typo?.pageWidth === 'half'} className={typo?.pageWidth === 'half' ? 'on' : ''} onClick={() => { changeTypo({ pageWidth: 'half' }); setMode('edit'); }} title="반쪽씩 보기 · 같은 자리에서 편집">반쪽</button>
+          <button type="button" disabled={!typo} aria-pressed={typo?.pageWidth === 'a4'} className={typo?.pageWidth === 'a4' ? 'on' : ''} onClick={() => { changeTypo({ pageWidth: 'a4' }); setMode('edit'); }} title="한 장에 1-1 왼쪽 · 1-2 오른쪽으로 펼쳐 편집">한 장</button>
         </div>
         <button
           type="button"
@@ -1252,6 +1241,8 @@ export function App() {
       {menu && (
         <MoreMenu
           mode={mode}
+          pageWidth={typo?.pageWidth ?? 'half'}
+          onPageWidth={(pageWidth) => { changeTypo({ pageWidth }); setMode('edit'); }}
           zoom={zoom}
           reading={reading}
           paper={paper}
@@ -1282,7 +1273,7 @@ export function App() {
       />
 
       <div ref={workspaceRef} className={`workspace${references ? ' with-references' : ''}`} style={{ '--reference-width': `${referenceWidth}%` } as import('react').CSSProperties}>
-      {references && noteId && <ReferencePanel key={`${noteId}:${referenceEpoch}`} noteId={noteId} lib={lib} initialActiveId={capturedReference} onClose={() => setReferences(false)} onPopup={popupPad} onExtension={() => setExtensionHelp(true)} toast={toast} />}
+      {references && noteId && <ReferencePanel key={`${noteId}:${referenceEpoch}`} noteId={noteId} lib={lib} initialActiveId={capturedReference} onClose={() => setReferences(false)} onExtension={() => setExtensionHelp(true)} toast={toast} />}
       {references && noteId && <div className="reference-resizer" role="separator" aria-label="자료와 필기 너비 조절" aria-orientation="vertical" tabIndex={0} aria-valuemin={25} aria-valuemax={65} aria-valuenow={Math.round(referenceWidth)}
         onKeyDown={(e) => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); setReferenceWidth((v) => { const next = Math.min(65, Math.max(25, v + (e.key === 'ArrowLeft' ? -2 : 2))); lsSet('ayunpad-reference-width', String(next)); return next; }); } }}
         onPointerDown={(e) => {
@@ -1294,25 +1285,32 @@ export function App() {
           setReferenceWidth(next); lsSet('ayunpad-reference-width', String(next));
         }} onPointerUp={(e) => e.currentTarget.releasePointerCapture(e.pointerId)} />}
       <div className="note-workspace">
-      <nav className="canvas-tools" aria-label="종이 편집 도구">
-        <span>{typo?.pageWidth === 'half' ? '반쪽씩 편집' : 'A4 펼쳐서 편집'}</span>
-        {!reading && <div className="paper-width-options" role="group" aria-label="편집 종이 폭">
-          <button type="button" disabled={!typo} aria-pressed={typo?.pageWidth === 'half'} className={typo?.pageWidth === 'half' ? 'on' : ''} onClick={() => changeTypo({ pageWidth: 'half' })}>반쪽</button>
-          <button type="button" disabled={!typo} aria-pressed={typo?.pageWidth === 'a4'} className={typo?.pageWidth === 'a4' ? 'on' : ''} onClick={() => changeTypo({ pageWidth: 'a4' })}>한 장</button>
-        </div>}
-        <button type="button" aria-pressed={pan} className={pan ? 'on' : ''} onClick={() => setPan((v) => !v)}>✋ 이동</button>
-        <button type="button" onClick={() => { const width = (typo?.pageWidth === 'half' ? 105 : 210) + GUTTER_MM; setZoom(clampZoom((deskRef.current!.clientWidth - 32) / (width * PX_PER_MM))); }}>폭 맞춤</button>
-        <button type="button" onClick={popupPad} title="같은 노트를 작은 창으로">↗<span className="wide-only"> 미니 pad</span></button>
-      </nav>
       <main ref={deskRef} onPointerDownCapture={(e) => {
-        if (!(pan || e.button === 1) || (e.button !== 0 && e.button !== 1)) return;
+        const target = e.target as Element;
+        const middle = e.button === 1;
+        const background = mode === 'edit' && (!draw || draw.tool === 'select') && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey &&
+          !target.closest('.paper, .phalf, .fold-live-window, .tbox, .sh-hit, .sh-ui, .pctl, input, textarea, button, select, [contenteditable="true"]');
+        if (e.pointerType === 'touch' || (!middle && !(e.button === 0 && background))) return;
         e.preventDefault(); e.stopPropagation();
+        panCleanup.current();
         const desk = e.currentTarget;
-        const x = e.clientX, y = e.clientY, left = desk.scrollLeft, top = desk.scrollTop;
-        const move = (ev: PointerEvent) => { desk.scrollLeft = left - (ev.clientX - x); desk.scrollTop = top - (ev.clientY - y); };
-        const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+        const x = e.clientX, y = e.clientY, left = desk.scrollLeft, top = desk.scrollTop, pointer = e.pointerId;
+        let moved = false;
+        const move = (ev: PointerEvent) => {
+          if (ev.pointerId !== pointer) return;
+          if (!moved && Math.hypot(ev.clientX - x, ev.clientY - y) < 4) return;
+          moved = true; desk.classList.add('canvas-dragging');
+          desk.scrollLeft = left - (ev.clientX - x); desk.scrollTop = top - (ev.clientY - y);
+        };
+        const clean = () => { desk.classList.remove('canvas-dragging'); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+        const up = (ev: PointerEvent) => {
+          if (ev.pointerId !== pointer) return;
+          clean();
+          if (!moved && !middle && ev.type === 'pointerup') window.dispatchEvent(new CustomEvent('ayunpad-clear-selection', { detail: { x, y } }));
+        };
+        panCleanup.current = clean;
         window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
-      }} className={`desk${pan ? ' panning' : ''}${draw ? ' drawing' : ''}${OWN_PINCH ? ' own-pinch' : ''}`}>
+      }} className={`desk${mode === 'edit' && (!draw || draw.tool === 'select') ? ' direct-pan' : ''}${draw ? ' drawing' : ''}${OWN_PINCH ? ' own-pinch' : ''}`}>
         {zoomBadge && <div className="zoom-badge">{Math.round(zoom * 100)}%</div>}
         {ready && noteId ? (
           <>

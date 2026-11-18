@@ -51,7 +51,7 @@ try {
   await sleep(250); await page.reload({ waitUntil: 'networkidle0' }); await page.waitForSelector('.tbox');
   saved = await shapes(); assert.equal(new Set(saved.map(s => s.group)).size, 2);
   console.log('ok  새로고침 뒤 두 그룹 관계 보존');
-  await page.click('.modes button:last-child'); await page.waitForSelector('.pages.a4 .psheet');
+  await page.click('.more-btn'); await page.$$eval('.menu.more button[role=menuitem]', buttons => buttons.find(b => b.textContent.startsWith('인쇄 미리보기')).click()); await page.waitForSelector('.pages.a4 .psheet');
   const element = await page.$('.pages [data-sid="rect-0"]');
   const rect = await element.boundingBox();
   const before = await shapes();
