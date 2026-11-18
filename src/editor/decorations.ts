@@ -176,8 +176,9 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
     const st = styles[i]!;
     const start = pos + 1;
     const block = blocked(node);
-    if (st.red) for (const s of subtract(st.red, block.pen)) decos.push(Decoration.inline(start + s.from, start + s.to, { class: 'a-red' }));
+    if (st.red) for (const s of subtract(st.red, block.pen)) decos.push(Decoration.inline(start + s.from, start + s.to, { class: 'a-red' }, { autoPen: 'r' }));
     for (const blue of st.blue) for (const s of subtract(blue, block.pen)) decos.push(Decoration.inline(start + s.from, start + s.to, { class: 'a-blue' }));
+    if (st.black) for (const s of subtract(st.black, [...block.pen, ...st.blue])) decos.push(Decoration.inline(start + s.from, start + s.to, { class: 'a-black' }, { autoPen: 'k' }));
     const level = levels[i];
     if (st.hl && level < HL_BY_DEPTH.length) {
       const c = HL_BY_DEPTH[level];
@@ -187,6 +188,7 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
     // 같은 줄의 하위 가지도 앞 가지의 형광펜 다음 색을 이어받는다.
     let inlineLevel = manualLevel(node, st.hl) ?? level;
     for (const span of st.branches ?? []) {
+      for (const s of subtract(span, block.pen)) decos.push(Decoration.inline(start + s.from, start + s.to, { class: 'a-red' }, { autoPen: 'r' }));
       inlineLevel = manualLevel(node, span) ?? inlineLevel + 1;
       const c = HL_BY_DEPTH[inlineLevel];
       if (c) for (const s of subtract(span, block.hl)) decos.push(Decoration.inline(start + s.from, start + s.to, { class: `hl hl-${c} v${(i % 3) + 1}` }, { autoHl: c }));

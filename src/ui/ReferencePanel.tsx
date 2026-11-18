@@ -58,7 +58,6 @@ export function ReferencePanel({ noteId, lib, onClose, onExtension, toast, initi
   const [ready, setReady] = useState(false);
   const [form, setForm] = useState<'web' | 'note' | null>(null);
   const [options, setOptions] = useState(false);
-  const [memoEditing, setMemoEditing] = useState(false);
   const [fileAction, setFileAction] = useState<HTMLSpanElement | null>(null);
   const popover = useRef<HTMLDivElement>(null);
   const [address, setAddress] = useState('');
@@ -95,7 +94,6 @@ export function ReferencePanel({ noteId, lib, onClose, onExtension, toast, initi
       await saveReference(item);
       if (!alive.current) return;
       setItems((rows) => [...rows, item]); setActive(item.id); setForm(null); setError('');
-      setMemoEditing(item.kind === 'memo' && !item.text);
     } catch { if (alive.current) setError('자료를 저장하지 못했어요. 기기의 저장 공간을 확인해 주세요.'); }
   };
   const files = async (list: FileList | File[]) => {
@@ -130,8 +128,7 @@ export function ReferencePanel({ noteId, lib, onClose, onExtension, toast, initi
     </div>}
     {error && <p className="reference-error" role="alert">{error}</p>}
     {items.length > 0 && <div className="reference-tabbar">
-      <div className="reference-tabs" role="tablist" aria-label="열린 자료">{items.map((row) => <button type="button" key={row.id} role="tab" aria-selected={row.id === active} title={row.title} onClick={() => { setActive(row.id); setMemoEditing(false); setForm(null); setOptions(false); }}><ReferenceIcon name={({ pdf: 'file', image: 'file', memo: 'memo', web: 'web', note: 'note' } satisfies Record<Reference['kind'], ReferenceIconName>)[row.kind]} /><span>{row.title}</span></button>)}</div>
-      {item?.kind === 'memo' && <button type="button" className="reference-memo-toggle" aria-label={memoEditing ? '마크다운 보기' : '메모 편집'} title={memoEditing ? '마크다운 서식으로 보기 (⌘Enter)' : '마크다운 원문 편집'} onClick={() => setMemoEditing(v => !v)}><ReferenceIcon name={memoEditing ? 'note' : 'memo'} />{memoEditing ? '보기' : '편집'}</button>}
+      <div className="reference-tabs" role="tablist" aria-label="열린 자료">{items.map((row) => <button type="button" key={row.id} role="tab" aria-selected={row.id === active} title={row.title} onClick={() => { setActive(row.id); setForm(null); setOptions(false); }}><ReferenceIcon name={({ pdf: 'file', image: 'file', memo: 'memo', web: 'web', note: 'note' } satisfies Record<Reference['kind'], ReferenceIconName>)[row.kind]} /><span>{row.title}</span></button>)}</div>
       {item?.kind === 'pdf' && <span className="reference-file-action" ref={setFileAction} />}
       {item?.kind === 'web' && <a className="reference-icon-button reference-external" href={item.text} target="_blank" rel="noreferrer" aria-label="현재 웹사이트 새 탭으로 열기" title="새 탭으로 열기"><ReferenceIcon name="external" /></a>}
       {item?.kind === 'note' && <span className="reference-readonly" title="본문 · 글상자 읽기 전용" aria-label="읽기 전용"><ReferenceIcon name="lock" /></span>}
@@ -149,14 +146,11 @@ export function ReferencePanel({ noteId, lib, onClose, onExtension, toast, initi
     {item ? <>
       <div className="reference-content" role="tabpanel" aria-label={item.title}>
         {(item.kind === 'pdf' || item.kind === 'image') && <FileReference item={item} actionHost={fileAction} />}
-        {item.kind === 'memo' && (memoEditing ? <textarea autoFocus aria-label="참고 메모" placeholder={'# 제목\n\n**강조** · - 목록\n\n| 항목 | 설명 |\n| --- | --- |\n| 개념 | 내용 |\n\n메모 밖을 누르면 서식이 자동 적용돼요.'} value={item.text ?? ''}
-          onBlur={e => { if (!(e.relatedTarget as Element | null)?.closest('.reference-panel')) setMemoEditing(false); }}
-          onKeyDown={e => { if (e.key === 'Escape' || (e.key === 'Enter' && (e.metaKey || e.ctrlKey))) { e.preventDefault(); e.stopPropagation(); setMemoEditing(false); } }}
-          onChange={(e) => {
-          const next = { ...item, text: e.target.value };
-          setItems((rows) => rows.map((r) => r.id === item.id ? next : r));
+        {item.kind === 'memo' && <MarkdownMemo key={item.id} text={item.text ?? ''} doc={item.memoDoc} onChange={(text, memoDoc) => {
+          const next = { ...item, text, memoDoc };
+          setItems(rows => rows.map(row => row.id === item.id ? next : row));
           void saveReference(next).catch(() => setError('메모를 저장하지 못했어요. 내용을 복사해서 보관해 주세요.'));
-        }} /> : <MarkdownMemo text={item.text ?? ''} onEdit={() => setMemoEditing(true)} />)}
+        }} />}
         {item.kind === 'web' && <><iframe className="reference-frame" title={item.title} src={item.text} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" referrerPolicy="no-referrer" /></>}
         {item.kind === 'note' && item.text && <NoteReference id={item.text} />}
       </div>

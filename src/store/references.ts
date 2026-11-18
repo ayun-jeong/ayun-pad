@@ -4,6 +4,7 @@ export type Reference = {
   title: string;
   kind: 'pdf' | 'image' | 'memo' | 'web' | 'note';
   text?: string;
+  memoDoc?: unknown; // 마크다운 메모의 편집 가능한 서식 문서
   blob?: Blob;
 };
 let database: Promise<IDBDatabase> | undefined;

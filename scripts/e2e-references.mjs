@@ -27,7 +27,7 @@ try {
   assert.ok(await page.$eval('.reference-options', e => e.textContent.includes('이 브라우저')));
   await page.keyboard.press('Escape');
   mkdirSync('/tmp/ayunpad-qa', { recursive: true }); await page.screenshot({ path: '/tmp/ayunpad-qa/references-compact.png' });
-  await page.click('button[aria-label="메모 추가"]'); await page.waitForSelector('textarea[aria-label="참고 메모"]'); await page.type('textarea[aria-label="참고 메모"]', 'Kept compact memo');
+  await page.click('button[aria-label="메모 추가"]'); await page.waitForSelector('.reference-markdown[contenteditable="true"]'); await page.type('.reference-markdown[contenteditable="true"]', 'Kept compact memo');
   await page.click('button[aria-label="자료 옵션"]'); await page.click('button[aria-label="현재 자료 삭제"]'); await page.waitForSelector('.reference-frame');
   console.log('ok  저장 안내·삭제는 옵션으로 이동하고 메모 추가·삭제 후 원래 자료 복귀');
   await page.setViewport({ width: 390, height: 844 });

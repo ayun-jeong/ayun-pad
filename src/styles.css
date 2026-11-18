@@ -153,6 +153,7 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
 .pad-text .ln[data-depth='8'], .pad-text .blk[data-depth='8'] { padding-left: calc(var(--ind) * 7); }
 .a-red { color: var(--pen-r); }
 .a-blue { color: var(--pen-b); }
+.a-black { color: var(--pen-k); }
 .pen-r { color: var(--pen-r); }
 .pen-b { color: var(--pen-b); }
 .pen-k { color: var(--pen-k); }
@@ -727,8 +728,6 @@ body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: non
 .ins-drawing button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 7px 4px; border: 1px solid transparent; border-radius: 8px; background: var(--bg); color: var(--ink); font-size: 12px; }
 .ins-drawing button:hover, .ins-drawing button:focus-visible { color: #0064e8; border-color: #0064e8; }
 
-.reference-memo-toggle { display: inline-flex; align-items: center; gap: 4px; flex: none; height: 27px; padding: 3px 7px; border: 0; border-radius: 6px; background: var(--bg); color: var(--ink-2); font-size: 11px; }
-.reference-memo-toggle:hover { color: #0064e8; }
 .reference-markdown { flex: 1; min-width: 0; padding: 16px; background: var(--surface); color: var(--ink); font: 14px/1.75 var(--ui); overflow-wrap: anywhere; }
 .reference-markdown > :first-child { margin-top: 0; }
 .reference-markdown h1, .reference-markdown h2, .reference-markdown h3 { line-height: 1.35; margin: 1.1em 0 .5em; }
@@ -744,3 +743,11 @@ body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: non
 .reference-markdown pre code { padding: 0; }
 .reference-markdown img { max-width: 100%; height: auto; }
 .reference-markdown a { color: #0064e8; }
+
+.reference-memo-editor { flex: 1; display: flex; min-height: 100%; min-width: 0; }
+.reference-memo-editor .reference-markdown { outline: none; min-height: 100%; cursor: text; white-space: pre-wrap; }
+.reference-markdown:has(> p:only-child > br.ProseMirror-trailingBreak:first-child)::before { content: attr(data-placeholder); color: var(--ink-3); position: absolute; pointer-events: none; }
+.reference-markdown .selectedCell { position: relative; }
+.reference-markdown .selectedCell::after { content: ''; position: absolute; inset: 0; background: #0064e81a; pointer-events: none; }
+.reference-markdown th[align='center'], .reference-markdown td[align='center'] { text-align: center; }
+.reference-markdown th[align='right'], .reference-markdown td[align='right'] { text-align: right; }

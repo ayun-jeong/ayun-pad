@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { autoStyle } from '../src/editor/autoStyle';
 import { schema } from '../src/editor/schema';
 import { autoHlSpans, buildDecorations } from '../src/editor/decorations';
 import { inlineBranches, normalizeBranchDashes } from '../src/editor/inlineBranches';
@@ -22,6 +23,25 @@ describe('같은 줄 가지의 형광펜 연결', () => {
     expect(inlineBranches('2020–2025')).toEqual([]);
     const doc=schema.node('doc',null,schema.node('line',null,[schema.text('A–'),schema.text('B',[schema.marks.hl.create({c:'none'})])]));
     expect(autoHlSpans(buildDecorations(doc),0,doc.content.size).map(s=>doc.textBetween(s.from,s.to))).toEqual(['A']);
+  });
+  it.each([':', '：', '∶', '﹕', '︓'])('모든 가지 주제어는 빨강, %s 이후는 검정이며 자동 형광펜을 붙이지 않는다', colon => {
+    const text = `효율향상–EERS${colon} 에너지 절감–추가 설명`;
+    const doc = schema.node('doc',null,schema.node('line',null,[schema.text('효율향상',[schema.marks.hl.create({c:'g'})]),schema.text(text.slice(4))]));
+    const set = buildDecorations(doc);
+    const red = set.find().filter(d => d.spec.autoPen === 'r').map(d => doc.textBetween(d.from,d.to));
+    expect(red).toEqual(['효율향상','EERS']);
+    expect(autoHlSpans(set,0,doc.content.size)).toEqual([{from:6,to:10,c:'p'}]);
+    const st = autoStyle(text,'plain',false);
+    expect(st.black).toEqual({from:text.indexOf(colon),to:text.length});
+    expect(st.branches).toEqual([{from:5,to:9}]);
+  });
+  it('콜론 뒤에 처음 등장한 대시는 설명을 다시 가지로 바꾸지 않는다', () => {
+    const text = '주제: 검정 설명–계속 검정';
+    const st = autoStyle(text,'branch',false);
+    expect(st.branches).toBeUndefined();
+    expect(st.red).toEqual({from:0,to:2});
+    const doc=schema.node('doc',null,schema.node('line',{kind:'branch'},schema.text(text)));
+    expect(autoHlSpans(buildDecorations(doc),0,doc.content.size).map(s=>doc.textBetween(s.from,s.to))).toEqual(['주제']);
   });
   it('기존 가지 대시를 짧게 읽고 위치와 서식을 보존한다', () => {
     const doc=schema.node('doc',null,schema.node('line',null,schema.text('A—B',[schema.marks.branchDash.create(),schema.marks.pen.create({c:'r'})])));
