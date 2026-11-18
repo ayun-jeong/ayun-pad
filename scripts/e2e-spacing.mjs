@@ -1,0 +1,65 @@
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import puppeteer from 'puppeteer-core';
+const url = 'http://localhost:4334/ayun-pad/';
+const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', '4334', '--strictPort'], { stdio: 'ignore' });
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let browser;
+try {
+  for (let i = 0; i < 60; i++) { try { if ((await fetch(url)).ok) break; } catch {} await sleep(200); }
+  browser = await puppeteer.launch({ executablePath: process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--disable-gpu'] });
+  const page = await browser.newPage();
+  const errors = []; page.on('pageerror', e => errors.push(e.message));
+  await page.setViewport({ width: 1440, height: 1000 });
+  await page.goto(url, { waitUntil: 'networkidle0' });
+  await page.waitForSelector('.editor');
+  await page.$eval('.addnote', e => e.click());
+  await page.waitForFunction(() => document.querySelector('.editor')?.textContent === '');
+  const box = await page.$eval('.shapes-layer', e => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y }; });
+  await page.mouse.click(box.x + 100, box.y + 100);
+  await page.waitForSelector('.tbox.tedit .tb-edit');
+  await page.keyboard.type('AAA BBB\nCCC DDD\nEEE FFF');
+  const positions = await page.$eval('.tb-edit .ln', e => {
+    const walker = document.createTreeWalker(e, NodeFilter.SHOW_TEXT); let t;
+    while (t = walker.nextNode()) if (t.textContent.includes('AAA')) break;
+    const range = document.createRange(); range.setStart(t, 0); range.setEnd(t, 3);
+    const r = range.getBoundingClientRect(); return { x: r.x, y: r.y + r.height / 2, right: r.right };
+  });
+  await page.mouse.move(positions.x + .1, positions.y); await page.mouse.down(); await page.mouse.move(positions.right, positions.y, { steps: 10 }); await page.mouse.up();
+  assert.equal(await page.evaluate(() => getSelection().toString()), 'AAA');
+  await page.keyboard.down('Alt'); await page.keyboard.press('KeyT'); await page.keyboard.up('Alt');
+  await page.waitForSelector('#ty-track');
+  const setNumber = async (selector, value) => {
+    await page.$eval(selector, (e, value) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, value); e.dispatchEvent(new Event('input', { bubbles: true })); }, value);
+  };
+  await setNumber('#ty-track', '0.08');
+  await page.waitForFunction(() => [...window.__ayunpad.doc().shapes.values()].some(s => s.doc?.content[0]?.content?.some(n => n.marks?.some(m => m.type === 'track' && m.attrs.v === .08))));
+  const shape = () => page.evaluate(() => [...window.__ayunpad.doc().shapes.values()].find(s => s.t === 'text'));
+  let saved = await shape();
+  assert.equal(saved.doc.content[0].content[0].text, 'AAA');
+  assert.ok(!saved.doc.content[0].content.at(-1).marks?.length);
+  assert.ok(!saved.ls);
+  console.log('ok  실제 드래그한 글자에만 자간 적용, 나머지 글자와 상자 기본값 유지');
+  await setNumber('#ty-pitch', '5');
+  await page.waitForFunction(() => [...window.__ayunpad.doc().shapes.values()].some(s => s.doc?.content[0]?.attrs.leading > 1));
+  saved = await shape();
+  assert.ok(saved.doc.content[0].attrs.leading > 1);
+  assert.equal(saved.doc.content[1].attrs.leading, null);
+  assert.equal(saved.doc.content[2].attrs.leading, null);
+  assert.ok(!saved.lh);
+  console.log('ok  선택 범위의 첫 줄만 행간 변경, 나머지 두 줄과 상자 기본값 유지');
+  const heights = await page.$$eval('.tb-edit .ln', rows => rows.map(e => e.getBoundingClientRect().height));
+  assert.ok(heights[0] > heights[1]);
+  assert.ok(Math.abs(heights[1] - heights[2]) < 1);
+  console.log('ok  화면에서도 선택 줄의 높이만 바뀜');
+  await page.click('.panel .close');
+  await page.keyboard.press('Escape');
+  await page.reload({ waitUntil: 'networkidle0' });
+  await page.waitForSelector('.tbox');
+  saved = await shape();
+  assert.ok(saved.doc.content[0].attrs.leading > 1);
+  assert.equal(saved.doc.content[0].content[0].marks[0].attrs.v, .08);
+  assert.equal(saved.doc.content[1].attrs.leading, null);
+  assert.deepEqual(errors, []);
+  console.log('ok  새로고침 뒤 선택 범위 서식 보존 · 실행 오류 없음');
+} finally { await browser?.close(); server.kill(); }

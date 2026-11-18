@@ -205,8 +205,9 @@ describe('반쪽 규격', () => {
     const f = fitPitch({ fontPt: 9, pitchMm: 2, mTop: 3 });
     expect(f.pitch).toBeGreaterThanOrEqual(9 * (25.4 / 72));
   });
-  it('기본 글 영역은 100mm, 반쪽 번호는 1-1 1-2 2-1', () => {
-    expect(textWidth(DEFAULT_TYPO)).toBe(100);
+  it('A4 글 영역은 205mm, 반쪽은 100mm, 반쪽 번호는 1-1 1-2 2-1', () => {
+    expect(textWidth(DEFAULT_TYPO)).toBe(205);
+    expect(textWidth({ ...DEFAULT_TYPO, pageWidth: 'half' })).toBe(100);
     expect([0, 1, 2, 3].map(halfLabel)).toEqual(['1-1', '1-2', '2-1', '2-2']);
   });
 });

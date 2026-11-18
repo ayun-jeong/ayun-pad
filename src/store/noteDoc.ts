@@ -1,5 +1,6 @@
 import { IndexeddbPersistence } from 'y-indexeddb';
 import * as Y from 'yjs';
+import { connectLocal } from './localSync';
 import { shapesOf, type Shape } from '../draw/model';
 import { normalizeTypo, type Typo } from '../editor/layout';
 
@@ -17,14 +18,19 @@ export interface NoteDoc {
 export function openNote(id: string): NoteDoc {
   const ydoc = new Y.Doc();
   const persist = new IndexeddbPersistence(`ayunpad-note-${id}`, ydoc);
+  let destroyed = false;
+  let disconnect = () => {};
+  const ready = persist.whenSynced.then(() => { if (!destroyed) disconnect = connectLocal(ydoc, `note:${id}`); });
   return {
     id,
     ydoc,
     fragment: ydoc.getXmlFragment('content'),
     meta: ydoc.getMap('meta'),
     shapes: shapesOf(ydoc),
-    ready: persist.whenSynced.then(() => undefined),
+    ready,
     destroy() {
+      destroyed = true;
+      disconnect();
       void persist.destroy();
       ydoc.destroy();
     },

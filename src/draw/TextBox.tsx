@@ -198,6 +198,9 @@ function TbBar({ view, r, editing, onPatch }: { view: EditorView | null; r: Reso
 // 마지막으로 커서가 들어갔던 글상자 편집기(종이에 바로 쓰지 않을 때 펜 · 들여쓰기 · ＋ 넣기가 여기에 들어간다).
 // next: 다음에 커서가 들어가는 글상자에 한 번 할 일(＋ 넣기에서 넣을 곳을 고른 뒤 그 새 글상자에 표 등을 넣기)
 export const textBoxes: { last: EditorView | null; next: ((v: EditorView) => void) | null } = { last: null, next: null };
+const selectionListeners = new Set<() => void>();
+export const observeBoxSelection = (fn: () => void) => { selectionListeners.add(fn); return () => { selectionListeners.delete(fn); }; };
+const notifySelection = () => selectionListeners.forEach((fn) => fn());
 export const liveBox = () => {
   const v = textBoxes.last;
   return v && !v.isDestroyed && v.dom.isConnected ? v : null;
@@ -247,6 +250,7 @@ export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFo
         const next = this.state.apply(tr);
         if (next === this.state) return; // 막힌 거래(읽기 모드)
         this.updateState(next);
+        if (textBoxes.last === this) notifySelection();
         if (tr.docChanged) cb.current.onSave(next.doc);
         const ms = mathKey.getState(next);
         setMath(ms?.active ? ms : null);
@@ -255,6 +259,7 @@ export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFo
     view.current = v;
     v.dom.addEventListener('focus', () => {
       textBoxes.last = v;
+      notifySelection();
       const next = textBoxes.next;
       textBoxes.next = null;
       if (next) requestAnimationFrame(() => !v.isDestroyed && next(v));

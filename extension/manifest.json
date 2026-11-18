@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "ayun pad 사이드 패널",
+  "version": "0.1.0",
+  "minimum_chrome_version": "116",
+  "description": "웹사이트를 읽으며 옆에서 같은 ayun pad 노트에 필기합니다.",
+  "permissions": ["sidePanel", "storage", "activeTab", "scripting"],
+  "host_permissions": ["https://ayun-jeong.github.io/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "ayun pad 열기" },
+  "side_panel": { "default_path": "sidepanel.html" },
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'self'; frame-src https://ayun-jeong.github.io http://localhost:* http://127.0.0.1:*;" }
+}

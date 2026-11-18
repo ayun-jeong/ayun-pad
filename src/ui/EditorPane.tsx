@@ -11,7 +11,7 @@ import { createEditor, type EditorHooks } from '../editor/createEditor';
 import { newId } from '../editor/ids';
 import { autoKey } from '../editor/decorations';
 import type { RuleSettings } from '../editor/inputRules';
-import { fitPitch, halfLabel, HALF_W, DEFAULT_TYPO, type Typo } from '../editor/layout';
+import { fitPitch, halfLabel, HALF_W, A4_W, DEFAULT_TYPO, type Typo } from '../editor/layout';
 import { EXTENT_PAD, halvesFor } from '../editor/halves';
 import { fontStack, schema } from '../editor/schema';
 import type { AppAction } from '../editor/shortcuts';
@@ -294,6 +294,9 @@ export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, s
 
   // 글자 모양이 바뀌면 줄 위치가 바뀐다 → 위젯 밀기 · 그림 위치 다시
   useLayoutEffect(() => relayout(), [typo, relayout]);
+  // 폭을 바꾼 직후에는 자식 그림 층이 이전 DOM 폭을 읽었을 수 있다.
+  // 빈 노트에서도 새 폭으로 좌표계를 다시 계산한 뒤 첫 클릭을 받게 한다.
+  useLayoutEffect(() => { bumpTick(); }, [typo.pageWidth, typo.mOuter, typo.mInner]);
   // 노트 설정: 화살표 자동 변환은 규칙이 바로 읽고, 자동 색은 장식을 다시 만든다
   useEffect(() => {
     settings.arrows = typo.arrows;
@@ -316,9 +319,10 @@ export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, s
     '--trk': `${typo.tracking}em`,
     '--trk0': `${typo.tracking}em`,
     '--wb': typo.wordBreak === 'all' ? 'break-all' : 'keep-all',
+    width: `${typo.pageWidth === 'half' ? HALF_W : A4_W}mm`,
     padding: `${typo.mTop}mm ${typo.mInner}mm ${typo.mTop}mm ${typo.mOuter}mm`,
   } as CSSProperties;
-  const widthPx = (HALF_W + GUTTER_MM) * PX_PER_MM;
+  const widthPx = ((typo.pageWidth === 'half' ? HALF_W : A4_W) + GUTTER_MM) * PX_PER_MM;
   const onExtent = useCallback((b: number) => setExtent(b), []);
 
   return (
@@ -327,7 +331,7 @@ export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, s
         <div className="half-nos" style={{ width: `${GUTTER_MM}mm` }} aria-hidden="true">
           {Array.from({ length: halves }, (_, k) => (
             <span key={k} className="half-no" style={{ top: `calc(${typo.mTop}mm + ${k * halfPx}px)` }}>
-              {halfLabel(k)}
+              {typo.pageWidth === 'half' ? halfLabel(k) : `${k + 1}장`}
             </span>
           ))}
         </div>
@@ -349,7 +353,8 @@ export function EditorPane({ noteId, zoom, reading, paper, onLegacyEdit, draw, s
                     const v = live.view;
                     try {
                       const c = v.coordsAtPos(v.state.selection.head);
-                      return { x: c.left, y: c.top };
+                      // 줄 경계의 소수점 반올림으로 이전 줄에 붙지 않게 커서 안쪽을 쓴다.
+                      return { x: c.left, y: c.top + Math.min(1, (c.bottom - c.top) / 2) };
                     } catch {
                       return null;
                     }

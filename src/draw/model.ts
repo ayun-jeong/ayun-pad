@@ -14,6 +14,7 @@ export interface Anchor {
 
 interface Base {
   id: string;
+  group?: string; // 함께 선택 · 이동하는 그룹
   c: string; // 선 색: 펜 색 이름(r b k p y g) 또는 #RRGGBB
   w: number; // 굵기(mm)
   z: number; // 그리는 순서

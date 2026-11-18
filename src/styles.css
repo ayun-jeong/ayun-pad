@@ -609,3 +609,72 @@ body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: non
 .paper-off .sheet-src .editor .wg-ed, .paper-off .sheet-src .editor .mi { pointer-events: none; }
 .paper-off .sheet-src .editor .wg-ed:empty::before { content: none; }
 .paper-off .sheet-src { cursor: text; }
+
+/* 자료와 필기는 각각 스크롤하고, 가운데 경계로 폭을 바꾼다. */
+.workspace { grid-column: 2; grid-row: 2; display: flex; min-width: 0; min-height: 0; overflow: hidden; }
+.note-workspace { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.note-workspace .desk { flex: 1; min-height: 0; }
+.canvas-tools { display: flex; align-items: center; gap: 6px; padding: 7px 12px; border-bottom: 1px solid var(--rule); background: var(--surface); flex-wrap: wrap; font-size: 12px; }
+.canvas-tools > span { margin-right: auto; color: var(--ink-2); }
+.canvas-tools button, .reference-actions button, .reference-form button { border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); padding: 4px 8px; color: var(--ink); }
+.canvas-tools button.on { background: var(--ink); color: var(--bg); }
+.desk.panning { touch-action: none; }
+.desk.panning, .desk.panning * { cursor: grab !important; }
+.desk.panning:active, .desk.panning:active * { cursor: grabbing !important; }
+.reference-panel { flex: 0 0 var(--reference-width, 42%); display: flex; flex-direction: column; min-width: 240px; min-height: 0; background: var(--surface); overflow: hidden; }
+.reference-panel.drop { outline: 3px solid var(--focus); outline-offset: -4px; }
+.reference-heading { display: flex; align-items: center; gap: 10px; padding: 14px 16px 8px; }
+.reference-heading strong { font-size: 15px; }
+.reference-heading span { color: var(--ink-3); font-size: 12px; flex: 1; }
+.reference-actions { display: flex; gap: 6px; padding: 4px 16px 12px; flex-wrap: wrap; }
+.reference-actions button { font-size: 12px; }
+.reference-form { display: flex; align-items: center; gap: 6px; padding: 8px 16px; flex-wrap: wrap; }
+.reference-form label { font-size: 12px; }
+.reference-form input, .reference-form select { min-width: 100px; flex: 1; background: var(--surface); border: 1px solid var(--rule-2); padding: 6px; border-radius: 6px; }
+.reference-error { padding: 6px 16px; color: var(--accent); font-size: 12px; }
+.reference-tabs { display: flex; overflow: auto; padding: 0 12px; gap: 4px; border-bottom: 1px solid var(--rule); flex-shrink: 0; }
+.reference-tabs button { border: 0; background: transparent; color: var(--ink-3); padding: 9px 10px; max-width: 180px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; border-bottom: 2px solid transparent; flex-shrink: 0; }
+.reference-tabs button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+.reference-title { display: flex; align-items: center; gap: 8px; padding: 6px 16px; font-size: 12px; }
+.reference-title span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reference-content { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: auto; background: var(--bg); }
+.reference-frame { width: 100%; flex: 1; min-height: 260px; border: 0; background: #fff; }
+.reference-image { width: 100%; height: auto; object-fit: contain; display: block; margin: auto; }
+.reference-content textarea { resize: none; flex: 1; width: 100%; min-height: 160px; border: 0; padding: 20px; background: var(--surface); color: var(--ink); font: 14px/1.9 var(--ui); }
+.reference-web-hint, .reference-file-link { margin: 0; padding: 8px 12px; font-size: 12px; color: var(--ink-2); background: var(--surface); }
+.reference-web-hint a, .reference-file-link { color: var(--focus); }
+.reference-note { background: #fff; color: #000; padding: 20px; --fs: 12px; --lh: 1.8; --trk: 0; --font: var(--ui); }
+.reference-note-box { border: 1px solid #dde1e7; margin: 12px 0; padding: 12px; }
+.reference-empty { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 24px; text-align: center; }
+.reference-empty-icon { font-size: 44px; color: var(--ink-3); }
+.reference-empty h2 { font-size: 18px; margin: 12px 0 0; }
+.reference-empty p { font-size: 13px; color: var(--ink-2); line-height: 1.9; }
+.reference-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 8px 12px; border-top: 1px solid var(--rule); font-size: 11px; color: var(--ink-3); }
+.reference-footer span { flex: 1; }
+.reference-resizer { width: 7px; flex-shrink: 0; background: var(--bg); border-inline: 1px solid var(--rule); cursor: col-resize; touch-action: none; }
+.reference-resizer:hover, .reference-resizer:focus-visible { background: var(--focus); }
+.extension-help-backdrop { position: fixed; inset: 0; background: #0005; display: grid; place-items: center; z-index: 45; padding: 20px; }
+.extension-help { max-width: 560px; max-height: 90vh; overflow: auto; padding: 24px; border: 1px solid var(--rule); border-radius: 16px; box-shadow: var(--shadow); background: var(--surface); }
+.extension-help header { display: flex; align-items: center; justify-content: space-between; }
+.extension-help h2 { margin: 0; font-size: 19px; }
+.extension-help p, .extension-help li { line-height: 1.9; }
+.extension-help a { color: var(--focus); }
+.compact .top .subj, .compact .top .sync, .compact .top .modes { display: none; }
+.compact .top { gap: 4px; }
+@media (max-width: 720px) {
+  .workspace.with-references { flex-direction: column; }
+  .reference-panel { flex: 0 0 44%; min-width: 0; }
+  .reference-resizer { display: none; }
+  .reference-heading { padding-top: 8px; }
+  .reference-empty { padding: 12px; }
+  .reference-empty-icon, .reference-heading span { display: none; }
+  .reference-empty h2 { font-size: 15px; }
+  .reference-empty p { margin: 6px 0; }
+  .reference-actions { padding-bottom: 6px; }
+  .reference-footer > span { display: none; }
+  .reference-frame { min-height: 100px; }
+  .canvas-tools { gap: 4px; padding: 6px 8px; }
+  .canvas-tools > span { display: none; }
+}
+
+.paper-width-options { display: inline-flex; gap: 3px; }

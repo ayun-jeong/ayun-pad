@@ -1429,6 +1429,8 @@ try {
   const ps = await page.$$('.editor > p');
   const target = ps[ps.length - 5];
   const tid = await target.evaluate((p) => p.dataset.id);
+  await target.evaluate((p) => p.scrollIntoView({ block: 'center' }));
+  await sleep(100);
   const tb = await target.boundingBox();
   await page.mouse.click(tb.x + 15, tb.y + tb.height / 2);
   await sleep(150);
@@ -1481,6 +1483,9 @@ try {
   {
     await page.click('.addnote');
     await page.waitForFunction(() => document.querySelectorAll('.editor > p').length === 1 && document.querySelector('.editor').textContent === '');
+    // 이 시나리오는 90mm에서 밖으로 걸치는 기존 반쪽 폭을 명시해서 검증한다.
+    await page.click('.paper-width-options button:first-child');
+    await page.waitForFunction(() => Math.abs(document.querySelector('.paper').offsetWidth - 105 * 96 / 25.4) < 2);
     await page.click('.editor');
     for (let i = 0; i < 8; i++) {
       await k.type(`줄 ${i + 1}`);

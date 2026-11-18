@@ -268,11 +268,13 @@ export const circleCmd: Command = (state, dispatch) => {
 };
 
 // ⌥, / ⌥. : 자간 0.01em씩. 선택이 없으면 지금 줄 전체.
-export function trackCmd(delta: number, report?: (v: number) => void): Command {
-  return (state, dispatch) => {
+export function trackCmd(delta: number, report?: (v: number) => void, absolute = false): Command {
+  return (state, dispatch, view) => {
     const sel = state.selection;
     const ranges = sel.empty ? [{ from: sel.$from.start(), to: sel.$from.end() }].filter((r) => r.from < r.to) : rangesOf(sel);
     if (!ranges.length) return true;
+    const style = view ? getComputedStyle(view.dom) : null;
+    const inherited = style ? (parseFloat(style.letterSpacing) / parseFloat(style.fontSize) || 0) : 0;
     const tr = state.tr;
     let shown: number | null = null;
     for (const { from, to } of ranges)
@@ -280,10 +282,10 @@ export function trackCmd(delta: number, report?: (v: number) => void): Command {
         if (!node.isText) return;
         const a = Math.max(from, pos);
         const b = Math.min(to, pos + node.nodeSize);
-        const cur = (node.marks.find((m) => m.type === schema.marks.track)?.attrs.v as number | undefined) ?? 0;
-        const v = Math.round(clamp(cur + delta, -0.15, 0.3) * 100) / 100;
+        const cur = (node.marks.find((m) => m.type === schema.marks.track)?.attrs.v as number | undefined) ?? inherited;
+        const v = Math.round(clamp(absolute ? delta : cur + delta, -0.15, 0.3) * 100) / 100;
         if (shown === null) shown = v;
-        replaceMark(tr, a, b, schema.marks.track, v !== 0 ? schema.marks.track.create({ v }) : null);
+        replaceMark(tr, a, b, schema.marks.track, v !== 0 || inherited !== 0 ? schema.marks.track.create({ v }) : null);
       });
     if (dispatch) {
       dispatch(tr);
@@ -352,6 +354,21 @@ export function fontCmd(f: string | null): Command {
       for (const r of rangesOf(state.selection)) replaceMark(tr, r.from, r.to, schema.marks.font, f ? schema.marks.font.create({ f }) : null);
       dispatch(tr);
     }
+    return true;
+  };
+}
+
+// 행간은 글자가 아닌 줄의 속성. 선택 끝이 다음 줄의 맨 앞이면 그 줄은 제외한다.
+export function leadingCmd(value: number, absolute = false): Command {
+  return (state, dispatch) => {
+    if (state.selection.empty) return false;
+    const tr = state.tr;
+    for (const { from, to } of rangesOf(state.selection)) state.doc.nodesBetween(from, to, (node, pos) => {
+      if (node.type !== schema.nodes.line || pos + 1 >= to || pos + node.nodeSize - 1 < from) return;
+      const leading = Math.round(clamp(absolute ? value : (node.attrs.leading ?? 1) + value, 0.5, 3) * 1000) / 1000;
+      tr.setNodeMarkup(pos, undefined, { ...node.attrs, leading: leading === 1 ? null : leading });
+    });
+    if (tr.docChanged) dispatch?.(tr);
     return true;
   };
 }

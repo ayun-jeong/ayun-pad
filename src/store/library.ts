@@ -1,5 +1,6 @@
 import { IndexeddbPersistence } from 'y-indexeddb';
 import * as Y from 'yjs';
+import { connectLocal } from './localSync';
 
 export interface SubjectMeta {
   id: string;
@@ -46,7 +47,7 @@ export function openLibrary(): Library {
     subjects: ydoc.getMap<SubjectMeta>('subjects'),
     notes: ydoc.getMap<NoteMeta>('notes'),
     fonts: ydoc.getMap<FontMeta>('fonts'),
-    ready: persist.whenSynced.then(() => undefined),
+    ready: persist.whenSynced.then(() => { connectLocal(ydoc, 'library'); }),
   };
 }
 

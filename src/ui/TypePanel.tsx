@@ -11,6 +11,7 @@ export const BUILTIN_FONTS: { id: string; name: string }[] = [
 
 interface Props {
   typo: Typo;
+  spacingScope: string;
   fonts: FontMeta[];
   hasSelection: boolean;
   onChange(patch: Partial<Typo>): void;
@@ -38,7 +39,7 @@ function Num({ id, value, step, min, max, onChange }: { id: string; value: numbe
 }
 
 // ⌥T 글자 모양 판: 노트 전체 글꼴 · 크기 · 자간 · 행간 · 여백, 그리고 선택한 글자에만 글꼴 · 자간.
-export function TypePanel({ typo, fonts, hasSelection, onChange, onUpload, onSelectionFont, onSelectionTrack, onClose }: Props) {
+export function TypePanel({ typo, spacingScope, fonts, hasSelection, onChange, onUpload, onSelectionFont, onSelectionTrack, onClose }: Props) {
   const fit = fitPitch(typo);
   const allFonts = [...BUILTIN_FONTS, ...fonts.map((f) => ({ id: f.id, name: f.name }))];
   return (
@@ -74,15 +75,15 @@ export function TypePanel({ typo, fonts, hasSelection, onChange, onUpload, onSel
         <Num id="ty-size" value={typo.fontPt} step={LIMITS.fontPt[2]} min={LIMITS.fontPt[0]} max={LIMITS.fontPt[1]} onChange={(v) => onChange({ fontPt: v })} />
       </div>
       <div className="row">
-        <label htmlFor="ty-track">자간 em</label>
+        <label htmlFor="ty-track">자간 em <small>({spacingScope})</small></label>
         <Num id="ty-track" value={typo.tracking} step={LIMITS.tracking[2]} min={LIMITS.tracking[0]} max={LIMITS.tracking[1]} onChange={(v) => onChange({ tracking: v })} />
       </div>
       <div className="row">
-        <label htmlFor="ty-pitch">행간 mm</label>
+        <label htmlFor="ty-pitch">행간 mm <small>({spacingScope})</small></label>
         <Num id="ty-pitch" value={typo.pitchMm} step={LIMITS.pitchMm[2]} min={LIMITS.pitchMm[0]} max={LIMITS.pitchMm[1]} onChange={(v) => onChange({ pitchMm: v })} />
       </div>
       <p className="note">
-        반쪽 높이에 맞춰 실제 줄 간격은 {fit.pitch.toFixed(2)}mm, 반쪽 {fit.rows}줄 · A4 한 장 {fit.rows * 2}줄 · 글 폭 {textWidth(typo)}mm
+        실제 줄 간격 {fit.pitch.toFixed(2)}mm · {typo.pageWidth === 'half' ? `반쪽 ${fit.rows}줄 · A4 한 장 ${fit.rows * 2}줄` : `A4 한 장 ${fit.rows}줄`} · 글 폭 {textWidth(typo)}mm
       </p>
       <div className="row">
         <label htmlFor="ty-mt">여백 위아래</label>

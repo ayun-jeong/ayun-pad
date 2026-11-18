@@ -1,3 +1,4 @@
+import { copyGroups } from './groups';
 import type { Node } from 'prosemirror-model';
 import type { EditorState, Transaction } from 'prosemirror-state';
 import type * as Y from 'yjs';
@@ -73,7 +74,7 @@ export function pasteClip(tr: Transaction, state: EditorState, ydoc: Y.Doc, shap
     else if (s.t === 'text') copies.push({ ...s, id, z: z0 + i, a: pts[0]! });
     else copies.push({ ...s, id, z: z0 + i, a: pts[0]!, b: pts[1]! });
   });
-  if (copies.length) ydoc.transact(() => copies.forEach((s) => shapes.set(s.id, s)), SHAPES);
+  if (copies.length) ydoc.transact(() => copyGroups(copies).forEach((s) => shapes.set(s.id, s)), SHAPES);
 }
 
 // 고른 글이 지워지거나 바뀌면(⌫ · Delete · 잘라내기 · 고른 채 치기 · 붙여넣기) 잡혀 있던 그림도 같이

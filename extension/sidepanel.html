@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ayun pad</title><link rel="stylesheet" href="sidepanel.css"></head>
+<body>
+<header><strong>ayun pad</strong><button id="capture">선택한 글 가져오기</button><button id="settings" aria-label="사이트 주소 설정">⚙</button></header>
+<form id="config" hidden><label for="address">pad 사이트 주소</label><input id="address" type="url" required><button>연결</button></form>
+<p id="status" role="status">웹사이트를 보면서 같은 노트에 필기하세요.</p>
+<iframe id="pad" title="ayun pad 필기장" allow="clipboard-read; clipboard-write"></iframe>
+<script src="sidepanel.js"></script>
+</body></html>

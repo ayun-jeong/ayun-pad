@@ -23,6 +23,7 @@ interface Props {
   onPage(op: PageOp): number | undefined; // 돌려준 반쪽은 다시 그린 뒤 잠깐 표시(어디로 갔는지 보이게)
   onPick(lineIndex: number): void;
   onMove(id: string, dx: number, dy: number, copy: boolean): void; // 글상자 · 그림 하나 옮기기(칼럼 mm), copy: ⌥ 복제(원본은 그대로)
+  groupIds(id: string): string[];
   pickAt(x: number, y: number, tol: number): string | null; // 그 자리(칼럼 mm)의 그림
   onEditBox(id: string): void; // 글상자 두 번 누르기 → 편집 화면에서 고치기
 }
@@ -30,7 +31,7 @@ interface Props {
 const DRAG_PX = 4;
 
 // 반쪽마다 고치는 단추: 종이 위 제목 줄에 늘 보인다(종이 글을 가리지 않게, 인쇄에는 없음)
-function controls(k: number, info: PageInfo): HTMLElement {
+function controls(k: number, info: PageInfo, full: boolean): HTMLElement {
   const ctl = document.createElement('span');
   ctl.className = 'pctl';
   ctl.dataset.half = String(k);
@@ -40,8 +41,8 @@ function controls(k: number, info: PageInfo): HTMLElement {
     b.dataset.act = act;
     b.dataset.half = String(k);
     b.textContent = label;
-    b.title = title;
-    b.setAttribute('aria-label', `${halfLabel(k)} ${title}`);
+    b.title = full ? title.replaceAll('반쪽', '쪽') : title;
+    b.setAttribute('aria-label', `${full ? `${k + 1}장` : halfLabel(k)} ${full ? title.replaceAll('반쪽', '쪽') : title}`);
     b.disabled = disabled;
     ctl.appendChild(b);
   };
@@ -80,12 +81,12 @@ function colPoint(x: number, y: number, typo: Typo): { x: number; y: number; hal
 // 반쪽 보기(⌥2): 반쪽을 위에서부터 차례로. A4 합침 보기(⌥3): 장마다 왼쪽 + 오른쪽 반쪽.
 // 크기는 그림처럼 키우기만 해서(transform) 줄바꿈은 인쇄와 같다. 줄을 누르면 그 자리로 편집 화면이 열린다.
 // 반쪽마다 ◀ ▶ · ＋ · × 단추. 글상자 · 그림은 하나씩 끌어서 아무 자리로나(다른 반쪽으로도) 옮긴다 — 반쪽 통째로 끌지 않는다. ⌥ 누른 채 끌면 복제.
-export function PagesView({ mode, source, typo, zoom, version, reading, pageInfo, onPage, onPick, onMove, pickAt, onEditBox }: Props) {
+export function PagesView({ mode, source, typo, zoom, version, reading, pageInfo, onPage, onPick, onMove, groupIds, pickAt, onEditBox }: Props) {
   const outer = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0, scale: 1 });
-  const cb = useRef({ pageInfo, onPage, onPick, onMove, pickAt, onEditBox });
-  cb.current = { pageInfo, onPage, onPick, onMove, pickAt, onEditBox };
+  const cb = useRef({ pageInfo, onPage, onPick, onMove, groupIds, pickAt, onEditBox });
+  cb.current = { pageInfo, onPage, onPick, onMove, groupIds, pickAt, onEditBox };
   const dragged = useRef(false); // 방금 끌어 놓았으면 뒤따르는 클릭(줄 고르기)은 버린다
   const flash = useRef<{ half: number; until: number; seen?: boolean } | null>(null); // 다시 그린 뒤 잠깐 표시할 반쪽
 
@@ -95,11 +96,11 @@ export function PagesView({ mode, source, typo, zoom, version, reading, pageInfo
     host.replaceChildren();
     const halves = countHalves(source, typo);
     const info = reading ? null : cb.current.pageInfo();
-    const ctl = (k: number) => (info && info.starts.has(k) ? controls(k, info) : null);
-    if (mode === 'half') {
+    const ctl = (k: number) => (info && info.starts.has(k) ? controls(k, info, typo.pageWidth !== 'half') : null);
+    if (mode === 'half' || typo.pageWidth !== 'half') {
       for (let k = 0; k < halves; k++) {
-        const fig = labelled(buildHalf(source, typo, k), '');
-        fig.querySelector('figcaption')!.replaceChildren(caption(`${halfLabel(k)} · ${k % 2 === 0 ? '왼쪽' : '오른쪽'} 반쪽`, ctl(k)));
+        const fig = labelled(typo.pageWidth === 'half' ? buildHalf(source, typo, k) : buildSheet(source, typo, k, halves), '');
+        fig.querySelector('figcaption')!.replaceChildren(caption(typo.pageWidth === 'half' ? `${halfLabel(k)} · ${k % 2 === 0 ? '왼쪽' : '오른쪽'} 반쪽` : `${k + 1}장`, ctl(k)));
         host.appendChild(fig);
       }
     } else {
@@ -131,7 +132,7 @@ export function PagesView({ mode, source, typo, zoom, version, reading, pageInfo
     const desk = o?.parentElement;
     if (!o || !i || !desk) return;
     const measure = () => {
-      const contentW = (mode === 'half' ? 105 : 210) * PX_PER_MM;
+      const contentW = (mode === 'half' && typo.pageWidth === 'half' ? 105 : 210) * PX_PER_MM;
       const avail = Math.max(200, desk.clientWidth - 32);
       const scale = mode === 'half' ? Math.min(zoom, avail / contentW) : Math.min(1.25, avail / contentW);
       setBox({ w: contentW * scale, h: i.offsetHeight * scale, scale });
@@ -141,7 +142,7 @@ export function PagesView({ mode, source, typo, zoom, version, reading, pageInfo
     ro.observe(desk);
     ro.observe(i);
     return () => ro.disconnect();
-  }, [mode, zoom]);
+  }, [mode, zoom, typo.pageWidth]);
 
   // 글상자 · 그림 하나를 끌어 옮기기(마우스 · 펜). 반쪽마다 칼럼 전체가 복제돼 있어서,
   // 모든 복제에서 같은 만큼 밀면 반쪽을 넘어가도 놓일 자리 그대로 보인다. 손가락은 화면 넘기기라 끌지 않는다.
@@ -157,7 +158,7 @@ export function PagesView({ mode, source, typo, zoom, version, reading, pageInfo
     if (!id) return;
     e.preventDefault(); // 글자 고르기 대신 끌기
     const host = inner.current!;
-    const els = [...host.querySelectorAll<HTMLElement | SVGElement>(`[data-sid="${CSS.escape(id)}"]`)];
+    const els = cb.current.groupIds(id).flatMap((item) => [...host.querySelectorAll<HTMLElement | SVGElement>(`[data-sid="${CSS.escape(item)}"]`)]);
     const x0 = e.clientX;
     const y0 = e.clientY;
     let moved = false;
@@ -233,7 +234,7 @@ export function PagesView({ mode, source, typo, zoom, version, reading, pageInfo
     <div ref={outer} className="zoom-outer" style={{ width: box.w, height: box.h }}>
       <div
         ref={inner}
-        className={`pages ${mode}${reading ? ' ro' : ''}`}
+        className={`pages ${typo.pageWidth === 'half' ? mode : 'a4'}${reading ? ' ro' : ''}`}
         style={{ transform: `scale(${box.scale})`, ['--inv' as string]: 1 / (box.scale || 1) } as CSSProperties}
         onPointerDown={onPointerDown}
         onDoubleClick={(e) => {
@@ -267,5 +268,5 @@ export function PagesView({ mode, source, typo, zoom, version, reading, pageInfo
 export function buildPrintSheets(host: HTMLElement, source: HTMLElement, typo: Typo) {
   host.replaceChildren();
   const halves = countHalves(source, typo);
-  for (let s = 0; s < Math.ceil(halves / 2); s++) host.appendChild(buildSheet(source, typo, s, halves));
+  for (let s = 0; s < (typo.pageWidth === 'half' ? Math.ceil(halves / 2) : halves); s++) host.appendChild(buildSheet(source, typo, s, halves));
 }

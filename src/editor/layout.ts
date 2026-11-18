@@ -7,6 +7,7 @@ export const PT_MM = 25.4 / 72;
 export type FontId = string;
 
 export interface Typo {
+  pageWidth: 'a4' | 'half'; // 편집 · 인쇄 종이 폭
   font: FontId;
   fontPt: number; // 글자 크기
   pitchMm: number; // 행간(줄 간격) 목표값. 실제 값은 반쪽 높이에 맞춰 조금 바뀐다
@@ -22,6 +23,7 @@ export interface Typo {
 }
 
 export const DEFAULT_TYPO: Typo = {
+  pageWidth: 'a4',
   font: 'pretendard',
   fontPt: 8,
   pitchMm: 3.6,
@@ -67,13 +69,14 @@ export function fitPitch(typo: Pick<Typo, 'pitchMm' | 'mTop' | 'fontPt'>): { row
   return { rows, pitch: usable / rows, usable };
 }
 
-export function textWidth(typo: Pick<Typo, 'mOuter' | 'mInner'>): number {
-  return HALF_W - typo.mOuter - typo.mInner;
+export function textWidth(typo: Pick<Typo, 'mOuter' | 'mInner'> & Partial<Pick<Typo, 'pageWidth'>>): number {
+  return (typo.pageWidth === 'half' ? HALF_W : A4_W) - typo.mOuter - typo.mInner;
 }
 
 export function normalizeTypo(raw: Partial<Typo> | undefined): Typo {
   const t = { ...DEFAULT_TYPO, ...(raw ?? {}) };
   return {
+    pageWidth: t.pageWidth === 'half' ? 'half' : 'a4',
     font: t.font || DEFAULT_TYPO.font,
     fontPt: clamp(Number(t.fontPt) || DEFAULT_TYPO.fontPt, LIMITS.fontPt[0], LIMITS.fontPt[1]),
     pitchMm: clamp(Number(t.pitchMm) || DEFAULT_TYPO.pitchMm, LIMITS.pitchMm[0], LIMITS.pitchMm[1]),

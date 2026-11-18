@@ -1,0 +1,13 @@
+:root { color-scheme: light dark; font: 12px/1.5 system-ui, sans-serif; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { display: flex; flex-direction: column; }
+header { display: flex; align-items: center; gap: 8px; padding: 8px; border-bottom: 1px solid #8884; }
+strong { margin-right: auto; white-space: nowrap; }
+button { padding: 5px 8px; border: 1px solid #8885; border-radius: 6px; cursor: pointer; font: inherit; }
+form { padding: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+form[hidden] { display: none; }
+label { width: 100%; }
+input { flex: 1; min-width: 120px; padding: 6px; }
+#status { margin: 0; padding: 6px 10px; font-size: 11px; opacity: .7; }
+iframe { flex: 1; width: 100%; border: 0; min-height: 0; }

@@ -1,3 +1,4 @@
+import { copyGroups, expandGroups } from './draw/groups';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { NodeSelection, Selection, TextSelection, type Command, type EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
@@ -5,9 +6,9 @@ import { redo, undo } from 'y-prosemirror';
 import type * as Y from 'yjs';
 import { DEFAULT_DRAW, measureLines, pickedBoxes, type DrawState } from './draw/ShapesLayer';
 import { anchorAt, DEFAULT_W, hit, resolve, SHAPES, translate, unresolve, type Resolved, type Shape, type TextShape, type Tool } from './draw/model';
-import { liveBox, penWhole, plainText, textBoxes, wholeBox } from './draw/TextBox';
+import { liveBox, observeBoxSelection, penWhole, plainText, textBoxes, wholeBox } from './draw/TextBox';
 import { Fragment, type Node as PMNode } from 'prosemirror-model';
-import { circleCmd, fontCmd, hlCmd, indentCmd, penCmd, sideCmd, toggleBranchCmd, trackCmd } from './editor/commands';
+import { circleCmd, leadingCmd, fontCmd, hlCmd, indentCmd, penCmd, sideCmd, toggleBranchCmd, trackCmd } from './editor/commands';
 import { bottomOf, halvesFor, hasContent, measureBlocks, shiftOf, spanOf, textUnits, topOf, type HalfOp } from './editor/halves';
 import { newId } from './editor/ids';
 import { schema } from './editor/schema';
@@ -40,6 +41,11 @@ import { indexNotes } from './store/searchIndex';
 import { Sidebar } from './ui/Sidebar';
 import { TypePanel } from './ui/TypePanel';
 import { Versions } from './ui/Versions';
+import { ReferencePanel } from './ui/ReferencePanel';
+import { ExtensionHelp } from './ui/ExtensionHelp';
+import { saveReference } from './store/references';
+
+const COMPACT = new URLSearchParams(location.search).get('panel') === '1';
 
 const LAST = 'ayunpad-last';
 const lsGet = (k: string) => {
@@ -60,13 +66,13 @@ const lsSet = (k: string, v: string) => {
 // PC는 150%, 폰은 화면 폭에 맞춘다. 확대는 그림처럼 키우는 방식이라 줄바꿈 위치는 인쇄와 같다.
 // ⌘+휠로 바꾼 배율은 이 기기에 기억한다.
 const ZOOM = 'ayunpad-zoom';
-const clampZoom = (z: number) => Math.min(3, Math.max(0.5, Math.round(z * 100) / 100));
+const clampZoom = (z: number) => Math.min(3, Math.max(0.25, Math.round(z * 100) / 100));
 function initialZoom(): number {
   const saved = Number(lsGet(ZOOM));
-  if (saved >= 0.5 && saved <= 3) return saved;
+  if (saved >= 0.25 && saved <= 3) return saved;
   const w = window.innerWidth;
-  if (w >= 1000) return 1.5;
-  return Math.max(0.5, Math.min(1.5, (w - 24) / ((105 + GUTTER_MM) * PX_PER_MM)));
+  if (w >= 1000) return 1;
+  return Math.max(0.25, Math.min(1.5, (w - 24) / ((210 + GUTTER_MM) * PX_PER_MM)));
 }
 
 // 읽기 모드: 눌러도 노트가 안 바뀐다(확대 · 축소 · 스크롤 · 찾기 · 다른 노트 보기만). 기기마다 기억하고, 폰은 처음부터 읽기로 연다.
@@ -95,6 +101,13 @@ export function App() {
   const [noteId, setNoteId] = useState<string | null>(null);
   const [sidebar, setSidebar] = useState(() => window.innerWidth > 900);
   const [panel, setPanel] = useState(false);
+  const [references, setReferences] = useState(false);
+  const [referenceEpoch, setReferenceEpoch] = useState(0);
+  const [capturedReference, setCapturedReference] = useState<string | null>(null);
+  const [extensionHelp, setExtensionHelp] = useState(false);
+  const [pan, setPan] = useState(false);
+  const [referenceWidth, setReferenceWidth] = useState(() => Number(lsGet('ayunpad-reference-width')) || 42);
+  const workspaceRef = useRef<HTMLDivElement>(null);
   const [help, setHelp] = useState(false);
   const [menu, setMenu] = useState(false);
   const titleAtFocus = useRef('');
@@ -110,6 +123,7 @@ export function App() {
   const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([]);
   const [pen, setPen] = useState<string | null>(null);
   const [hasSel, setHasSel] = useState(false);
+  useEffect(() => observeBoxSelection(() => bump()), []);
   const [zoom, setZoom] = useState(initialZoom);
   const zoomNow = useRef(zoom);
   zoomNow.current = zoom;
@@ -263,6 +277,40 @@ export function App() {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 2200);
   }, []);
 
+  const popupPad = () => {
+    const url = new URL(location.href);
+    url.searchParams.set('panel', '1');
+    if (!window.open(url.href, 'ayunpad-mini', 'popup,width=520,height=860')) toast('팝업을 허용한 뒤 다시 열어 주세요');
+  };
+  useEffect(() => {
+    const desk = deskRef.current;
+    if (!desk) return;
+    const observer = new ResizeObserver(() => {
+      const width = (typoRef.current?.pageWidth === 'half' ? 105 : 210) + GUTTER_MM;
+      setZoom(clampZoom(Math.min(1.5, Math.max(0.25, (desk.clientWidth - 32) / (width * PX_PER_MM)))));
+    });
+    observer.observe(desk);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    const receive = (e: MessageEvent) => {
+      if (e.source !== window.parent || !e.origin.startsWith('chrome-extension://') || e.data?.type !== 'ayunpad:capture') return;
+      const id = noteRef.current;
+      if (!id || readingRef.current) { toast('고치기 모드에서 자료를 가져올 수 있어요'); return; }
+      const title = String(e.data.title ?? '웹 자료').slice(0, 500);
+      const text = String(e.data.text ?? '').slice(0, 100000);
+      const url = String(e.data.url ?? '');
+      if (!/^https?:\/\//.test(url)) return;
+      const referenceId = crypto.randomUUID();
+      void saveReference({ id: referenceId, noteId: id, kind: 'memo', title, text: `${text}\n\n출처: ${title}\n${url}` }).then(() => {
+        if (noteRef.current !== id) return;
+        setCapturedReference(referenceId); setReferenceEpoch((v) => v + 1); setReferences(true); toast('선택한 글과 출처를 참고 자료에 담았어요');
+      }).catch(() => toast('자료를 저장하지 못했어요'));
+    };
+    window.addEventListener('message', receive);
+    return () => window.removeEventListener('message', receive);
+  }, [toast]);
+
   // 그리기 상태. 색 · 굵기 · 직각 · 고정은 다음에 그리기를 켤 때도 그대로.
   const setDraw = useCallback((patch: Partial<DrawState> | null) => {
     setDrawState((cur) => {
@@ -305,7 +353,8 @@ export function App() {
     const off = hub.subscribeStatus(setSync);
     void seedIfEmpty(lib).then((seeded) => {
       const ok = (id: string | null): id is string => !!id && !!lib.notes.get(id) && !lib.notes.get(id)?.deleted;
-      const last = lsGet(LAST);
+      const requested = new URLSearchParams(location.search).get('note');
+      const last = ok(requested) ? requested : lsGet(LAST);
       const first = sortedSubjects(lib).flatMap((s) => notesOf(lib, s.id))[0]?.id ?? null;
       setNoteId(ok(last) ? last : (seeded ?? first));
       setReady(true);
@@ -341,7 +390,12 @@ export function App() {
   });
 
   useEffect(() => {
-    if (noteId) lsSet(LAST, noteId);
+    if (noteId) {
+      lsSet(LAST, noteId);
+      const url = new URL(location.href);
+      url.searchParams.set('note', noteId);
+      history.replaceState(null, '', url);
+    }
   }, [noteId]);
 
   // 로그인하면 열려 있지 않은 노트도 한 번씩 받아 둔다(다른 기기에서 고친 노트를 이 기기에도).
@@ -388,6 +442,12 @@ export function App() {
     (fn: (v: EditorView) => void, whole?: { cmd: Command; pen?: string | null }) => {
       if (readingRef.current) return toast(READ_HINT);
       const d = docRef.current;
+      const selectedBox = liveBox();
+      if (whole && selectedBox && !selectedBox.state.selection.empty) {
+        fn(selectedBox);
+        selectedBox.focus();
+        return;
+      }
       const ids = whole && d ? pickedBoxes.ids.filter((id) => d.shapes.get(id)?.t === 'text') : [];
       if (whole && d && ids.length) {
         umRef.current?.stopCapturing();
@@ -413,7 +473,24 @@ export function App() {
   const changeTypo = useCallback(
     (patch: Partial<Typo>) => {
       if (readingRef.current) return toast(READ_HINT);
-      if (docRef.current) writeTypo(docRef.current, patch);
+      const d = docRef.current;
+      const v = liveBox();
+      const boxId = v?.dom.closest<HTMLElement>('.tbox')?.dataset.sid;
+      const box = boxId ? d?.shapes.get(boxId) : null;
+      if (d && v && box?.t === 'text' && Object.keys(patch).length > 0 && Object.keys(patch).every((key) => key === 'tracking' || key === 'pitchMm')) {
+        const base = fitPitch(readTypo(d)).pitch * (box.fs ?? 1) * (box.lh ?? 1);
+        umRef.current?.stopCapturing();
+        if (!v.state.selection.empty) {
+          if (patch.tracking !== undefined) trackCmd(patch.tracking, undefined, true)(v.state, v.dispatch, v);
+          if (patch.pitchMm !== undefined) leadingCmd(patch.pitchMm / base, true)(v.state, v.dispatch, v);
+        } else {
+          const updated = { ...box, ...(patch.tracking !== undefined ? { ls: patch.tracking - readTypo(d).tracking } : {}), ...(patch.pitchMm !== undefined ? { lh: Math.min(2.5, Math.max(0.5, patch.pitchMm / (fitPitch(readTypo(d)).pitch * (box.fs ?? 1)))) } : {}) };
+          d.ydoc.transact(() => d.shapes.set(box.id, updated), SHAPES);
+        }
+        umRef.current?.stopCapturing();
+        return;
+      }
+      if (d) writeTypo(d, patch);
     },
     [toast],
   );
@@ -550,6 +627,15 @@ export function App() {
         case 'pitch-up': {
           const d = docRef.current;
           if (!d) break;
+          const box = liveBox();
+          if (box && !box.state.selection.empty) { leadingCmd(a === 'pitch-up' ? 0.05 : -0.05)(box.state, box.dispatch, box); break; }
+          const boxId = box?.dom.closest<HTMLElement>('.tbox')?.dataset.sid;
+          const shape = boxId ? d.shapes.get(boxId) : null;
+          if (shape?.t === 'text') {
+            const base = fitPitch(readTypo(d)).pitch * (shape.fs ?? 1) * (shape.lh ?? 1);
+            changeTypo({ pitchMm: base + (a === 'pitch-up' ? 0.1 : -0.1) });
+            break;
+          }
           const t = readTypo(d);
           writeTypo(d, { pitchMm: Math.round((t.pitchMm + (a === 'pitch-up' ? 0.1 : -0.1)) * 10) / 10 });
           const f = fitPitch(readTypo(d));
@@ -563,7 +649,7 @@ export function App() {
           break;
       }
     },
-    [toast, setDraw, startDraw],
+    [toast, setDraw, startDraw, changeTypo],
   );
 
   // 편집 칸 밖에 있을 때도 되는 키
@@ -816,9 +902,11 @@ export function App() {
       const r = rs.find((x) => x.id === id);
       if (!r) return refreshPages();
       const z = [...L.d.shapes.values()].reduce((m, s) => Math.max(m, s.z), 0) + 1;
-      const moved = copy ? ({ ...translate(r, dx, dy), id: newId(), z } as Resolved) : translate(r, dx, dy);
+      const ids = new Set(expandGroups(L.d.shapes.values(), [id]));
+      let moved = rs.filter((s) => ids.has(s.id)).map((s, i) => copy ? ({ ...translate(s, dx, dy), id: newId(), z: z + i } as Resolved) : translate(s, dx, dy));
+      if (copy) moved = copyGroups(moved);
       umRef.current?.stopCapturing();
-      L.d.ydoc.transact(() => L.d.shapes.set(moved.id, JSON.parse(JSON.stringify(unresolve(moved, lines))) as Shape), SHAPES);
+      L.d.ydoc.transact(() => { for (const item of moved) L.d.shapes.set(item.id, JSON.parse(JSON.stringify(unresolve(item, lines))) as Shape); }, SHAPES);
       umRef.current?.stopCapturing();
       refreshPages();
     },
@@ -996,10 +1084,13 @@ export function App() {
     const onShapes = () => {
       if (modeRef.current !== 'edit') schedulePages();
     };
+    const bodyFocus = () => { textBoxes.last = null; bump(); };
+    view?.dom.addEventListener('focus', bodyFocus);
     syncTypo();
     doc.meta.observe(syncTypo);
     doc.shapes.observe(onShapes);
     unobserve.current = () => {
+      view?.dom.removeEventListener('focus', bodyFocus);
       doc.meta.unobserve(syncTypo);
       doc.shapes.unobserve(onShapes);
     };
@@ -1073,11 +1164,21 @@ export function App() {
 
   const note = noteId ? lib.notes.get(noteId) : undefined;
   const subject = note ? lib.subjects.get(note.subjectId) : undefined;
+  const boxView = liveBox();
+  const boxId = boxView?.dom.closest<HTMLElement>('.tbox')?.dataset.sid;
+  const formatBox = boxId ? docRef.current?.shapes.get(boxId) : null;
+  const boxSelected = !!boxView && !boxView.state.selection.empty;
+  const panelTypo = typo && boxView && formatBox?.t === 'text' ? {
+    ...typo,
+    tracking: boxSelected ? (boxView.state.doc.nodeAt(boxView.state.selection.from)?.marks.find((m) => m.type === schema.marks.track)?.attrs.v ?? typo.tracking + (formatBox.ls ?? 0)) : typo.tracking + (formatBox.ls ?? 0),
+    pitchMm: fitPitch(typo).pitch * (formatBox.fs ?? 1) * (formatBox.lh ?? 1) * (boxSelected ? (boxView.state.selection.$from.parent.attrs.leading ?? 1) : 1),
+  } : typo;
   const penText = pen ? (isPenKey(pen) ? `${PEN_NAME[pen]} 펜` : '고른 색 펜') : '자동 펜';
 
   return (
-    <div className={`app${reading ? ' reading' : ''}${paper ? '' : ' paper-off'}`}>
+    <div className={`app${COMPACT ? ' compact' : ''}${reading ? ' reading' : ''}${paper ? '' : ' paper-off'}`}>
       <header className="top">
+        <button type="button" className={`tbtn references-btn${references ? ' on' : ''}`} aria-label="참고 자료 열고 닫기" aria-expanded={references} onClick={() => setReferences((v) => !v)}>▤<span className="wide-only"> 자료</span></button>
         <button type="button" className="tbtn" onClick={() => setSidebar((s) => !s)} aria-label="과목 목록 열고 닫기">
           ☰
         </button>
@@ -1116,7 +1217,7 @@ export function App() {
             편집
           </button>
           <button type="button" className={mode === 'half' ? 'on' : ''} onClick={() => act('view-half')} title="반쪽 보기 (⌥2)">
-            반쪽
+            {typo?.pageWidth === 'half' ? '반쪽' : '쪽 보기'}
           </button>
           <button type="button" className={mode === 'a4' ? 'on' : ''} onClick={() => act('view-a4')} title="A4 합침 보기 (⌥3)">
             A4
@@ -1180,7 +1281,38 @@ export function App() {
         onClose={() => setSidebar(false)}
       />
 
-      <main ref={deskRef} className={`desk${draw ? ' drawing' : ''}${OWN_PINCH ? ' own-pinch' : ''}`}>
+      <div ref={workspaceRef} className={`workspace${references ? ' with-references' : ''}`} style={{ '--reference-width': `${referenceWidth}%` } as import('react').CSSProperties}>
+      {references && noteId && <ReferencePanel key={`${noteId}:${referenceEpoch}`} noteId={noteId} lib={lib} initialActiveId={capturedReference} onClose={() => setReferences(false)} onPopup={popupPad} onExtension={() => setExtensionHelp(true)} toast={toast} />}
+      {references && noteId && <div className="reference-resizer" role="separator" aria-label="자료와 필기 너비 조절" aria-orientation="vertical" tabIndex={0} aria-valuemin={25} aria-valuemax={65} aria-valuenow={Math.round(referenceWidth)}
+        onKeyDown={(e) => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); setReferenceWidth((v) => { const next = Math.min(65, Math.max(25, v + (e.key === 'ArrowLeft' ? -2 : 2))); lsSet('ayunpad-reference-width', String(next)); return next; }); } }}
+        onPointerDown={(e) => {
+          e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId);
+        }} onPointerMove={(e) => {
+          if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+          const r = workspaceRef.current!.getBoundingClientRect();
+          const next = Math.min(65, Math.max(25, (e.clientX - r.left) / r.width * 100));
+          setReferenceWidth(next); lsSet('ayunpad-reference-width', String(next));
+        }} onPointerUp={(e) => e.currentTarget.releasePointerCapture(e.pointerId)} />}
+      <div className="note-workspace">
+      <nav className="canvas-tools" aria-label="종이 편집 도구">
+        <span>{typo?.pageWidth === 'half' ? '반쪽' : 'A4 한 장'} 편집</span>
+        {!reading && <div className="paper-width-options" role="group" aria-label="편집 종이 폭">
+          <button type="button" disabled={!typo} aria-pressed={typo?.pageWidth === 'half'} className={typo?.pageWidth === 'half' ? 'on' : ''} onClick={() => changeTypo({ pageWidth: 'half' })}>반쪽</button>
+          <button type="button" disabled={!typo} aria-pressed={typo?.pageWidth === 'a4'} className={typo?.pageWidth === 'a4' ? 'on' : ''} onClick={() => changeTypo({ pageWidth: 'a4' })}>한 장</button>
+        </div>}
+        <button type="button" aria-pressed={pan} className={pan ? 'on' : ''} onClick={() => setPan((v) => !v)}>✋ 이동</button>
+        <button type="button" onClick={() => { const width = (typo?.pageWidth === 'half' ? 105 : 210) + GUTTER_MM; setZoom(clampZoom((deskRef.current!.clientWidth - 32) / (width * PX_PER_MM))); }}>폭 맞춤</button>
+        <button type="button" onClick={popupPad} title="같은 노트를 작은 창으로">↗<span className="wide-only"> 미니 pad</span></button>
+      </nav>
+      <main ref={deskRef} onPointerDownCapture={(e) => {
+        if (!(pan || e.button === 1) || (e.button !== 0 && e.button !== 1)) return;
+        e.preventDefault(); e.stopPropagation();
+        const desk = e.currentTarget;
+        const x = e.clientX, y = e.clientY, left = desk.scrollLeft, top = desk.scrollTop;
+        const move = (ev: PointerEvent) => { desk.scrollLeft = left - (ev.clientX - x); desk.scrollTop = top - (ev.clientY - y); };
+        const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+        window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+      }} className={`desk${pan ? ' panning' : ''}${draw ? ' drawing' : ''}${OWN_PINCH ? ' own-pinch' : ''}`}>
         {zoomBadge && <div className="zoom-badge">{Math.round(zoom * 100)}%</div>}
         {ready && noteId ? (
           <>
@@ -1203,19 +1335,23 @@ export function App() {
               />
             </div>
             {mode !== 'edit' && source && typo && (
-              <PagesView mode={mode} source={source} typo={typo} zoom={zoom} version={pagesVer} reading={reading} pageInfo={pageInfo} onPage={pageOp} onPick={pickLine} onMove={moveItem} pickAt={pickItem} onEditBox={editBox} />
+              <PagesView mode={mode} source={source} typo={typo} zoom={zoom} version={pagesVer} reading={reading} pageInfo={pageInfo} onPage={pageOp} onPick={pickLine} onMove={moveItem} groupIds={(id) => expandGroups(docRef.current?.shapes.values() ?? [], [id])} pickAt={pickItem} onEditBox={editBox} />
             )}
           </>
         ) : (
           <p style={{ textAlign: 'center', color: 'var(--ink-3)' }}>{ready ? '왼쪽 목록에서 + 과목이나 + 노트로 시작하세요.' : '노트를 여는 중…'}</p>
         )}
       </main>
+      </div>
+      </div>
+      {extensionHelp && <ExtensionHelp onClose={() => setExtensionHelp(false)} />}
 
       {panel && typo && (
         <TypePanel
-          typo={typo}
+          typo={panelTypo ?? typo}
+          spacingScope={boxView ? (boxSelected ? '선택한 글자 · 줄' : '글상자 전체') : '노트 전체'}
           fonts={[...lib.fonts.values()]}
-          hasSelection={hasSel}
+          hasSelection={hasSel || boxSelected}
           onChange={changeTypo}
           onUpload={(f) => void onUpload(f)}
           onSelectionFont={(f) => withView((v) => fontCmd(f)(v.state, v.dispatch, v), { cmd: fontCmd(f) })}

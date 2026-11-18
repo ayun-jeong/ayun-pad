@@ -1,3 +1,5 @@
+import { copyGroups, expandGroups } from './groups';
+import { leadingCmd, trackCmd } from '../editor/commands';
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 import { Slice } from 'prosemirror-model';
 import { createPortal, flushSync } from 'react-dom';
@@ -8,7 +10,7 @@ import type { RuleSettings } from '../editor/inputRules';
 import { PEN_NAME, type PenKey } from '../editor/model';
 import { isMac, keyId, type ShortcutHost } from '../editor/shortcuts';
 import { circleCmd } from '../editor/commands';
-import { emptyTextDoc, penWhole, plainText, TextBox, textDoc, wholeBox, withEffects } from './TextBox';
+import { liveBox, emptyTextDoc, penWhole, plainText, TextBox, textDoc, wholeBox, withEffects } from './TextBox';
 import { clip, copyShapes, forgetOnOtherCopy, shapesIn } from './clip';
 import {
   anchorAt,
@@ -248,7 +250,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     if (readRef.current) return;
     e.preventDefault();
     e.stopPropagation();
-    ix.sel = [id];
+    ix.sel = expandGroups(shapes.values(), [id]);
     ix.wsel = [];
     // 누른 채 끌면 바로 옮기기, 곧 한 번 더 누르면 두 번 누르기(글상자는 고치기)
     const r = byId(id);
@@ -257,7 +259,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     if (r && layer.current && e.button === 0) {
       ix.pid = e.pointerId;
       layer.current.setPointerCapture(e.pointerId);
-      ix.drag = { mode: 'move', start: p, bases: [r], moved: false };
+      ix.drag = { mode: 'move', start: p, bases: ix.sel.map(byId).filter(isR), moved: false };
     }
     setDraw({ tool: 'select', picked: true });
     repaint();
@@ -474,7 +476,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
         if (first >= 0) onTextMarquee?.(first, last, ids);
         else if (ids.length || wids.length) {
           // 글 없이 그림만: 바로 옮기기 · 색 · 지우기를 할 수 있게 고른 채 그리기 막대로
-          ix.sel = ids;
+          ix.sel = expandGroups(shapes.values(), ids);
           ix.wsel = wids;
           setDraw({ tool: 'select', picked: true });
           repaint();
@@ -541,6 +543,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     if (!hidden) geo.current = { lines, W, H };
   }
   const resolved = all.map((s) => ix.drafts.get(s.id) ?? resolve(s, lines));
+  ix.sel = expandGroups(shapes.values(), ix.sel);
   pickedBoxes.ids = draw && !reading ? ix.sel.filter((id) => id !== editing && shapes.get(id)?.t === 'text') : [];
   useEffect(() => () => void (pickedBoxes.ids = []), []);
   const byId = (id: string | null | undefined) => (id ? resolved.find((r) => r.id === id) : undefined);
@@ -587,7 +590,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   const putTyping = useCallback((s: Shape) => !readRef.current && ydoc.transact(() => shapes.set(s.id, clean(s)), SHAPES), [ydoc, shapes]);
   const nextZ = () => all.reduce((m, s) => Math.max(m, s.z), 0) + 1;
   const pickOnly = (ids: string[]) => {
-    ix.sel = ids;
+    ix.sel = expandGroups(shapes.values(), ids);
     ix.wsel = [];
   };
   // ⌥ 복제로 끄는 동안 원본 자리에 남는 흐린 모습. 글상자는 그려진 것을 복제해 원래 자리에(선 · 도형은 SVG로 그린다)
@@ -934,7 +937,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
     let only: string | undefined;
     if (e.shiftKey) {
       if (inSel) toggle = target.id;
-      else ix.sel = [...ix.sel, target.id];
+      else ix.sel = expandGroups(shapes.values(), [...ix.sel, target.id]);
     } else if (!inSel) pickOnly([target.id]);
     else if (ix.sel.length > 1 || ix.wsel.length) only = target.id;
     ix.drag = { mode: 'move', start: p, bases: ix.sel.map(byId).filter(isR), moved: false, toggle, only };
@@ -1075,7 +1078,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
       if (g.moved && drafts.length && g.mode === 'move' && g.copy && e.altKey && g.d) addCopies(g.bases, g.d.x, g.d.y);
       else if (g.moved && drafts.length) putGeometry(drafts);
       else if (g.mode === 'move') {
-        if (g.toggle) ix.sel = ix.sel.filter((x) => x !== g.toggle);
+        if (g.toggle) { const ids = new Set(expandGroups(shapes.values(), [g.toggle])); ix.sel = ix.sel.filter((x) => !ids.has(x)); }
         else if (g.only) pickOnly([g.only]);
       }
       repaint();
@@ -1104,6 +1107,16 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
 
   // 글씨 크기 · 자간 · 행간: 고른 글상자 모두(글씨 크기는 고른 위젯도). 한 번의 ⌘Z로 되돌린다.
   const format = (k: FmtKey, dir: 1 | -1) => {
+    const v = liveBox();
+    const boxId = v?.dom.closest<HTMLElement>('.tbox')?.dataset.sid;
+    if (v && !v.state.selection.empty && boxId && (boxId === editing || ix.sel.includes(boxId)) && (k === 'ls' || k === 'lh')) {
+      const cmd = k === 'ls' ? trackCmd(FMT.ls.step * dir) : leadingCmd(FMT.lh.step * dir);
+      um?.stopCapturing();
+      cmd(v.state, v.dispatch, v);
+      um?.stopCapturing();
+      v.focus();
+      return;
+    }
     const f = FMT[k];
     const texts = selShapes().filter((s): s is TextShape => s.t === 'text');
     const wids = k === 'fs' ? ix.wsel : [];
@@ -1147,9 +1160,30 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
   const addCopies = (list: Resolved[], dx: number, dy: number, ls: Lines = lines) => {
     if (!list.length) return;
     const z0 = nextZ();
-    const copies = list.map((r, i) => unresolve({ ...translate(r, dx, dy), id: newId(), z: z0 + i } as Resolved, ls));
+    const copies = copyGroups(list.map((r, i) => unresolve({ ...translate(r, dx, dy), id: newId(), z: z0 + i } as Resolved, ls)));
     write(() => copies.forEach((s) => shapes.set(s.id, clean(s))));
     pickOnly(copies.map((s) => s.id));
+    repaint();
+  };
+  const groupSelection = (ungroup = false) => {
+    const ids = expandGroups(shapes.values(), ix.sel);
+    const list = ids.map((id) => shapes.get(id)).filter((s): s is Shape => !!s);
+    if (ungroup ? !list.some((s) => s.group) : list.length < 2) {
+      host.toast(ungroup ? '해제할 그룹을 골라 주세요' : '두 개 이상의 글상자 · 도형을 골라 주세요');
+      return;
+    }
+    const group = newId();
+    write(() => {
+      for (const s of list) {
+        const next = { ...s };
+        if (ungroup) delete next.group;
+        else next.group = group;
+        shapes.set(s.id, clean(next));
+      }
+    });
+    ix.sel = ids;
+    ix.wsel = [];
+    host.toast(ungroup ? '그룹을 해제했어요 (⌘Z로 되돌림)' : `${list.length}개를 그룹으로 묶었어요 (⌘⇧G로 해제)`);
     repaint();
   };
   const duplicate = () => addCopies(ix.sel.map(byId).filter(isR), 2, pitch);
@@ -1301,7 +1335,9 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
           else remove();
           repaint();
         } else remove();
-      } else if (id === 'mod+KeyD') duplicate();
+      } else if (id === 'mod+KeyG') groupSelection();
+      else if (id === 'mod+shift+KeyG') groupSelection(true);
+      else if (id === 'mod+KeyD') duplicate();
       else if (id === 'mod+KeyA') selectAll();
       else if (id === 'mod+KeyC') handled = copySel();
       else if (id === 'mod+KeyX') {
@@ -1556,6 +1592,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, editor, pitch, tick, draw, 
             highlight={highlight}
             remove={remove}
             duplicate={duplicate}
+            groupSelection={groupSelection}
             finish={finishPath}
             toTools={() => {
               pickOnly([]);
@@ -1617,6 +1654,7 @@ interface BarProps {
   highlight(c: string | null): void;
   remove(): void;
   duplicate(): void;
+  groupSelection(ungroup?: boolean): void;
   finish(): void;
   toTools(): void;
 }
@@ -1627,7 +1665,7 @@ const mod = isMac ? '⌘' : 'Ctrl+';
 
 // 그리기 막대. 무엇이든 고르면 고른 것(여러 개면 모두)의 색 · 굵기 · 직각 · 화살촉 · 점선 · 글씨 · 형광펜 · 복제 · 지우기,
 // 고른 게 없으면 새로 그릴 도구와 설정.
-function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highlight, remove, duplicate, finish, toTools }: BarProps) {
+function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highlight, remove, duplicate, groupSelection, finish, toTools }: BarProps) {
   // 커서를 뺏지 않고, 누름이 그림 층(종이)으로 올라가지 않게
   const keep = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -1749,6 +1787,8 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highligh
             </div>
           )}
           <div className="dgroup">
+            {sel.length >= 2 && <button type="button" onClick={() => groupSelection()} title={`그룹 묶기 (${mod}G)`}>그룹 묶기</button>}
+            {sel.some((s) => s.group) && <button type="button" onClick={() => groupSelection(true)} title={`그룹 해제 (${mod}⇧G)`}>그룹 해제</button>}
             {sel.length > 0 && (
               <button type="button" onClick={duplicate} title={`복제 (${mod}D) · ${mod}C ${mod}V로 복사 · 붙여넣기`}>
                 복제
