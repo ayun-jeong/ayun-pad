@@ -103,6 +103,7 @@ export function tboxStyle(r: Resolved & { t: 'text' }): CSSProperties {
 }
 
 interface BoxProps {
+  layer?:number;
   r: Resolved & { t: 'text' };
   um: Y.UndoManager | null;
   settings: RuleSettings;
@@ -287,7 +288,7 @@ export const liveBox = () => {
   return v && !v.isDestroyed && v.dom.isConnected ? v : null;
 };
 
-export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFocus, onBlur, onDrag, onDelete, onPatch, selected, onPick, reading }: BoxProps) {
+export function TextBox({ layer, r, um, settings, host, active, autoFocus, onSave, onFocus, onBlur, onDrag, onDelete, onPatch, selected, onPick, reading }: BoxProps) {
   const mount = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -385,7 +386,7 @@ export function TextBox({ r, um, settings, host, active, autoFocus, onSave, onFo
       ref={box}
       className={`tbox${active ? ' tedit' : ''}${r.box ? ' boxed' : ''}${r.frame ? ' shape-text' : ''}`}
       data-sid={r.id}
-      style={tboxStyle(r)}
+      style={{...tboxStyle(r),zIndex:layer}}
       onFocus={onFocus}
       onBlur={(e) => {
         const target = e.relatedTarget as HTMLElement | null;

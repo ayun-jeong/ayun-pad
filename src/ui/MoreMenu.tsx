@@ -23,10 +23,10 @@ const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator
 const M = mac ? '⌘' : 'Ctrl+';
 const A = mac ? '⌥' : 'Alt+';
 
-// 위쪽 막대의 ⋯: 자주 안 쓰는 것을 한곳에(찾기 · 강조 · 글자 모양 · 배율 · 인쇄 · 로그인 · 백업 · 도움말)
+// 위쪽 막대의 환경설정: 자주 안 쓰는 것을 한곳에(찾기 · 강조 · 글자 모양 · 배율 · 인쇄 · 로그인 · 백업 · 도움말)
 export function MoreMenu({ mode, pageWidth, onPageWidth, zoom, reading, syncText, syncState, act, onZoom, onZoomValue, onAccount, onExport, onImport, onHelp, onClose }: Props) {
   const box = useRef<HTMLDivElement>(null);
-  // 바깥을 누르거나 Esc면 닫는다(⋯ 단추는 스스로 열고 닫는다)
+  // 바깥을 누르거나 Esc면 닫는다(환경설정 단추는 스스로 열고 닫는다)
   useEffect(() => {
     const down = (e: PointerEvent) => {
       const t = e.target as HTMLElement | null;
@@ -52,7 +52,7 @@ export function MoreMenu({ mode, pageWidth, onPageWidth, zoom, reading, syncText
     </button>
   );
   return (
-    <div className="menu more" role="menu" aria-label="더 보기" ref={box}>
+    <div className="menu more" role="menu" aria-label="환경설정" ref={box}>
       <div className="menu-row narrow-only" role="group" aria-label="보기">
         <span>보기</span>
         <button type="button" className={pageWidth === 'half' ? 'on' : ''} aria-pressed={pageWidth === 'half'} onClick={run(() => onPageWidth('half'))}>반쪽</button>

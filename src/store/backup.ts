@@ -1,3 +1,4 @@
+import { exportImages, importImageSource, uploadPendingImages } from './imageAssets';
 import * as Y from 'yjs';
 import { fromB64, toB64 } from './b64';
 import type { Library } from './library';
@@ -13,17 +14,20 @@ interface Backup {
   exportedAt: string;
   library: string;
   notes: Record<string, string>;
+  images?: Record<string,string>;
 }
 
 export async function exportBackup(lib: Library): Promise<{ blob: Blob; notes: number }> {
   const notes: Record<string, string> = {};
+  const images=new Set<string>();
   for (const n of lib.notes.values()) {
     const d = openNote(n.id);
     await d.ready;
+    for(const shape of d.shapes.values())if(shape.t==='image')images.add(shape.asset);
     notes[n.id] = toB64(Y.encodeStateAsUpdate(d.ydoc));
     d.destroy();
   }
-  const data: Backup = { app: 'ayun-pad', version: 1, exportedAt: new Date().toISOString(), library: toB64(Y.encodeStateAsUpdate(lib.ydoc)), notes };
+  const data: Backup = { app: 'ayun-pad', version: 1, exportedAt: new Date().toISOString(), library: toB64(Y.encodeStateAsUpdate(lib.ydoc)), notes, images:await exportImages(images) };
   return { blob: new Blob([JSON.stringify(data)], { type: 'application/json' }), notes: Object.keys(notes).length };
 }
 
@@ -35,6 +39,7 @@ export async function importBackup(lib: Library, text: string): Promise<number> 
     throw new Error('JSON 파일이 아닙니다');
   }
   if (data?.app !== 'ayun-pad' || typeof data.library !== 'string' || typeof data.notes !== 'object') throw new Error('ayun pad 백업 파일이 아닙니다');
+  for(const [id,src] of Object.entries(data.images??{}))await importImageSource(id,src);
   Y.applyUpdate(lib.ydoc, fromB64(data.library));
   let count = 0;
   for (const [id, state] of Object.entries(data.notes)) {
@@ -45,6 +50,7 @@ export async function importBackup(lib: Library, text: string): Promise<number> 
     d.destroy();
     count++;
   }
+  void uploadPendingImages();
   return count;
 }
 

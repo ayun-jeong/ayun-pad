@@ -22,6 +22,11 @@ export function FoldedSurface({ enabled, source, typo, zoom, version, gutter, on
   current.current = { enabled, half, typo, zoom };
   const callbacks = useRef({ onHeight, onMap }); callbacks.current = { onHeight, onMap };
 
+  useEffect(()=>{
+    const activate=(event:Event)=>{const next=(event as CustomEvent<number>).detail;if(Number.isInteger(next)&&next>=0)setHalf(next);};
+    window.addEventListener('ayunpad-activate-half',activate);return()=>window.removeEventListener('ayunpad-activate-half',activate);
+  },[]);
+
   const position = useCallback(() => {
     const node = root.current;
     const host = snapshots.current;
@@ -133,10 +138,10 @@ export function FoldedSurface({ enabled, source, typo, zoom, version, gutter, on
       // React portals (the floating text tools) are outside this canvas even
       // though their events still travel through its React ancestors.
       if (!root.current?.contains(targetElement)) return;
-      if (targetElement.closest('.fold-live-window .tbox, .fold-live-window .sh-text-width')) return;
+      if (targetElement.closest('.fold-live-window .tbox, .fold-live-window .sh-text-width, .fold-live-window .sh-image-hit, .fold-live-window .sh-image-handle')) return;
       const point = mapPoint(event);
       if (!point) return;
-      const origin = targetElement.closest('.tbox')?.closest<HTMLElement>('.phalf[data-half]');
+      const origin = targetElement.closest('.tbox, image[data-sid]')?.closest<HTMLElement>('.phalf[data-half]');
       const next = origin ? Number(origin.dataset.half) : Math.floor((point.y + .00001) / fitPitch(typo).usable);
       if (next === half) return;
       // Replay the initial press onto the live DOM after moving it into place.

@@ -76,6 +76,7 @@ function valid(list: unknown): Resolved[] | null {
       const csOk = cs === undefined || (Array.isArray(cs) && cs.every((c) => c === null || (Array.isArray(c) && c.length === 2 && xy(c[0]) && xy(c[1]))));
       return Array.isArray(s.pts) && s.pts.length >= 2 && s.pts.every(xy) && csOk;
     }
+    if (s.t === 'image') return xy(s.a)&&xy(s.b)&&typeof s.asset==='string'&&(!s.dataUrl||/^data:image\/(png|jpeg|webp);base64,/i.test(s.dataUrl));
     if (s.t === 'text') return xy(s.a) && num(s.bw);
     if (s.t === 'rect' || s.t === 'ellipse') return xy(s.a) && xy(s.b);
     return false;

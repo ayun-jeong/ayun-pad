@@ -1,3 +1,4 @@
+import { bindImageAssets, imageSource } from './store/imageAssets';
 import { copyGroups, expandGroups } from './draw/groups';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { NodeSelection, Selection, TextSelection, type Command, type EditorState } from 'prosemirror-state';
@@ -6,7 +7,7 @@ import { requestDrawingHistory } from './draw/drawingHistory';
 import type * as Y from 'yjs';
 import { DEFAULT_DRAW, measureLines, pickedBoxes, type DrawState } from './draw/ShapesLayer';
 import { anchorAt, DEFAULT_W, hit, resolve, SHAPES, translate, unresolve, type Resolved, type Shape, type TextShape, type Tool } from './draw/model';
-import { liveBox, observeBoxSelection, penWhole, plainText, textBoxes, wholeBox } from './draw/TextBox';
+import { emptyTextDoc, liveBox, observeBoxSelection, penWhole, plainText, textBoxes, textDoc, wholeBox } from './draw/TextBox';
 import { Fragment, type Node as PMNode } from 'prosemirror-model';
 import { circleCmd, leadingCmd, fontCmd, hlCmd, indentCmd, penCmd, sideCmd, toggleBranchCmd, trackCmd, sizeCmd } from './editor/commands';
 import { bottomOf, halvesFor, hasContent, measureBlocks, shiftOf, spanOf, textUnits, topOf, type HalfOp } from './editor/halves';
@@ -89,6 +90,7 @@ const EDIT_ACTIONS = new Set<AppAction>(['type', 'draw', 'draw-text', 'draw-arro
 // 글은 글상자로 쓴다. 빈 종이를 누르면 그 자리에 글상자가 생긴다.
 const BOX_HINT = '글상자에서 써요 · 빈 종이를 누르면 그 자리에 글상자가 생겨요';
 // 사파리(gesture 이벤트)가 아닌 폰 · 태블릿(안드로이드 등)은 두 손가락 오므리기 · 벌리기를 직접 받아 노트 배율로
+const emptyMainBox=(r:Resolved)=>r.t==='text'&&r.pageMain&&!r.frame&&!r.box&&textDoc(r).content.content.every(n=>n.type.name==='line'&&n.content.size===0&&n.attrs.kind==='plain');
 const OWN_PINCH = !('GestureEvent' in window);
 
 const keepFocus = (e: { preventDefault(): void }) => e.preventDefault();
@@ -99,9 +101,12 @@ export function App() {
   const [, bump] = useReducer((x: number) => x + 1, 0);
   const [ready, setReady] = useState(false);
   const [noteId, setNoteId] = useState<string | null>(null);
-  const [sidebar, setSidebar] = useState(() => window.innerWidth > 900);
+  const [activeLeftPanel,setActiveLeftPanel]=useState<'materials'|'subjects'|null>(()=>window.innerWidth>900?'subjects':null);
+  const sidebar=activeLeftPanel==='subjects';
+  const references=activeLeftPanel==='materials';
+  const setSidebar=(value:boolean|((open:boolean)=>boolean))=>setActiveLeftPanel(current=>{const open=typeof value==='function'?value(current==='subjects'):value;return open?'subjects':current==='subjects'?null:current;});
+  const setReferences=(value:boolean|((open:boolean)=>boolean))=>setActiveLeftPanel(current=>{const open=typeof value==='function'?value(current==='materials'):value;return open?'materials':current==='materials'?null:current;});
   const [panel, setPanel] = useState(false);
-  const [references, setReferences] = useState(false);
   const [referenceEpoch, setReferenceEpoch] = useState(0);
   const [capturedReference, setCapturedReference] = useState<string | null>(null);
   const [extensionHelp, setExtensionHelp] = useState(false);
@@ -110,7 +115,25 @@ export function App() {
   const [referenceWidth, setReferenceWidth] = useState(() => Number(lsGet('ayunpad-reference-width')) || 42);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const [help, setHelp] = useState(false);
-  const [menu, setMenu] = useState(false);
+  const [activeTopRightMenu,setActiveTopRightMenu]=useState<'insert'|'search'|'settings'|null>(null);
+  const [findInitial,setFindInitial]=useState('');
+  const menu=activeTopRightMenu==='settings';
+  const insert=activeTopRightMenu==='insert';
+  const find=activeTopRightMenu==='search'?{initial:findInitial}:null;
+  const setMenu=useCallback((value:boolean|((open:boolean)=>boolean))=>setActiveTopRightMenu(current=>{const open=typeof value==='function'?value(current==='settings'):value;return open?'settings':current==='settings'?null:current;}),[]);
+  const setInsert=useCallback((value:boolean|((open:boolean)=>boolean))=>setActiveTopRightMenu(current=>{const open=typeof value==='function'?value(current==='insert'):value;return open?'insert':current==='insert'?null:current;}),[]);
+  const setFind=useCallback((value:{initial:string}|null)=>{if(value)setFindInitial(value.initial);setActiveTopRightMenu(current=>value?'search':current==='search'?null:current);},[]);
+  useEffect(()=>{
+    if(!activeTopRightMenu)return;
+    const close=(e:PointerEvent)=>{const target=e.target as Element|null;if(target?.closest('.desk')&&!target.closest('.tbox,.wg')&&!target.closest('.editor p')?.textContent?.trim())setActiveTopRightMenu(null);};
+    const escape=(e:KeyboardEvent)=>{if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();setActiveTopRightMenu(null);}};
+    document.addEventListener('pointerdown',close,true);window.addEventListener('keydown',escape,true);return()=>{document.removeEventListener('pointerdown',close,true);window.removeEventListener('keydown',escape,true);};
+  },[activeTopRightMenu]);
+  useEffect(()=>{
+    const top=document.querySelector<HTMLElement>('.top');if(!top)return;
+    const update=()=>top.parentElement?.style.setProperty('--topbar-height',`${top.offsetHeight}px`);
+    const observer=new ResizeObserver(update);observer.observe(top);update();return()=>observer.disconnect();
+  },[]);
   const titleAtFocus = useRef('');
   const closeMenu = useCallback(() => setMenu(false), []);
   // 찾기 판의 검색어(다른 노트로 옮겨 가며 판이 다시 떠도 이어지게)
@@ -235,14 +258,12 @@ export function App() {
   const [source, setSource] = useState<HTMLElement | null>(null);
   const [sync, setSync] = useState<SyncStatus>(() => hub.status());
   const [draw, setDrawState] = useState<DrawState | null>(null);
-  const [find, setFind] = useState<{ initial: string } | null>(null);
   const [edState, setEdState] = useState<EditorState | null>(null);
   const [search, setSearch] = useState<{ live: { noteId: string; doc: import('prosemirror-model').Node; shapes?: import('./draw/model').Shape[] } | null } | null>(null);
   const findRef = useRef(false);
   findRef.current = !!find;
   const pendingJump = useRef<{ noteId: string; target: JumpTarget } | null>(null);
   const [colorPop, setColorPop] = useState<'pen' | 'hl' | null>(null);
-  const [insert, setInsert] = useState(false);
   const [emph, setEmph] = useState(false);
   const emphRef = useRef(false);
   emphRef.current = emph;
@@ -323,6 +344,8 @@ export function App() {
     },
     [setDraw],
   );
+
+  useEffect(() => bindImageAssets(lib), [lib]);
 
   // 시작: 목록 열기 → (처음이면) 사용 안내 → 로그인 확인 → 동기화
   useEffect(() => {
@@ -523,7 +546,15 @@ export function App() {
           setPanel((p) => !p);
           break;
         case 'print':
-          window.print();
+          void (async()=>{
+            try{
+              const images=[...(docRef.current?.shapes.values()??[])].filter(s=>s.t==='image');
+              const sources=await Promise.all(images.map(s=>imageSource(s.asset)));
+              if(sources.some(s=>!s)){toast('이미지를 불러온 뒤 다시 인쇄해 주세요');return;}
+              await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
+              window.print();
+            }catch{toast('이미지를 불러오지 못했어요. 다시 시도해 주세요');}
+          })();
           break;
         case 'search': {
           const v = viewRef.current;
@@ -651,6 +682,7 @@ export function App() {
         return;
       }
       if (id === 'Escape') {
+        setActiveTopRightMenu(null);
         if (drawRef.current) return; // 그리기 중 Esc는 그림 층이 받는다
         setPanel(false);
         setHelp(false);
@@ -764,7 +796,7 @@ export function App() {
     return { lines, th, rs: [...L.d.shapes.values()].map((s) => resolve(s, lines)) };
   }, []);
   // 반쪽 수: 칼럼 높이(글상자 · 그림 · 끝에 넣은 빈 반쪽까지)
-  const halvesNow = (L: NonNullable<ReturnType<typeof layoutNow>>) => halvesFor(L.src.offsetHeight / PX_PER_MM, L.usable);
+  const halvesNow = (L: NonNullable<ReturnType<typeof layoutNow>>) => Number(L.src.dataset.halves)||halvesFor(L.src.offsetHeight / PX_PER_MM, L.usable);
   // 그림 · 글상자가 차지하는 반쪽 [집(맨 위가 든 반쪽), 끝]
   const spanNow = (r: Resolved, th: (id: string) => number, usable: number) => spanOf(topOf(r), bottomOf(r, th), usable);
 
@@ -840,7 +872,7 @@ export function App() {
       for (let k = a; k <= Math.min(b, H - 1); k++) busy.add(k);
     };
     const { rs, th } = resolvedShapes(L);
-    for (const r of rs) mark(spanNow(r, th, L.usable));
+    for (const r of rs) if(!(emptyMainBox(r))) mark(spanNow(r, th, L.usable));
     for (const b of measureBlocks(L.v, L.usable, PX_PER_MM, L.zoom)) if (hasContent(b.node)) mark(spanOf(b.top, b.top + b.height, L.usable));
     const all = Array.from({ length: H }, (_, k) => k);
     return { starts: new Set(all), blank: new Set(H > 1 ? all.filter((k) => !busy.has(k)) : []), last: H - 1 };
@@ -848,14 +880,14 @@ export function App() {
   // 반쪽 옮기기 · 빈 반쪽 넣기 · 지우기: 그 반쪽에 맨 위가 든 글상자 · 그림을 반쪽 높이만큼 옮긴다(본문 글이 있으면 먼저 글상자로).
   // 돌려주는 값: 다 하고 나서 눈으로 따라갈 반쪽(잠깐 표시). 반쪽 수도 같은 되돌리기 칸이라 ⌘Z 한 번이면 다 돌아온다.
   const pageOp = useCallback(
-    (op: PageOp): number | undefined => {
+    (op: PageOp, count?:number): number | undefined => {
       if (readingRef.current) {
         toast(READ_HINT);
         return;
       }
       let L = layoutNow();
       if (!L) return;
-      let H = halvesNow(L);
+      let H = count??halvesNow(L);
       const h: HalfOp = op.t === 'shift' ? { t: 'move', from: op.half, to: op.half + op.dir } : op;
       if (h.t === 'move' && (h.to < 0 || h.to >= H || h.from === h.to)) return;
       if (h.t === 'del' && !pageInfo().blank.has(h.half)) {
@@ -865,12 +897,13 @@ export function App() {
       const converted = h.t !== 'del' && measureBlocks(L.v, L.usable, PX_PER_MM, L.zoom).some((b) => hasContent(b.node)) ? convertBody().length : 0;
       L = layoutNow();
       if (!L) return;
-      H = Math.max(H, halvesNow(L));
+      H = count??Math.max(H, halvesNow(L));
       const { lines, rs, th } = resolvedShapes(L);
       const d = L.d;
       const usable = L.usable;
       d.ydoc.transact(() => {
         for (const r of rs) {
+          if(h.t==='del'&&emptyMainBox(r)&&spanNow(r,th,usable)[0]===h.half){d.shapes.delete(r.id);continue;}
           const k = shiftOf(h, Math.min(H - 1, spanNow(r, th, usable)[0]));
           if (k) d.shapes.set(r.id, JSON.parse(JSON.stringify(unresolve(translate(r, 0, k * usable), lines))) as Shape);
         }
@@ -885,6 +918,25 @@ export function App() {
     },
     [layoutNow, resolvedShapes, convertBody, pageInfo, refreshPages, toast],
   );
+  const appendPage=useCallback((count:number)=>{
+    if(readingRef.current)return;
+    const L=layoutNow();if(!L)return;
+    const id=newId(),a={l:null,r:0,x:0,y:count*L.usable+1};
+    const z=Math.max(0,...Array.from(L.d.shapes.values()).map(s=>s.z))+1;
+    umRef.current?.stopCapturing();
+    L.d.ydoc.transact(()=>{
+      writeHalves(L.d,count+1);
+      L.d.shapes.set(id,{id,t:'text',pageMain:true,a,bw:L.W,text:'',doc:emptyTextDoc(),c:'k',w:DEFAULT_W,z});
+    },SHAPES);
+    umRef.current?.stopCapturing();setDraw(null);setActiveTopRightMenu(null);refreshPages();
+    requestAnimationFrame(()=>{
+      window.dispatchEvent(new CustomEvent('ayunpad-activate-half',{detail:count}));
+      requestAnimationFrame(()=>{
+        window.dispatchEvent(new CustomEvent('ayunpad-edit-box',{detail:id}));
+        srcRef.current?.querySelector(`.tbox[data-sid="${id}"]`)?.scrollIntoView({block:'center',inline:'nearest'});
+      });
+    });
+  },[layoutNow,refreshPages,setDraw]);
   // 보기 화면에서 글상자 · 그림 하나를 끌어 옮기기(반쪽을 넘어가도 된다). 좌표는 칼럼 기준 mm.
   // copy(⌥ 누른 채 끌기): 원본은 그대로 두고 놓은 자리에 복사본(맨 위에, 되돌리기 한 번)
   const moveItem = useCallback(
@@ -1013,11 +1065,13 @@ export function App() {
 
   const onExport = useCallback(async () => {
     toast('백업 파일을 만드는 중…');
+    try{
     const { blob, notes } = await exportBackup(lib);
     const d = new Date();
     const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
     download(blob, `ayunpad-backup-${stamp}.json`);
     toast(`노트 ${notes}개를 백업 파일로 저장했어요`);
+    }catch(error){toast(error instanceof Error?error.message:'백업을 저장하지 못했어요');}
   }, [lib, toast]);
 
   const onImport = useCallback(
@@ -1117,7 +1171,7 @@ export function App() {
       { name: '반쪽 보기', keys: '⌥2', run: () => act('view-half') },
       { name: 'A4 합침 보기', keys: '⌥3', run: () => act('view-a4') },
       { name: '반쪽 옮기기 · 빈 반쪽 넣기 · 글상자 옮기기(A4 보기에서 ◀ ▶ · ＋ · ×, 글상자 끌기)', alias: ['페이지 옮기기', '페이지 추가', '페이지 삭제', '반쪽 순서', '왼쪽 오른쪽', '글상자 옮기기'], run: () => act('view-a4') },
-      { name: '인쇄 · PDF 저장', keys: '⌘P', alias: ['print', '프린트'], run: () => setTimeout(() => window.print(), 80) },
+      { name: '인쇄 · PDF 저장', keys: '⌘P', alias: ['print', '프린트'], run: () => act('print') },
       { name: '넣기: 표 · 수직선 · 연표 · 그래프 · 분수 · 글상자 · 도형', alias: ['insert', '표', '그래프', '수직선', '연표', '글상자', '네모'], run: () => act('insert') },
       { name: '그리기', keys: '⌥D', alias: ['draw', '화살표', '도형'], run: () => act('draw') },
       { name: '찾기 · 일괄 강조', keys: '⌘F', alias: ['find', '바꾸기', '동그라미'], run: () => act('find') },
@@ -1173,7 +1227,7 @@ export function App() {
     <div className={`app${COMPACT ? ' compact' : ''}${reading ? ' reading' : ''} paper-off`}>
       <header className="top">
         <button type="button" className={`tbtn references-btn${references ? ' on' : ''}`} aria-label="참고 자료 열고 닫기" aria-expanded={references} onClick={() => setReferences((v) => !v)}><ReferenceIcon name="panel" /><span className="wide-only"> 자료</span></button>
-        <button type="button" className="tbtn" onClick={() => setSidebar((s) => !s)} aria-label="과목 목록 열고 닫기">
+        <button type="button" className={`tbtn${sidebar ? ' on' : ''}`} onClick={() => setSidebar((s) => !s)} aria-label="과목 목록 열고 닫기" aria-expanded={sidebar}>
           ☰
         </button>
         <div className="crumb">
@@ -1208,15 +1262,15 @@ export function App() {
           {reading ? '읽기 중' : '읽기'}
         </button>
         {!reading && (
-          <button type="button" className={`tbtn insert-btn${insert || draw ? ' on' : ''}`} onClick={() => act('insert')} aria-label="넣기 · 그리기" aria-expanded={insert} title="넣기 · 그리기: 글상자 · 도형 · 표 · 그래프 · 수식 (그리기 ⌥D, 본문에서 / 도 됨)">
+          <button type="button" className={`tbtn insert-btn${insert ? ' on' : ''}`} onClick={() => act('insert')} data-top-menu="insert" aria-label="넣기 · 그리기" aria-expanded={insert} title="넣기 · 그리기: 글상자 · 도형 · 표 · 그래프 · 수식 (그리기 ⌥D, 본문에서 / 도 됨)">
             ＋<span className="wide-only"> 넣기</span>
           </button>
         )}
-        <button type="button" className={`tbtn${find ? ' on' : ''}`} onClick={() => (find ? closeFind() : act('find'))} title="찾기: 찾은 곳에 동그라미 · 밑줄 · 형광펜, 강조 지우기, 다른 노트 결과도 (⌘F) · 전체 검색 · 명령은 ⌘K" aria-label="찾기">
+        <button type="button" className={`tbtn${find ? ' on' : ''}`} onClick={() => (find ? closeFind() : act('find'))} title="찾기: 찾은 곳에 동그라미 · 밑줄 · 형광펜, 강조 지우기, 다른 노트 결과도 (⌘F) · 전체 검색 · 명령은 ⌘K" data-top-menu="search" aria-label="찾기" aria-expanded={!!find}>
           ⌕<span className="wide-only"> 찾기</span>
         </button>
-        <button type="button" className={`tbtn more-btn${menu ? ' on' : ''}`} onClick={() => { setInsert(false); setAccount(false); setMenu((x) => !x); }} aria-label="더 보기" aria-expanded={menu} title="찾기 · 강조 · 글자 모양 · 배율 · 인쇄 · 계정 · 백업 · 도움말">
-          ⋯
+        <button type="button" className={`tbtn more-btn${menu ? ' on' : ''}`} onClick={() => { setInsert(false); setAccount(false); setMenu((x) => !x); }} data-top-menu="settings" aria-label="환경설정" aria-expanded={menu} title="환경설정 · 글자 모양 · 배율 · 인쇄/PDF · 계정 · 백업 · 도움말">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9.5 3-.6 2.1-1.8 1L5 5.6 2.5 10l1.5 1.6v1.9L2.5 15 5 19.4l2.1-.5 1.8 1 .6 2.1h5l.6-2.1 1.8-1 2.1.5 2.5-4.4-1.5-1.5v-1.9l1.5-1.6L19 5.6l-2.1.5-1.8-1-.6-2.1z"/><circle cx="12" cy="12.5" r="3.2"/></svg>
         </button>
       </header>
       {menu && (
@@ -1305,6 +1359,9 @@ export function App() {
               <EditorPane
                 key={noteId}
                 noteId={noteId}
+                onAppendPage={appendPage}
+                onDeletePage={(half,count)=>pageOp({t:'del',half},count)}
+                canDeletePage={half=>pageInfo().blank.has(half)}
                 zoom={zoom}
                 reading={reading}
                 onLegacyEdit={onLegacyEdit}

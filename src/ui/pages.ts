@@ -41,6 +41,8 @@ function column(source: HTMLElement, typo: Typo): HTMLElement {
 
 // 몇 반쪽이 필요한지: 화면 밖에서 칼럼 하나를 그려 높이를 잰다.
 export function countHalves(source: HTMLElement, typo: Typo): number {
+  const logical=Number(source.dataset.halves);
+  if(Number.isInteger(logical)&&logical>0)return logical;
   const probe = document.createElement('div');
   probe.style.cssText = 'position:absolute;left:-20000px;top:0;visibility:hidden;pointer-events:none';
   const col = column(source, typo);
@@ -52,7 +54,7 @@ export function countHalves(source: HTMLElement, typo: Typo): number {
 }
 
 // k번째 반쪽(0부터). 왼쪽 반쪽은 바깥 여백이 왼쪽, 오른쪽 반쪽은 바깥 여백이 오른쪽이다.
-export function buildHalf(source: HTMLElement, typo: Typo, k: number): HTMLElement {
+export function buildHalf(source: HTMLElement, typo: Typo, k: number, numbered=true): HTMLElement {
   const { usable } = fitPitch(typo);
   const left = k % 2 === 0;
   const half = document.createElement('div');
@@ -68,16 +70,16 @@ export function buildHalf(source: HTMLElement, typo: Typo, k: number): HTMLEleme
   col.style.top = `${-k * usable}mm`;
   win.appendChild(col);
   half.appendChild(win);
+  if(numbered){const number=document.createElement('span');number.className='half-page-number';number.textContent=String(k+1);half.appendChild(number);}
   return half;
 }
 
 // A4 한 장 = 왼쪽 반쪽 + 오른쪽 반쪽. 가운데에 접는 선.
 export function buildSheet(source: HTMLElement, typo: Typo, s: number, halves: number): HTMLElement {
-  void halves;
   const sheet = document.createElement('div');
   sheet.className = 'psheet';
   sheet.dataset.sheet = String(s);
-  for (const k of [2 * s, 2 * s + 1]) sheet.appendChild(buildHalf(source, typo, k));
+  for (const k of [2 * s, 2 * s + 1]) sheet.appendChild(buildHalf(source, typo, k, k<halves));
   const fold = document.createElement('div');
   fold.className = 'pfold';
   sheet.appendChild(fold);

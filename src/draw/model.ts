@@ -42,6 +42,12 @@ export interface BoxShape extends Base {
   dash?: boolean;
 }
 
+export interface ImageShape extends Base {
+  t: 'image'; a: Anchor; b: Anchor; asset: string; name?: string;
+  aspect?:number; // 원본 비율: 변 손잡이로 변형해도 모서리는 원본 비율을 유지
+  dataUrl?: string; // 클립보드에만 포함하며 저장할 때는 별도 파일로 분리한다.
+}
+
 export interface TextShape extends Base {
   t: 'text';
   a: Anchor;
@@ -49,6 +55,7 @@ export interface TextShape extends Base {
   bh?: number; // 높이 맞추기로 지정한 최소 높이(mm). 내용은 자르지 않는다.
   text: string; // 찾기 · 옛 글상자용 맨 글
   doc?: unknown; // 글상자 내용(ProseMirror JSON). 펜 · 형광펜 · 동그라미 · 밑줄이 그대로 들어간다
+  pageMain?:boolean; // 새 페이지의 기본 글상자(비어 있으면 페이지와 함께 삭제 가능)
   frame?: 'rect' | 'ellipse'; // 글을 담은 도형: 같은 글상자 엔진으로 편집
   stroke?: string; // 도형 테두리 색(글자색과 독립)
   fill?: string | null;
@@ -59,7 +66,7 @@ export interface TextShape extends Base {
   lh?: number; // 행간(글씨 크기에 맞춘 줄 높이의 배수, 기본 1)
 }
 
-export type Shape = PathShape | BoxShape | TextShape;
+export type Shape = PathShape | BoxShape | TextShape | ImageShape;
 
 export type Tool = 'select' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'text';
 
@@ -71,6 +78,7 @@ export interface XY {
 // 화면에 그릴 때 쓰는, 줄 위치를 풀어 놓은 그림
 export type Resolved =
   | (Omit<PathShape, 'pts'> & { pts: XY[] })
+  | (Omit<ImageShape, 'a' | 'b'> & { a: XY; b: XY })
   | (Omit<BoxShape, 'a' | 'b'> & { a: XY; b: XY })
   | (Omit<TextShape, 'a'> & { a: XY });
 
@@ -440,6 +448,7 @@ export function hit(r: Resolved, p: XY, tol: number, textH: (id: string) => numb
   }
   const b = boxOf(r.a, r.b);
   const inside = p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
+  if (r.t === 'image') return inside;
   if (r.t === 'rect') {
     if (r.fill && inside) return true;
     if (p.x < b.x - tol || p.x > b.x + b.w + tol || p.y < b.y - tol || p.y > b.y + b.h + tol) return false;
@@ -483,7 +492,7 @@ export function handles(r: Resolved, textH: (id: string) => number): XY[] {
 }
 
 // 네모 · 동그라미의 변 하나(0 위 · 1 오른쪽 · 2 아래 · 3 왼쪽)를 p까지 옮긴 결과(그 방향으로만 늘고 줄어든다)
-export function moveSide(r: Resolved & { t: 'rect' | 'ellipse' }, side: number, p: XY): Resolved {
+export function moveSide(r: Resolved & { t: 'rect' | 'ellipse' | 'image' }, side: number, p: XY): Resolved {
   const b = boxOf(r.a, r.b);
   let x0 = b.x;
   let y0 = b.y;
@@ -497,7 +506,7 @@ export function moveSide(r: Resolved & { t: 'rect' | 'ellipse' }, side: number, 
 }
 
 // 네모 · 동그라미의 모서리 i를 p로 옮긴 결과(맞은편 모서리는 그대로)
-export function moveCorner(r: Resolved & { t: 'rect' | 'ellipse' }, i: number, p: XY): Resolved {
+export function moveCorner(r: Resolved & { t: 'rect' | 'ellipse' | 'image' }, i: number, p: XY): Resolved {
   const b = boxOf(r.a, r.b);
   const opp = [
     { x: b.x + b.w, y: b.y + b.h },
@@ -511,4 +520,14 @@ export function moveCorner(r: Resolved & { t: 'rect' | 'ellipse' }, i: number, p
 // 선분 위를 두 번 눌렀을 때 점을 끼울 자리(몇 번째 점 앞인지). 곡선까지는 nearSegment.
 export function segmentAt(pts: XY[], p: XY, tol: number, ortho?: boolean): number {
   return nearSegment({ pts, o: ortho }, p, tol)?.i ?? -1;
+}
+
+// 이미지 모서리는 맞은편을 고정하고 현재 비율을 유지한다. 변 손잡이는 moveSide로 한 축만 바꾼다.
+export function resizeImageCorner(r: Resolved & {t:'image'},i:number,p:XY):Resolved & {t:'image'} {
+  const b=boxOf(r.a,r.b),ratio=r.aspect&&r.aspect>0?r.aspect:b.w/Math.max(.001,b.h);
+  const opposite=[{x:b.x+b.w,y:b.y+b.h},{x:b.x,y:b.y+b.h},{x:b.x,y:b.y},{x:b.x+b.w,y:b.y}][i];
+  const sx=i===0||i===3?-1:1,sy=i===0||i===1?-1:1;
+  let w=Math.max(1,sx*(p.x-opposite.x)),h=Math.max(1,sy*(p.y-opposite.y));
+  if(w/Math.max(.001,h)>ratio)h=w/ratio;else w=h*ratio;
+  return {...r,a:opposite,b:{x:opposite.x+sx*w,y:opposite.y+sy*h}};
 }

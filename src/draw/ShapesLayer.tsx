@@ -1,3 +1,4 @@
+import {prepareImage, useImageSource, peekImageSource, importImageSource} from '../store/imageAssets';
 import { DrawingHistory, DRAWING_HISTORY_EVENT } from './drawingHistory';
 import { copyGroups, expandGroups, selectionIds } from './groups';
 import { arrangeSelected, arrangementTargetCount, type Arrange } from './arrange';
@@ -31,6 +32,7 @@ import {
   insertPoint,
   knobs,
   moveCorner,
+  resizeImageCorner,
   moveKnob,
   moveSide,
   nearSegment,
@@ -151,7 +153,12 @@ const MARQUEE_PX = 4; // 이만큼 끌어야 영역 고르기(덜 끌면 그냥 
 const CURVE_PX = 4; // 선 · 화살표를 그릴 때 누른 채 이만큼 끌면 곡선 손잡이(덜 끌면 꺾인 점)
 
 
+function CanvasImage({r}:{r:Resolved & {t:'image'}}){
+  const source=useImageSource(r.asset,r.dataUrl),b=boxOf(r.a,r.b);
+  return source ? <image data-sid={r.id} x={b.x} y={b.y} width={b.w} height={b.h} href={source} preserveAspectRatio="none" /> : <g data-sid={r.id}><rect x={b.x} y={b.y} width={b.w} height={b.h} fill="#f0f2f6"/><text x={b.x+2} y={b.y+4} fontSize="2.5" fill="#727b8b">이미지 불러오는 중…</text></g>;
+}
 function ShapeSvg({ r }: { r: Resolved }) {
+  if(r.t==='image')return <CanvasImage r={r}/>;
   const stroke = strokeOf(r.c);
   const dash = r.t !== 'text' && r.dash ? `${(r.w * 3.2).toFixed(2)} ${(r.w * 2.6).toFixed(2)}` : undefined;
   if (r.t === 'path') {
@@ -194,9 +201,9 @@ function ShapeHit({ r, onPick }: { r: Resolved; onPick(e: React.PointerEvent): v
   if (r.t === 'path') return <path className="sh-hit" d={pathGeom({ ...r, head: 0 }).d} fill="none" strokeWidth={w} onPointerDown={onPick} />;
   if (r.t === 'text') return null;
   const b = boxOf(r.a, r.b);
-  const cls = 'sh-hit filled';
+  const cls = `sh-hit filled${r.t==='image'?' sh-image-hit':''}`;
   const fill = 'transparent';
-  if (r.t === 'rect') return <rect className={cls} x={b.x} y={b.y} width={b.w} height={b.h} fill={fill} strokeWidth={w} onPointerDown={onPick} />;
+  if (r.t === 'rect' || r.t === 'image') return <rect className={cls} x={b.x} y={b.y} width={b.w} height={b.h} fill={fill} strokeWidth={w} onPointerDown={onPick} />;
   return <ellipse className={cls} cx={b.x + b.w / 2} cy={b.y + b.h / 2} rx={b.w / 2} ry={b.h / 2} fill={fill} strokeWidth={w} onPointerDown={onPick} />;
 }
 
@@ -278,7 +285,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       enterMember(r.id);
       setDraw({ tool: 'select', picked: true });
       if (r.t === 'text') focusBox(r.id, { x: e.clientX, y: e.clientY });
-      else editShape(r.id);
+      else if(r.t !== 'image') editShape(r.id);
       return repaint();
     }
     if (r && layer.current && e.button === 0) {
@@ -690,10 +697,12 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   const toMM = (e: { clientX: number; clientY: number; target?: EventTarget | null }, continuous = false): XY => {
     // Width gestures use one continuous plane across the fold. Remapping to
     // the next half here would reset x and jump y by a whole page.
-    const ownControl = e.target instanceof Element && !!e.target.closest('.fold-live-window .tbox, .fold-live-window .sh-text-width');
-    const raw = continuous || ownControl || ix.drag?.mode === 'width' || (ix.drag?.mode === 'move' && ix.drag.continuous);
+    const ownControl = e.target instanceof Element && !!e.target.closest('.fold-live-window .tbox, .fold-live-window .sh-text-width, .fold-live-window .sh-image-hit, .fold-live-window .sh-image-handle');
+    const raw = continuous || ownControl || (ix.drag&&ix.drag.mode!=='move'&&ix.drag.base.t==='image') || ix.drag?.mode === 'width' || (ix.drag?.mode === 'move' && ix.drag.continuous);
     const mapped = raw ? null : mapPoint?.(e);
     if (mapped) return mapped;
+    const matrix=layer.current?.querySelector('svg')?.getScreenCTM();
+    if(matrix){const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(matrix.inverse());return {x:p.x,y:p.y};}
     const r = layer.current!.getBoundingClientRect();
     return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
   };
@@ -903,7 +912,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       return hi < 0 ? '' : one.frame ? ['nwse-resize', 'nesw-resize', 'nwse-resize', 'nesw-resize', 'ns-resize', 'ew-resize', 'ns-resize', 'ew-resize'][hi] : 'ew-resize';
     }
     if (one?.t === 'path') return [...one.pts, ...knobs(one).map((k) => k.at)].some((h) => dist(h, p) <= tol * 1.3) ? 'move' : '';
-    if (!one || (one.t !== 'rect' && one.t !== 'ellipse')) return '';
+    if (!one || (one.t !== 'rect' && one.t !== 'ellipse' && one.t !== 'image')) return '';
     const hi = handles(one, th).findIndex((h) => dist(h, p) <= tol * 1.3);
     if (hi >= 0) return ['nwse-resize', 'nesw-resize', 'nwse-resize', 'nesw-resize', 'ns-resize', 'ew-resize', 'ns-resize', 'ew-resize'][hi];
     const side = one.t === 'rect' ? sideAt(one, p, tol) : -1;
@@ -991,7 +1000,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     if (dbl && insideShape?.group && ix.member !== insideShape.id) {
       enterMember(insideShape.id);
       if (insideShape.t === 'text') { focusBox(insideShape.id, {x:e.clientX,y:e.clientY}); return repaint(); }
-      if (insideShape.t === 'path') return repaint();
+      if (insideShape.t === 'path' || insideShape.t === 'image') return repaint();
     }
     if (dbl && insideShape && (insideShape.t === 'rect' || insideShape.t === 'ellipse')) { editShape(insideShape.id); return repaint(); }
     if (one) {
@@ -1137,9 +1146,22 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
         const bounds = boxOf(resized.a, resized.b);
         next = {...b, a: {x:bounds.x,y:bounds.y}, bw: Math.max(1,bounds.w), bh: Math.max(1,bounds.h)};
       }
+    } else if(g.mode === 'corner' && b.t === 'image') {
+      const constrained=resizeImageCorner(b,g.i,p),corner=handles(constrained,th)[g.i];
+      const q=snapPt(corner,skip,[],{x:true,y:true},e);
+      const bounds=boxOf(b.a,b.b),ratio=b.aspect&&b.aspect>0?b.aspect:bounds.w/Math.max(.001,bounds.h);
+      const sx=g.i===0||g.i===3?-1:1,sy=g.i<2?-1:1;
+      const opposite=handles(b,th)[(g.i+2)%4];
+      let target=q;
+      if(q.x!==corner.x)target={x:q.x,y:opposite.y+sy*Math.abs(q.x-opposite.x)/ratio};
+      else if(q.y!==corner.y)target={x:opposite.x+sx*Math.abs(q.y-opposite.y)*ratio,y:q.y};
+      const resized=resizeImageCorner(b,g.i,target);
+      next=resized;
+      const actual=handles(resized,th)[g.i];
+      ix.guides=snapOff(e)?null:coordGuides(bboxOf(resized,th),[actual.x],[actual.y],snapTargets(skip),[]);
     } else if (g.mode === 'corner' && (b.t === 'rect' || b.t === 'ellipse')) {
       next = moveCorner(b, g.i, snapPt(p, skip, [], { x: true, y: true }, e, (n) => bboxOf(moveCorner(b, g.i, n), th)));
-    } else if (g.mode === 'side' && (b.t === 'rect' || b.t === 'ellipse')) {
+    } else if (g.mode === 'side' && (b.t === 'rect' || b.t === 'ellipse' || b.t === 'image')) {
       // 위 · 아래 변은 세로로만, 왼쪽 · 오른쪽 변은 가로로만
       next = moveSide(b, g.i, snapPt(p, skip, [], { x: g.i % 2 === 1, y: g.i % 2 === 0 }, e, (n) => bboxOf(moveSide(b, g.i, n), th)));
     } else if (g.mode === 'width' && b.t === 'text') {
@@ -1210,7 +1232,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
 
   // 고른 것 모두에, 그 그림에 맞는 것만: 색은 모두, 굵기 · 점선은 글상자 빼고, 직각 · 화살촉은 선, 채우기는 네모 · 원, 테두리는 글상자
   const fits = (s: Shape, k: string) =>
-    k === 'c' || ((k === 'w' || k === 'dash') && (s.t !== 'text' || !!s.frame)) || ((k === 'o' || k === 'head' || k === 'headScale') && s.t === 'path') || (k === 'fill' && (s.t === 'rect' || s.t === 'ellipse' || (s.t === 'text' && !!s.frame))) || (k === 'box' && s.t === 'text' && !s.frame);
+    s.t !== 'image' && (k === 'c' || ((k === 'w' || k === 'dash') && (s.t !== 'text' || !!s.frame)) || ((k === 'o' || k === 'head' || k === 'headScale') && s.t === 'path') || (k === 'fill' && (s.t === 'rect' || s.t === 'ellipse' || (s.t === 'text' && !!s.frame))) || (k === 'box' && s.t === 'text' && !s.frame));
   const update = (patch: Record<string, unknown> | ((s: Shape) => Record<string, unknown>)) => {
     const list = selShapes();
     if (!list.length) return;
@@ -1278,8 +1300,11 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   };
 
   // 고른 그림들을 dx · dy만큼 옮긴 복사본으로 넣고, 복사본을 고른다
-  const addCopies = (list: Resolved[], dx: number, dy: number, ls: Lines = lines) => {
+  const addCopies = async (list: Resolved[], dx: number, dy: number, ls: Lines = lines) => {
     if (!list.length) return;
+    try{for(const r of list)if(r.t==='image'&&r.dataUrl)await importImageSource(r.asset,r.dataUrl);}catch{host.toast('이미지를 붙여넣지 못했어요');return;}
+    if(!layer.current)return;
+    list=list.map(r=>{if(r.t!=='image')return r;const {dataUrl:_,...rest}=r;return rest;});
     const z0 = nextZ();
     const copies = copyGroups(list.map((r, i) => unresolve({ ...translate(r, dx, dy), id: newId(), z: z0 + i } as Resolved, ls)));
     write(() => copies.forEach((s) => shapes.set(s.id, clean(s))));
@@ -1315,6 +1340,11 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     repaint();
   };
 
+  const reorder = (front:boolean) => {
+    const selected=all.filter(s=>ix.sel.includes(s.id));
+    const z=front?Math.max(0,...all.map(s=>s.z))+1:Math.min(0,...all.map(s=>s.z))-selected.length;
+    write(()=>selected.forEach((s,i)=>shapes.set(s.id,{...s,z:z+i})));repaint();
+  };
   const nudge = (dx: number, dy: number) => {
     const rs = ix.sel.map(byId).filter(isR);
     if (rs.length) write(() => rs.forEach((r) => shapes.set(r.id, clean(unresolve(translate(r, dx, dy), lines)))));
@@ -1325,7 +1355,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     const rs = ix.sel.map(byId).filter(isR);
     if (!rs.length) return false;
     const texts = rs.filter((r) => r.t === 'text').map((r) => clipboardTextSerializer(new Slice(textDoc(r as Resolved & { t: 'text' }).content, 0, 0)));
-    copyShapes(clean(rs), texts.filter((t) => t.trim()).join('\n\n') || `(ayun pad 그림 ${rs.length}개)`);
+    copyShapes(clean(rs.map(r=>r.t==='image'?{...r,dataUrl:peekImageSource(r.asset)}:r)), texts.filter((t) => t.trim()).join('\n\n') || `(ayun pad 그림 ${rs.length}개)`);
     host.toast(`그림 ${rs.length}개 복사 · ⌘V로 붙여넣기`);
     return true;
   };
@@ -1417,6 +1447,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       return;
     }
     const onKey = (e: KeyboardEvent) => {
+      if(e.key==='Escape'&&document.querySelector('.top [data-top-menu][aria-expanded="true"]'))return;
       const t = e.target as HTMLElement | null;
       if (t?.closest('.arrange-menu, .reference-popover') || (e.key === 'Escape' && document.querySelector('.arrange-menu'))) return;
       if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.isContentEditable)) return;
@@ -1523,11 +1554,49 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   // 붙여넣기(글쓰기 화면에서도 늘). 클립보드에 그림이 있으면:
   // 본문 글 커서 → 그 자리에 그림으로, 글상자 안 → 그 글상자가 내용으로 붙인다(TextBox), 그리기 · 고른 상태 → 종이에.
   // 그림이 아니면 그리기 중 종이에 붙인 글만 새 글상자로, 나머지는 원래대로(본문 · 입력 칸).
+  const [imageDrop,setImageDrop]=useState<XY|null>(null);
+  const imageFiles=(data:DataTransfer|null)=>{if(!data)return [];const files=Array.from(data.files);if(!files.length)for(const item of Array.from(data.items)){const file=item.kind==='file'?item.getAsFile():null;if(file)files.push(file);}return files.filter(f=>f.type.startsWith('image/'));};
+  const insertImages=async(files:File[],at:XY|null)=>{
+    try{
+      const prepared=[];
+      for(const file of files)prepared.push({file,asset:await prepareImage(file)});
+      if(!layer.current||readRef.current)return;
+      const fresh=measureLines(src,editor,pitch),v=visibleMM();
+      const bottom=Math.min(0,...Array.from(shapes.values()).map(s=>s.z))-prepared.length;
+      const added=prepared.map(({file,asset},i)=>{
+        const scale=Math.min(1,80/asset.width,100/asset.height),w=asset.width*scale,h=asset.height*scale;
+        const p=at??{x:Math.max(0,(v?.x??0)+(v?.w??W)/2-w/2),y:Math.max(0,(v?.y??0)+Math.max(4,(v?.h??100)/2-h/2))};
+        const a={x:p.x+i*3,y:p.y+i*3};
+        return {id:newId(),t:'image' as const,asset:asset.id,aspect:asset.width/asset.height,name:file.name,a:anchorAt(a,fresh),b:anchorAt({x:a.x+w,y:a.y+h},fresh),z:bottom+i,c:'k',w:DEFAULT_W};
+      });
+      write(()=>added.forEach(s=>shapes.set(s.id,s)));pickOnly(added.map(s=>s.id));
+      (document.activeElement as HTMLElement|null)?.blur();setEditing(null);setDraw({tool:'select',picked:true});repaint();
+    }catch(error){host.toast(error instanceof Error?error.message:'이미지를 넣지 못했어요');}
+  };
+  const imageInputRef=useRef({insertImages,toMM});imageInputRef.current={insertImages,toMM};
+  useEffect(()=>{
+    const desk=src.closest('.desk');if(!desk)return;
+    const filesDragged=(e:DragEvent)=>!!e.dataTransfer&&(imageFiles(e.dataTransfer).length>0||Array.from(e.dataTransfer.items).some(i=>i.kind==='file'&&(!i.type||i.type.startsWith('image/'))));
+    const over=(event:Event)=>{const e=event as DragEvent;if(readRef.current||!filesDragged(e))return;e.preventDefault();e.stopPropagation();e.dataTransfer!.dropEffect='copy';setImageDrop(imageInputRef.current.toMM(e));};
+    const leave=(event:Event)=>{const e=event as DragEvent;if(!e.relatedTarget||!desk.contains(e.relatedTarget as Node))setImageDrop(null);};
+    const drop=(event:Event)=>{const e=event as DragEvent;setImageDrop(null);const files=imageFiles(e.dataTransfer);if(readRef.current||!files.length)return;e.preventDefault();e.stopPropagation();void imageInputRef.current.insertImages(files,imageInputRef.current.toMM(e));};
+    desk.addEventListener('dragover',over,true);desk.addEventListener('dragleave',leave,true);desk.addEventListener('drop',drop,true);
+    return()=>{desk.removeEventListener('dragover',over,true);desk.removeEventListener('dragleave',leave,true);desk.removeEventListener('drop',drop,true);};
+  },[src]);
   const pasteRef = useRef<(e: ClipboardEvent) => void>(() => undefined);
   pasteRef.current = (e: ClipboardEvent) => {
     if (readRef.current) return; // 읽기 모드: 노트에 붙이지 않는다(입력 칸에는 원래대로)
     const t = e.target as HTMLElement | null;
-    if (t?.closest?.('.tb-edit')) return;
+    const files=imageFiles(e.clipboardData);
+    if(files.length){
+      if(t?.closest('input,textarea,select,.reference-panel,.ref-panel')&&!t.closest('.tb-edit'))return;
+      if(t?.isContentEditable&&!t.closest('.tb-edit')&&!editor.contains(t))return;
+      e.preventDefault();e.stopImmediatePropagation();pasted.current=true;
+      const box=liveBox();const c=box?.hasFocus()?box.coordsAtPos(box.state.selection.head):null;
+      void insertImages(files,c?toMM({clientX:c.left,clientY:c.top}):null);return;
+    }
+    const inTextBox=!!t?.closest?.('.tb-edit');
+    if(inTextBox){const list=shapesIn(e.clipboardData);if(list?.some(r=>r.t==='image')){e.preventDefault();e.stopImmediatePropagation();pasted.current=true;pasteShapes(list,null);}return;}
     const editable = !!t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.isContentEditable);
     const inBody = !!t && editor.contains(t) && !t.closest('.wg');
     const list = shapesIn(e.clipboardData);
@@ -1623,7 +1692,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
         if (target) { enterMember(target.id); if (target.t === 'rect' || target.t === 'ellipse') editShape(target.id); else repaint(); }
       }}
     >
-      <svg className="shapes-svg" viewBox={`0 0 ${W.toFixed(3)} ${H.toFixed(3)}`} preserveAspectRatio="xMinYMin meet" aria-hidden="true">
+      <svg className="shapes-svg" style={{zIndex:resolved.length+2}} viewBox={`0 0 ${W.toFixed(3)} ${H.toFixed(3)}`} preserveAspectRatio="xMinYMin meet" aria-hidden="true">
         {ix.drag?.mode === 'move' && ix.drag.copy && ix.drag.moved &&
           ix.drag.bases.map((b) =>
             b.t === 'text' ? null : (
@@ -1632,10 +1701,6 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
               </g>
             ),
           )}
-        {resolved.map((r) => (
-          <ShapeSvg key={r.id} r={r} />
-        ))}
-        {!draw && !reading && resolved.map((r) => (r.t === 'text' ? null : <ShapeHit key={`hit-${r.id}`} r={r} onPick={(e) => pickShape(r.id, e)} />))}
         {preview && <path className="sh-ui sh-preview" d={preview} fill="none" stroke={strokeOf(draw?.c ?? 'k')} strokeWidth={draw?.w ?? DEFAULT_W} strokeLinejoin="round" strokeLinecap="round" strokeOpacity={0.75} />}
         {dr && lastCs && (
           <Knobs at={dr.pts[dr.pts.length - 1]} c={lastCs} />
@@ -1660,7 +1725,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
             <line key={`kl${k.i}-${k.side}`} className="sh-ui sh-knobline" x1={one.pts[k.i].x} y1={one.pts[k.i].y} x2={k.at.x} y2={k.at.y} />
           ))}
         {hs.map((h, i) => (
-          <rect key={i} className={`sh-ui sh-handle${one?.t === 'text' ? ' sh-text-width' : ''}${nodeOn(i) ? ' on' : ''}`} x={h.x - hsz / 2} y={h.y - hsz / 2} width={hsz} height={hsz} rx={0.25} />
+          <rect key={i} style={{cursor:one?.t==='text'&&!one.frame?'ew-resize':['nwse-resize','nesw-resize','nwse-resize','nesw-resize','ns-resize','ew-resize','ns-resize','ew-resize'][i]}} className={`sh-ui sh-handle${one?.t === 'text' ? ' sh-text-width' : one?.t==='image'?' sh-image-handle':''}${nodeOn(i) ? ' on' : ''}`} x={h.x - hsz / 2} y={h.y - hsz / 2} width={hsz} height={hsz} rx={0.25} />
         ))}
         {ks.map((k) => (
           <circle key={`k${k.i}-${k.side}`} className="sh-ui sh-knob" cx={k.at.x} cy={k.at.y} r={0.65} />
@@ -1677,13 +1742,15 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
           {(m.to - m.from).toFixed(1)}mm
         </span>
       ))}
+      {imageDrop&&<div className="sh-ui image-drop-guide" style={{left:`${imageDrop.x}mm`,top:`${imageDrop.y}mm`,zIndex:resolved.length+3}}>＋ 여기에 이미지 놓기</div>}
       <div ref={ghostRef} className="sh-ghosts" aria-hidden="true" />
-      <div className="tboxes">
-        {resolved.map((r) =>
+      <div className="tboxes" style={{height:`${H}mm`}}>
+        {resolved.map((r, index) =>
           r.t === 'text' ? (
             <TextBox
               key={r.id}
               r={r}
+              layer={index+1}
               um={um}
               settings={settings}
               host={host}
@@ -1723,7 +1790,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
               }}
               reading={!!reading}
             />
-          ) : null,
+          ) : <svg key={r.id} className="shapes-svg shape-object" style={{zIndex:index+1}} viewBox={`0 0 ${W.toFixed(3)} ${H.toFixed(3)}`} preserveAspectRatio="xMinYMin meet" aria-hidden="true"><ShapeSvg r={r}/>{!draw&&!reading&&<ShapeHit r={r} onPick={e=>pickShape(r.id,e)}/>}</svg>,
         )}
       </div>
       {draw &&
@@ -1748,6 +1815,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
             duplicate={duplicate}
             groupSelection={groupSelection}
             arrangeSelection={arrangeSelection}
+            reorder={reorder}
             finish={finishPath}
             toTools={() => {
               pickOnly([]);
@@ -1814,6 +1882,7 @@ interface BarProps {
   duplicate(): void;
   groupSelection(ungroup?: boolean): void;
   arrangeSelection(action: Arrange): void;
+  reorder(front:boolean):void;
   finish(): void;
   toTools(): void;
 }
@@ -1824,7 +1893,7 @@ const mod = isMac ? '⌘' : 'Ctrl+';
 
 // 그리기 막대. 무엇이든 고르면 고른 것(여러 개면 모두)의 색 · 굵기 · 직각 · 화살촉 · 점선 · 글씨 · 형광펜 · 복제 · 지우기,
 // 고른 게 없으면 새로 그릴 도구와 설정.
-function DrawBar({ draw, sel, member, exitMember, wcount, drawing, setDraw, history, update, format, highlight, remove, duplicate, groupSelection, arrangeSelection, finish, toTools }: BarProps) {
+function DrawBar({ draw, sel, member, exitMember, wcount, drawing, setDraw, history, update, format, highlight, remove, duplicate, groupSelection, arrangeSelection, reorder, finish, toTools }: BarProps) {
   // 커서를 뺏지 않고, 누름이 그림 층(종이)으로 올라가지 않게
   const keep = (e: React.PointerEvent) => {
     // 단추는 편집 커서를 유지하고, 막대 자체의 스크롤바는 브라우저가 끌 수 있게 둔다.
@@ -1835,7 +1904,7 @@ function DrawBar({ draw, sel, member, exitMember, wcount, drawing, setDraw, hist
   const paths = sel.filter((s): s is PathShape => s.t === 'path');
   const boxes = sel.filter((s): s is BoxShape | TextShape => s.t === 'rect' || s.t === 'ellipse' || (s.t === 'text' && !!s.frame));
   const texts = sel.filter((s): s is TextShape => s.t === 'text');
-  const strokes = sel.filter((s) => s.t !== 'text' || !!s.frame);
+  const strokes = sel.filter((s) => s.t !== 'image' && (s.t !== 'text' || !!s.frame));
   const first = sel[0];
   const shapeColors = sel.some(s => s.t === 'text' && !!s.frame);
   const c = first?.t === 'text' && first.frame ? first.stroke ?? 'k' : first?.c ?? draw.c;
@@ -1885,7 +1954,7 @@ function DrawBar({ draw, sel, member, exitMember, wcount, drawing, setDraw, hist
   );
   const allO = paths.length > 0 && paths.every((p) => p.o);
   const allFill = boxes.length > 0 && boxes.every((b) => b.fill);
-  const allDash = strokes.length > 0 && strokes.every((s) => s.dash);
+  const allDash = strokes.length > 0 && strokes.every((s) => s.t !== 'image' && s.dash);
   const allBox = texts.length > 0 && texts.every((t) => t.box);
   const arrows = paths.filter(p => p.head !== 0);
   const headScale = headScaleOf(n ? arrows[0]?.headScale : draw.headScale ?? DEFAULT_HEAD_SCALE);
@@ -1910,7 +1979,8 @@ function DrawBar({ draw, sel, member, exitMember, wcount, drawing, setDraw, hist
             {member && <button type="button" onClick={exitMember} aria-label="그룹 전체 선택" title="그룹 내부 편집 끝내기">그룹 전체</button>}
             {n > 1 ? <b>{n}개</b> : sel.length === 0 ? <b>위젯</b> : null}
           </div>
-          {sel.length > 0 && swatches}
+          {sel.some(s=>s.t!=='image') && swatches}
+          {sel.length>0&&<div className="dgroup"><button type="button" aria-label="맨 앞으로" onClick={()=>reorder(true)}>앞으로</button><button type="button" aria-label="맨 뒤로" onClick={()=>reorder(false)}>뒤로</button></div>}
           {strokes.length > 0 && width}
           {arrows.length > 0 && headSize}
           {sel.length > 0 && (

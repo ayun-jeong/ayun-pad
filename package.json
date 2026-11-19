@@ -40,6 +40,10 @@
     "e2e:group-member": "node scripts/e2e-group-member.mjs",
     "e2e:toolbar-pan": "node scripts/e2e-toolbar-pan.mjs",
     "e2e:branch-wrap": "node scripts/e2e-branch-wrap.mjs",
+    "e2e:add-page": "node scripts/e2e-add-page.mjs",
+    "e2e:image-assets": "node scripts/e2e-image-assets.mjs",
+    "e2e:images": "node scripts/e2e-images.mjs",
+    "e2e:menu-toggles": "node scripts/e2e-menu-toggles.mjs",
     "e2e:welcome": "node scripts/e2e-welcome.mjs"
   },
   "dependencies": {

@@ -29,6 +29,9 @@ export const PX_PER_MM = 96 / 25.4;
 export const GUTTER_MM = 7;
 
 interface Props {
+  onAppendPage(count:number):void;
+  onDeletePage(half:number,count:number):void;
+  canDeletePage(half:number):boolean;
   noteId: string;
   zoom: number;
   reading: boolean; // 읽기 모드: 눌러도 · 쳐도 노트가 안 바뀐다(확대 · 축소 · 스크롤만)
@@ -75,7 +78,7 @@ function pushWidgets(editor: HTMLElement, usablePx: number, lhPx: number, zoom: 
 
 // 노트 하나를 105mm 칼럼에 연다. 반쪽이 끝나는 곳마다 점선과 쪽 번호(1-1, 1-2 …)를 그린다.
 // 칼럼(.sheet-src) = 편집 칸 + 그림 층. 반쪽 보기 · A4 보기 · 인쇄는 이 칼럼을 그대로 복제한다.
-export function EditorPane({ noteId, zoom, reading, onLegacyEdit, draw, setDraw, toast, app, onState, onEdit, onDoc }: Props) {
+export function EditorPane({ onAppendPage,onDeletePage,canDeletePage, noteId, zoom, reading, onLegacyEdit, draw, setDraw, toast, app, onState, onEdit, onDoc }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const srcRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
@@ -338,16 +341,17 @@ export function EditorPane({ noteId, zoom, reading, onLegacyEdit, draw, setDraw,
   const widthPx = ((typo.pageWidth === 'half' ? HALF_W : 210) + GUTTER_MM) * PX_PER_MM;
   const folded = typo.pageWidth === 'a4';
   const contentHalves = halvesFor(Math.max(bodyH / PX_PER_MM, fit.usable * minHalves, extent + EXTENT_PAD), fit.usable);
-  const sourceMin = folded ? Math.ceil(contentHalves / 2) * 2 * fit.usable : Math.max(fit.usable * minHalves, extent + EXTENT_PAD);
+  const sourceMin = (folded ? Math.ceil(contentHalves / 2) * 2 : contentHalves) * fit.usable;
   const onExtent = useCallback((b: number) => setExtent(b), []);
 
+  const surfaceHeight=(folded?Math.max(foldHeight,297*PX_PER_MM):Math.max(paperH,halfPx))*zoom;
   return (
-    <div className="zoom-outer" style={{ width: widthPx * zoom, height: (folded ? Math.max(foldHeight, 297 * PX_PER_MM) : Math.max(paperH, halfPx)) * zoom }}>
+    <div className="zoom-outer" style={{ width: widthPx * zoom, height:surfaceHeight+(reading?0: (297*PX_PER_MM+28)*zoom) }}>
       <FoldedSurface enabled={folded} source={srcRef.current} typo={typo} zoom={zoom} version={tick} onHeight={setFoldHeight} onMap={onMap} gutter={
         <div className="half-nos" style={{ width: `${GUTTER_MM}mm` }} aria-hidden="true">
           {Array.from({ length: halves }, (_, k) => (
             <span key={k} className="half-no" style={{ top: `calc(${typo.mTop}mm + ${k * halfPx}px)` }}>
-              {halfLabel(k)}
+              <b>{k+1}</b><small>{halfLabel(k)}</small>
             </span>
           ))}
         </div>
@@ -357,7 +361,7 @@ export function EditorPane({ noteId, zoom, reading, onLegacyEdit, draw, setDraw,
             {Array.from({ length: halves - 1 }, (_, k) => (
               <div key={k} className="guide" style={{ top: (k + 1) * halfPx, left: `-${typo.mOuter}mm`, right: `-${typo.mInner}mm` }} />
             ))}
-            <div className="sheet-src" ref={srcRef} style={{ minHeight: `${sourceMin}mm` }}>
+            <div className="sheet-src" data-halves={contentHalves} ref={srcRef} style={{ minHeight: `${sourceMin}mm` }}>
               <div ref={mountRef} />
               {live && srcRef.current && (
                 <ShapesLayer
@@ -426,6 +430,11 @@ export function EditorPane({ noteId, zoom, reading, onLegacyEdit, draw, setDraw,
           </div>
         </div>
       </FoldedSurface>
+      {!reading&&<div className="page-tail" style={{top:surfaceHeight+16*zoom,left:GUTTER_MM*PX_PER_MM*zoom,width:(folded?210:HALF_W)*PX_PER_MM*zoom,height:297*PX_PER_MM*zoom}}>
+        <span className="page-total">총 {contentHalves}페이지 · A4 {Math.ceil(contentHalves/2)}장</span>
+        <button type="button" className="add-page-placeholder" aria-label="새 페이지 추가" onPointerDown={e=>e.stopPropagation()} onClick={()=>onAppendPage(contentHalves)}><span className="add-page-content"><span className="add-page-plus" aria-hidden="true">＋</span><span>새 페이지 추가</span><small>반쪽 {contentHalves+1}페이지</small></span></button>
+        {contentHalves>1&&canDeletePage(contentHalves-1)&&<button type="button" className="delete-last-page" aria-label="마지막 빈 페이지 삭제" onPointerDown={e=>e.stopPropagation()} onClick={()=>onDeletePage(contentHalves-1,contentHalves)}>마지막 빈 페이지 삭제</button>}
+      </div>}
       {slash && live && hostRef.current && <SlashMenu st={slash} view={live.view} host={hostRef.current} />}
       {math && live && <MathMenu st={math} view={live.view} />}
     </div>

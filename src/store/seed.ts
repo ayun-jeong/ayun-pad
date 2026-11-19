@@ -27,7 +27,7 @@ const WELCOME: [number, Kind, string][] = [
   [1, 'plain', '로그인부터 가지 필기까지, 여기서 시작하세요.'],
   [1, 'plain', ''],
   [1, 'plain', '01  로그인 · 자동 저장'],
-  [2, 'branch', '로그인: 오른쪽 위 … → 계정 · 동기화'],
+  [2, 'branch', '로그인: 우측 상단 환경설정(⚙️) → 계정 · 동기화'],
   [2, 'branch', '방법: 카카오로 로그인 또는 등록된 이메일 · 비밀번호'],
   [2, 'branch', '저장: 로그인 없이도 현재 브라우저에 자동 저장'],
   [2, 'branch', '다른 기기: 같은 계정으로 로그인하면 노트 동기화'],
@@ -58,19 +58,20 @@ const WELCOME: [number, Kind, string][] = [
   [1, 'plain', '04  화면 · 도형 · 참고자료'],
   [2, 'branch', '반쪽 / 한 장: 한 장에서는 1-1 왼쪽, 1-2 오른쪽'],
   [2, 'branch', '읽기: 상단 읽기 버튼으로 실수로 수정하지 않기'],
-  [2, 'branch', '확대: … → 배율 또는 트랙패드, 회색 배경은 끌어 이동'],
+  [2, 'branch', '확대: 환경설정(⚙️) → 배율 또는 트랙패드, 회색 배경은 끌어 이동'],
   [2, 'branch', '도형: + 넣기 → 네모 · 원, 더블클릭하면 안에 글 입력'],
   [2, 'branch', '도형 색: 위 도구 막대 선 · 채움에서 각각 선택'],
   [2, 'branch', '그룹: ⌘/Ctrl+G로 묶고 더블클릭으로 하나만 편집'],
+  [2, 'branch', '이미지: 캡처를 복사해 ⌘/Ctrl+V 또는 파일을 종이에 끌어 놓기'],
   [2, 'branch', '참고자료: 자료 버튼에서 PDF · 웹사이트 · 메모 열기'],
   [1, 'plain', ''],
   [1, 'plain', '더 알아보기'],
-  [2, 'branch', '단축키: … → 단축키 도움말'],
-  [2, 'branch', '백업: … → 백업 내보내기'],
+  [2, 'branch', '단축키: 환경설정(⚙️) → 단축키 도움말'],
+  [2, 'branch', '백업: 환경설정(⚙️) → 백업 내보내기'],
 ];
 
-export function welcomeDoc() {
-  return schema.node('doc', null, WELCOME.map(([depth, kind, text], i) => {
+export function welcomeDoc(rows=WELCOME) {
+  return schema.node('doc', null, rows.map(([depth, kind, text], i) => {
     const heading = kind === 'plain' && text && i !== 1;
     const marks = heading ? [schema.marks.b.create(), schema.marks.size.create({v: i === 0 ? 1.25 : 1.1})] : [];
     return schema.node('line', {id:newId(),depth,kind}, text ? [schema.text(text,marks)] : []);
@@ -88,7 +89,13 @@ export function legacySampleMatches(doc: ReturnType<typeof welcomeDoc>): boolean
   });
 }
 
-const VERSION = 1;
+const VERSION = 2;
+// 기존 안내 원문이 그대로일 때만 버튼 이름을 갱신한다. 사용자가 편집한 안내는 보존한다.
+const oldWelcomeRows=WELCOME.filter(row=>!row[2].startsWith('이미지:')).map(([depth,kind,text])=>[depth,kind,text.replace('우측 상단 환경설정(⚙️)','오른쪽 위 …').replaceAll('환경설정(⚙️)','…')] as [number,Kind,string]);
+export function oldWelcomeMatches(doc:ReturnType<typeof welcomeDoc>){
+  const normalize=(node:ReturnType<typeof welcomeDoc>)=>JSON.stringify(node.toJSON(),(key,value)=>key==='id'?undefined:value);
+  return normalize(doc)===normalize(welcomeDoc(oldWelcomeRows));
+}
 function writeWelcome(doc: ReturnType<typeof openNote>) {
   doc.ydoc.transact(()=>{
     if (doc.fragment.length) doc.fragment.delete(0,doc.fragment.length);
@@ -102,6 +109,10 @@ export async function seedIfEmpty(lib: Library): Promise<string | null> {
   await lib.ready;
   const meta=lib.ydoc.getMap<{noteId:string;subjectId:string;version?:number;kind?:string}>('meta');
   const old=meta.get('seed');
+  if(old?.kind==='welcome'&&old.version===1){
+    const doc=openNote(old.noteId);
+    try{await doc.ready;if(!doc.shapes.size&&oldWelcomeMatches(yXmlFragmentToProseMirrorRootNode(doc.fragment,schema))){writeWelcome(doc);meta.set('seed',{...old,version:VERSION});}}finally{doc.destroy();}
+  }
   if (old && !old.version && isUntouchedSample(lib) && lib.notes.get(old.noteId)?.title==='견본 · 경영학' && lib.subjects.get(old.subjectId)?.name==='경영학') {
     const doc=openNote(old.noteId);
     try {
