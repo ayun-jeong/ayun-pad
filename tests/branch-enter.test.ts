@@ -57,6 +57,35 @@ describe('옆 가지 뒤 Enter', () => {
     state=state.apply(state.tr.insertText('마케팅'));state=enter(state);
     expect(rows(state).map(r=>[r.text,r.depth,r.side])).toEqual([['경영학',1,true],['마케팅',2,false],['',2,false]]);
   });
+  it('이미 아래 항목이 있어도 인라인 옆가지를 펼치고 그 바로 아래 형제를 만든다', () => {
+    const doc=schema.node('doc',null,[
+      schema.node('line',{id:'ai',depth:2,kind:'branch'},schema.text('AI 활용–기물용')),
+      schema.node('line',{id:'existing',depth:3,kind:'branch'},schema.text('산불 조기 대응 시스템: 설명')),
+    ]);
+    const state=enter(EditorState.create({doc,selection:TextSelection.create(doc,doc.firstChild!.nodeSize-1)}));
+    expect(rows(state).map(r=>[r.text,r.depth,r.side])).toEqual([
+      ['AI 활용',2,true],['기물용',3,false],['',3,false],['산불 조기 대응 시스템: 설명',3,false],
+    ]);
+    expect(state.doc.lastChild).toBe(doc.lastChild);
+    expect(state.selection.$from.parent).toBe(state.doc.child(2));
+  });
+  it('분리된 중첩 옆가지 부모 끝에서도 하위 트리를 끊지 않고 마지막 옆 항목의 형제를 만든다',()=>{
+    const line=(text:string,depth:number,side=false)=>schema.node('line',{depth,kind:'branch',side},schema.text(text));
+    const doc=schema.node('doc',null,[line('A',1,true),line('B',2,true),line('C',3),line('C의 설명',4),line('기존 형제',3),line('다음 주제',1)]);
+    const state=enter(EditorState.create({doc,selection:TextSelection.create(doc,2)}));
+    expect(rows(state).map(r=>[r.text,r.depth,r.side])).toEqual([
+      ['A',1,true],['B',2,true],['C',3,false],['C의 설명',4,false],['',3,false],['기존 형제',3,false],['다음 주제',1,false],
+    ]);
+    expect(state.selection.$from.parent).toBe(state.doc.child(4));
+  });
+  it('옆 항목 자체가 자식을 거느려도 Enter로 자식이 새 빈 형제 아래에 넘어가지 않는다',()=>{
+    const line=(text:string,depth:number,side=false)=>schema.node('line',{depth,kind:'branch',side},schema.text(text));
+    const doc=schema.node('doc',null,[line('A',1,true),line('B',2),line('설명',3),line('기존 형제',2)]);
+    const at=doc.firstChild!.nodeSize+doc.child(1).nodeSize-1;
+    const state=enter(EditorState.create({doc,selection:TextSelection.create(doc,at)}));
+    expect(rows(state).map(r=>[r.text,r.depth])).toEqual([['A',1],['B',2],['설명',3],['',2],['기존 형제',2]]);
+    expect(state.selection.$from.parent).toBe(state.doc.child(3));
+  });
   it('하위 가지는 필요할 때 Tab으로 명시적으로 들여쓴다', () => {
     let state=enter(stateFor('경영학–마케팅',1));
     expect(state.doc.lastChild!.attrs.depth).toBe(2);

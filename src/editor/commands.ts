@@ -8,7 +8,7 @@ import { findColon } from './autoStyle';
 import { inlineBranches } from './inlineBranches';
 import { MAX_DEPTH } from './model';
 import { penKey } from './pen';
-import { branchDepth, emptyEnter, planIndent, planMove, type PrevLine } from './rules';
+import { branchDepth, emptyEnter, planIndent, planMove, subtreeEnd, type PrevLine } from './rules';
 import { schema } from './schema';
 
 // 줄을 담는 그릇(문서 또는 표 칸)과 그 안에서 커서 줄의 번호
@@ -143,9 +143,8 @@ export const enterCmd: Command = (state, dispatch) => {
     const colon = findColon(text);
     const branches = inlineBranches(colon >= 0 ? text.slice(0, colon) : text);
     const depth = line.attrs.depth as number;
-    const next = c.container.maybeChild(c.index + 1);
     const siblingDepth = depth + branches.length - 1;
-    if (branches.length && siblingDepth <= MAX_DEPTH && (!next || next.attrs.depth <= depth)) {
+    if (branches.length && siblingDepth <= MAX_DEPTH) {
       if (dispatch) {
         const rows = branches.map((span, i) => schema.nodes.line.create({
           ...line.attrs, id: i === 0 ? line.attrs.id : null, depth: depth + i,
@@ -156,6 +155,29 @@ export const enterCmd: Command = (state, dispatch) => {
         const tr = state.tr.replaceWith(pos, $f.after(), rows);
         const head = pos + rows.slice(0, -1).reduce((size, row) => size + row.nodeSize, 0) + 1;
         dispatch(tr.setSelection(TextSelection.create(tr.doc, head)).scrollIntoView());
+      }
+      return true;
+    }
+  }
+  // A ┬ B ┬ C가 이미 별도 줄이면 부모와 첫 자식 사이를 나누지 않는다.
+  // 끝에서 Enter는 눈에 보이는 마지막 옆 항목 C의 형제를 만든다.
+  // 항목 자체에 자식이 있으면 그 하위 트리 뒤에 넣어 자식의 소속도 보존한다.
+  if (sel.empty && c?.depth === 0 && $f.parentOffset === $f.parent.content.size && ($f.parent.attrs.side || $f.parent.attrs.kind === 'branch')) {
+    let leaf = c.index;
+    let line = c.container.child(leaf);
+    while (line.attrs.side) {
+      const kid = c.container.maybeChild(leaf + 1);
+      if (kid?.type !== schema.nodes.line || kid.attrs.depth !== line.attrs.depth + 1) break;
+      line = kid;
+      leaf++;
+    }
+    const end = subtreeEnd(lineInfos(c.container), leaf);
+    if (leaf > c.index || end > leaf) {
+      if (dispatch) {
+        const at = positions(c)[end] + c.container.child(end).nodeSize;
+        const next = schema.nodes.line.create({ depth: line.attrs.depth, kind: 'branch', align: line.attrs.align, leading: line.attrs.leading });
+        const tr = state.tr.insert(at, next);
+        dispatch(tr.setSelection(TextSelection.create(tr.doc, at + 1)).scrollIntoView());
       }
       return true;
     }
