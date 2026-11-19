@@ -34,7 +34,9 @@
     "e2e:panel-zoom": "node scripts/e2e-panel-zoom.mjs",
     "e2e:shape-text": "node scripts/e2e-shape-text.mjs",
     "e2e:text-align": "node scripts/e2e-text-align.mjs",
-    "e2e:shape-sync": "node scripts/e2e-shape-sync.mjs"
+    "e2e:shape-sync": "node scripts/e2e-shape-sync.mjs",
+    "e2e:frame-colors": "node scripts/e2e-frame-colors.mjs",
+    "e2e:drawing-undo": "node scripts/e2e-drawing-undo.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.3",

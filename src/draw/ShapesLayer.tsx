@@ -1,5 +1,6 @@
+import { DrawingHistory, DRAWING_HISTORY_EVENT } from './drawingHistory';
 import { copyGroups, expandGroups } from './groups';
-import { arrange, arrangementCount, type Arrange } from './arrange';
+import { arrangeSelected, arrangementTargetCount, type Arrange } from './arrange';
 import { ArrangeMenu } from './ArrangeMenu';
 import { leadingCmd, sizeCmd, trackCmd } from '../editor/commands';
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
@@ -206,6 +207,7 @@ type MoveDrag = { mode: 'move'; start: XY; bases: Resolved[]; moved: boolean; to
 type EditDrag = { mode: 'point' | 'corner' | 'side' | 'width' | 'ctrl'; id: string; i: number; side?: 0 | 1; start: XY; base: Resolved; moved: boolean };
 
 interface Ix {
+  history: DrawingHistory;
   sel: string[]; // 고른 그림(여러 개)
   wsel: string[]; // 고른 위젯(표 · 그래프 · 연표)
   drawing: { pts: XY[]; cs: (Ctrl | null)[] } | null; // 그리는 중인 선 · 화살표(점마다 곡선 손잡이)
@@ -231,7 +233,7 @@ const freeOf = (q: XY, last: XY | null, ortho: boolean) => ({ x: !(ortho && last
 export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, tick, draw, setDraw, onExtent, onCaret, caretXY, widgets, caught, onTextMarquee, host, settings, reading, paper = true, onLegacyEdit }: Props) {
   const [, repaint] = useReducer((x: number) => x + 1, 0);
   const layer = useRef<HTMLDivElement>(null);
-  const ix = useRef<Ix>({ sel: [], wsel: [], drawing: null, cursor: null, press: null, node: null, box: null, drag: null, drafts: new Map(), marquee: null, guides: null, last: null, pid: null }).current;
+  const ix = useRef<Ix>({ history: new DrawingHistory(), sel: [], wsel: [], drawing: null, cursor: null, press: null, node: null, box: null, drag: null, drafts: new Map(), marquee: null, guides: null, last: null, pid: null }).current;
   // 새 글상자는 첫 글자를 쓸 때 저장한다(그냥 나가면 흔적 없이 사라지고 되돌리기 칸도 안 남는다)
   const [pending, setPending] = useState<TextShape | null>(null);
   const geo = useRef<{ lines: Lines; W: number; H: number } | null>(null);
@@ -543,6 +545,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   const active = !!draw;
   useEffect(() => {
     if (!active) {
+      ix.history.clear();
       ix.sel = [];
       ix.wsel = [];
       ix.marquee = null;
@@ -715,6 +718,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
 
   // 그리기 그만두기(Esc): 찍은 점은 버린다
   const cancelPath = () => {
+    ix.history.clear();
     ix.drawing = null;
     ix.cursor = null;
     ix.press = null;
@@ -837,6 +841,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   const finishBox = (p: XY) => {
     const d = drawRef.current;
     const box = ix.box;
+    ix.history.clear();
     ix.box = null;
     ix.guides = null;
     if (!box || !d || (d.tool !== 'rect' && d.tool !== 'ellipse')) return;
@@ -931,6 +936,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       const dr = ix.drawing ?? (ix.drawing = { pts: [], cs: [] });
       const last = dr.pts[dr.pts.length - 1];
       if (!last || dist(q, last) >= 0.5) {
+        ix.history.record({ drawing: dr.pts.length ? dr : null, box: ix.box });
         dr.pts.push(q);
         dr.cs.push(null);
       }
@@ -941,6 +947,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     if (d.tool === 'rect' || d.tool === 'ellipse') {
       pickOnly([]);
       const a = snapPt(p, new Set(), [], { x: true, y: true }, e);
+      ix.history.record({drawing:ix.drawing,box:ix.box});
       ix.box = { a, b: a };
       return repaint();
     }
@@ -1176,7 +1183,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     if (!list.length) return;
     write(() => {
       for (const s of list) {
-        const p = Object.entries(typeof patch === 'function' ? patch(s) : patch).filter(([k]) => fits(s, k));
+        const p = Object.entries(typeof patch === 'function' ? patch(s) : patch).filter(([k]) => fits(s, k)).map(([k,v]) => [s.t === 'text' && s.frame && k === 'c' ? 'stroke' : k, v] as [string,unknown]);
         if (!p.length) continue;
         let next = { ...s, ...Object.fromEntries(p) } as Shape;
         // 글상자 색은 안의 글 전체(자동 빨강 · 직접 칠한 색까지)
@@ -1218,7 +1225,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     if (!list.length) return;
     write(() => {
       for (const s of list) {
-        if (s.t === 'text') shapes.set(s.id, clean(withEffects(s, [{ from: 0, to: textDoc(s).content.size }], c ? { hl: c } : {}, c ? [] : ['hl'])));
+        if (s.t === 'text' && !s.frame) shapes.set(s.id, clean(withEffects(s, [{ from: 0, to: textDoc(s).content.size }], c ? { hl: c } : {}, c ? [] : ['hl'])));
         else shapes.set(s.id, clean({ ...s, fill: c } as Shape));
       }
     });
@@ -1270,7 +1277,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   const duplicate = () => addCopies(ix.sel.map(byId).filter(isR), 2, pitch);
   const arrangeSelection = (action: Arrange) => {
     const rs = ix.sel.map(byId).filter(isR);
-    write(() => arrange(rs, action, th).forEach(r => shapes.set(r.id, clean(unresolve(r, lines)))));
+    write(() => arrangeSelected(rs, action, th).forEach(r => shapes.set(r.id, clean(unresolve(r, lines)))));
     repaint();
   };
 
@@ -1349,9 +1356,24 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   const finishOrCancel = () => {
     if (ix.drawing) finishPath();
     ix.box = null;
+    ix.history.clear();
     if (!ix.marquee?.writing) ix.marquee = null; // 글쓰기 화면의 사각형 고르기는 그대로(화면을 다시 그릴 때마다 불린다)
     ix.guides = null;
   };
+
+  const historyDraft = (redo:boolean) => {
+    if (!drawRef.current || readRef.current || !ix.history.active) return false;
+    const next=ix.history.step(redo,{drawing:ix.drawing,box:ix.box});
+    if(next) {ix.drawing=next.drawing;ix.box=next.box;}
+    ix.press=null;ix.cursor=null;ix.guides=null;ix.last=null;
+    repaint();return true;
+  };
+  const draftHistoryRef=useRef(historyDraft);draftHistoryRef.current=historyDraft;
+  useEffect(()=>{
+    const on=(e:Event)=>{if(draftHistoryRef.current(!!(e as CustomEvent<{redo:boolean}>).detail?.redo))e.preventDefault();};
+    window.addEventListener(DRAWING_HISTORY_EVENT,on);
+    return()=>window.removeEventListener(DRAWING_HISTORY_EVENT,on);
+  },[]);
 
   // 그리기 중 키: 도구 V A L R O T, H 직각, Q 고정, [ ] 굵기, ⌥색 / ⌥⇧색 형광펜 · 채우기, ⌥, ⌥. 자간, ⌥⇧, ⌥⇧. 행간, ⌘⇧, ⌘⇧. 글씨 크기,
   // ⌘A 모두 고르기, ⌘C ⌘X ⌘V, ⌫ 지우기(그리는 중이면 마지막 점), Enter · Esc 끝내기
@@ -1386,7 +1408,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       } else if (id === 'KeyH') setDraw({ ortho: !d.ortho }); // 앞으로 그릴 방식(이미 그린 화살표는 막대의 '직각')
       else if (id === 'KeyQ') setDraw({ lock: !d.lock });
       else if (id === 'BracketLeft' || id === 'BracketRight') {
-        const w = stepW(sel.find((s) => s.t !== 'text')?.w ?? d.w, id === 'BracketRight' ? 1 : -1);
+        const w = stepW(sel.find((s) => s.t !== 'text' || !!s.frame)?.w ?? d.w, id === 'BracketRight' ? 1 : -1);
         setDraw({ w });
         update({ w });
       } else if (id === 'alt+Comma' || id === 'alt+Period') format('ls', id === 'alt+Period' ? 1 : -1);
@@ -1410,11 +1432,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       } else if (code === 'Backspace' || code === 'Delete') {
         const n = ix.node;
         const np = n && sel.length === 1 && sel[0].id === n.id ? byId(n.id) : undefined;
-        if (ix.drawing) {
-          ix.drawing.pts.pop();
-          ix.drawing.cs.pop();
-          if (!ix.drawing.pts.length) ix.drawing = null;
-          repaint();
+        if (ix.history.active) {
+          historyDraft(false);
         } else if (n && np?.t === 'path' && n.i < np.pts.length) {
           // 고른 점 하나만 빼고 앞뒤를 잇는다(점이 둘뿐이면 경로째 지움)
           ix.node = null;
@@ -1437,8 +1456,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
           if (!pasted.current && clip.shapes) pasteShapes(clip.shapes, null);
         }, 80);
         handled = false;
-      } else if (id === 'mod+KeyZ') um?.undo();
-      else if (id === 'mod+shift+KeyZ' || id === 'mod+KeyY') um?.redo();
+      } else if (id === 'mod+KeyZ') { if (!historyDraft(false)) um?.undo(); }
+      else if (id === 'mod+shift+KeyZ' || id === 'mod+KeyY') { if (!historyDraft(true)) um?.redo(); }
       else if (code === 'Enter' || code === 'NumpadEnter') {
         // 그리는 중: 마지막으로 찍은 점을 끝점으로(점이 둘 이상일 때)
         if (ix.drawing) {
@@ -1683,6 +1702,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
               if (!p || 'tool' in p) finishOrCancel(); // 도구를 바꾸거나 끝낼 때만(색 · 굵기 · 직각은 긋던 것에 이어서)
               setDraw(p && { ...p, picked: false }); // 막대에서 도구 · 설정을 고르면 그리기로 넘어간 것(null = 그리기 끝)
             }}
+            history={(redo) => { if (!historyDraft(redo)) { if (redo) um?.redo(); else um?.undo(); } }}
             update={update}
             format={format}
             highlight={highlight}
@@ -1746,6 +1766,7 @@ interface BarProps {
   wcount: number;
   drawing: boolean;
   setDraw(patch: Partial<DrawState> | null): void;
+  history(redo: boolean): void;
   update(patch: Record<string, unknown> | ((s: Shape) => Record<string, unknown>)): void;
   format(k: FmtKey, dir: 1 | -1): void;
   highlight(c: string | null): void;
@@ -1763,7 +1784,7 @@ const mod = isMac ? '⌘' : 'Ctrl+';
 
 // 그리기 막대. 무엇이든 고르면 고른 것(여러 개면 모두)의 색 · 굵기 · 직각 · 화살촉 · 점선 · 글씨 · 형광펜 · 복제 · 지우기,
 // 고른 게 없으면 새로 그릴 도구와 설정.
-function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highlight, remove, duplicate, groupSelection, arrangeSelection, finish, toTools }: BarProps) {
+function DrawBar({ draw, sel, wcount, drawing, setDraw, history, update, format, highlight, remove, duplicate, groupSelection, arrangeSelection, finish, toTools }: BarProps) {
   // 커서를 뺏지 않고, 누름이 그림 층(종이)으로 올라가지 않게
   const keep = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -1774,7 +1795,9 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highligh
   const boxes = sel.filter((s): s is BoxShape | TextShape => s.t === 'rect' || s.t === 'ellipse' || (s.t === 'text' && !!s.frame));
   const texts = sel.filter((s): s is TextShape => s.t === 'text');
   const strokes = sel.filter((s) => s.t !== 'text' || !!s.frame);
-  const c = sel[0]?.c ?? draw.c;
+  const first = sel[0];
+  const shapeColors = sel.some(s => s.t === 'text' && !!s.frame);
+  const c = first?.t === 'text' && first.frame ? first.stroke ?? 'k' : first?.c ?? draw.c;
   const w = strokes[0]?.w ?? draw.w;
   const setW = (dir: 1 | -1) => {
     const v = stepW(w, dir);
@@ -1789,8 +1812,8 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highligh
           type="button"
           className={c === k ? 'on' : ''}
           onClick={() => (n ? update({ c: k }) : setDraw({ c: k }))}
-          title={`${PEN_NAME[k]} (${alt}${k.toUpperCase()})`}
-          aria-label={PEN_NAME[k]}
+          title={`${PEN_NAME[k]}${shapeColors ? ' 테두리' : ''} (${alt}${k.toUpperCase()})`}
+          aria-label={`${PEN_NAME[k]}${shapeColors ? ' 테두리' : ''}`}
         >
           <i style={{ background: strokeOf(k) }} />
         </button>
@@ -1833,6 +1856,10 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highligh
   </div>;
   return (
     <div className={`drawbar${n ? ' has-sel' : ''}`} role="toolbar" aria-label="그리기 도구" onPointerDown={keep} onPointerUp={(e) => e.stopPropagation()}>
+      <div className="dgroup">
+        <button type="button" aria-label="그리기 실행취소" title="실행취소 · 그리는 중에는 마지막 점" onClick={()=>history(false)}>↶</button>
+        <button type="button" aria-label="그리기 다시 실행" title="다시 실행" onClick={()=>history(true)}>↷</button>
+      </div>
       {n ? (
         <>
           <div className="dgroup dsel">
@@ -1882,19 +1909,19 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, update, format, highligh
           )}
           {(texts.length > 0 || boxes.length > 0) && (
             <div className="dgroup swatches dhl">
-              <span className="dlab">형광</span>
+              <span className="dlab">{shapeColors ? '채움' : '형광'}</span>
               {HL_COLORS.map((k) => (
-                <button key={k} type="button" onClick={() => highlight(k)} title={`${PEN_NAME[k]} 형광펜 (${alt}⇧${k.toUpperCase()}) · 글상자는 글 전체, 네모 · 원은 채우기`} aria-label={`${PEN_NAME[k]} 형광펜`}>
+                <button key={k} type="button" onClick={() => highlight(k)} title={`${PEN_NAME[k]} ${shapeColors ? '채우기' : '형광펜'} (${alt}⇧${k.toUpperCase()})`} aria-label={`${PEN_NAME[k]} ${shapeColors ? '채우기' : '형광펜'}`}>
                   <i style={{ background: strokeOf(k), opacity: 0.45 }} />
                 </button>
               ))}
-              <button type="button" onClick={() => highlight(null)} title={`형광펜 지우기 (${alt}⇧X)`} aria-label="형광펜 지우기">
+              <button type="button" onClick={() => highlight(null)} title={`${shapeColors ? '채우기' : '형광펜'} 지우기 (${alt}⇧X)`} aria-label={shapeColors ? "도형 채우기 지우기" : "형광펜 지우기"}>
                 ×
               </button>
             </div>
           )}
           <div className="dgroup">
-            {arrangementCount(sel) >= 2 && <ArrangeMenu count={arrangementCount(sel)} onArrange={arrangeSelection} />}
+            {arrangementTargetCount(sel) >= 2 && <ArrangeMenu count={arrangementTargetCount(sel)} onArrange={arrangeSelection} />}
             {sel.length >= 2 && <button type="button" onClick={() => groupSelection()} title={`그룹 묶기 (${mod}G)`}>그룹 묶기</button>}
             {sel.some((s) => s.group) && <button type="button" onClick={() => groupSelection(true)} title={`그룹 해제 (${mod}⇧G)`}>그룹 해제</button>}
             {sel.length > 0 && (

@@ -18,6 +18,7 @@ import type { ShortcutHost } from '../editor/shortcuts';
 import { PEN_NAME, type PenKey } from '../editor/model';
 import { MathMenu } from '../ui/Menus';
 import { shapesIn } from './clip';
+import { FrameColors } from './FrameColors';
 import { strokeOf, type Resolved, type TextShape } from './model';
 
 // 글상자 내용: ProseMirror 문서(JSON). 옛 글상자(text만 있음)는 줄마다 나눠 읽는다.
@@ -264,6 +265,7 @@ function TbBar({ anchor, view, r, editing, onPatch, um }: { anchor: RefObject<HT
         })}
       </div>
       <span className="tb-sep" />
+      {r.frame && <><FrameColors stroke={r.stroke ?? 'k'} fill={r.fill} onStroke={stroke => onPatch({ stroke })} onFill={fill => onPatch({ fill })} /><span className="tb-sep" /></>}
       {!r.frame && <button type="button" className={r.box ? 'on' : ''} title="테두리" aria-label="테두리" onClick={() => onPatch({ box: !r.box })}>
         □
       </button>}

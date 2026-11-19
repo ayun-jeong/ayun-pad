@@ -62,3 +62,14 @@ export function arrange(items: Resolved[], action: Arrange, textH: (id: string) 
   }
   return items.map(r => result.get(r.id) ?? r);
 }
+
+// 그룹 하나만 고르면 그 안의 대상을, 여러 그룹을 고르면 각 그룹을 한 덩어리로 정렬한다.
+export function arrangementTargetCount(items: {id:string;group?:string}[]) {
+  const units=arrangementCount(items);
+  return units===1 ? items.length : units;
+}
+export function arrangeSelected(items:Resolved[],action:Arrange,textH:(id:string)=>number):Resolved[] {
+  if (arrangementCount(items)!==1 || items.length<2) return arrange(items,action,textH);
+  const result=arrange(items.map(r=>({...r,group:undefined})),action,textH);
+  return result.map((r,i)=>({...r,group:items[i].group}));
+}

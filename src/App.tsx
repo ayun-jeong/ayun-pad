@@ -2,7 +2,7 @@ import { copyGroups, expandGroups } from './draw/groups';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { NodeSelection, Selection, TextSelection, type Command, type EditorState } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
-import { redo, undo } from 'y-prosemirror';
+import { requestDrawingHistory } from './draw/drawingHistory';
 import type * as Y from 'yjs';
 import { DEFAULT_DRAW, measureLines, pickedBoxes, type DrawState } from './draw/ShapesLayer';
 import { anchorAt, DEFAULT_W, hit, resolve, SHAPES, translate, unresolve, type Resolved, type Shape, type TextShape, type Tool } from './draw/model';
@@ -1540,10 +1540,10 @@ export function App() {
             <span className="swatch hl-sw hl-y" />
             <small>형광</small>
           </button>
-          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => void undo(v.state))} aria-label="되돌리기">
+          <button type="button" onPointerDown={keepFocus} onClick={() => { if (!requestDrawingHistory(false)) umRef.current?.undo(); }} aria-label="되돌리기">
             ↶<small>취소</small>
           </button>
-          <button type="button" onPointerDown={keepFocus} onClick={() => withView((v) => void redo(v.state))} aria-label="다시 하기">
+          <button type="button" onPointerDown={keepFocus} onClick={() => { if (!requestDrawingHistory(true)) umRef.current?.redo(); }} aria-label="다시 하기">
             ↷<small>다시</small>
           </button>
           <button type="button" onPointerDown={keepFocus} onClick={() => act('draw')} aria-label="그리기">

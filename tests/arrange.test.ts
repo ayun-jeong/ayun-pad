@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arrange, arrangementCount, ARRANGE } from '../src/draw/arrange';
+import { arrange, arrangeSelected, arrangementTargetCount, arrangementCount, ARRANGE } from '../src/draw/arrange';
 import { bboxOf } from '../src/draw/snap';
 import { resolve, unresolve, type Resolved } from '../src/draw/model';
 const items: Resolved[] = [
@@ -39,6 +39,19 @@ describe('선택한 글상자 · 도형 정렬', () => {
     expect(bs[1].x - bs[0].x).toBe(30); expect(bs[1].y - bs[0].y).toBe(30);
     expect(bs[1].x + bs[1].w).toBe(bs[2].x + bs[2].w);
     expect(arrange(grouped.slice(0, 2), 'left', th)).toEqual(grouped.slice(0, 2));
+  });
+  it('그룹 하나의 내부 정렬도 그룹 관계를 유지하며 지원한다', () => {
+    const group=items.map(r=>({...r,group:'one'}));
+    expect(arrangementTargetCount(group)).toBe(3);
+    const next=arrangeSelected(group,'center',th),bs=boxes(next);
+    expect(new Set(bs.map(b=>b.x+b.w/2)).size).toBe(1);
+    expect(next.every(r=>r.group==='one')).toBe(true);
+    const sizes=boxes(arrangeSelected(group,'width',th));expect(sizes.every(b=>b.w===30)).toBe(true);
+  });
+  it('여러 그룹의 정렬은 기존 내부 배치를 유지한다', () => {
+    const group=items.map((r,i)=>({...r,group:i<2?'one':'two'}));
+    expect(arrangementTargetCount(group)).toBe(2);
+    expect(arrangeSelected(group,'left',th)).toEqual(arrange(group,'left',th));
   });
   it('곡선 크기를 맞추면 제어점도 같은 비율로 바뀐다', () => {
     const path: Resolved = { id: 'p', t: 'path', pts: [{ x: 0, y: 0 }, { x: 10, y: 10 }], cs: [[{ x: 0, y: 0 }, { x: 2, y: 1 }], null], head: 1, c: 'k', w: .2, z: 3 };

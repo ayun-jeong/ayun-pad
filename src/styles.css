@@ -761,3 +761,13 @@ body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: non
 
 .tbox.shape-text { display: flex; align-items: center; }
 .tbox.shape-text > .tb-mount { width: 100%; min-width: 0; }
+
+.tb-bar .tb-frame-toggle { display: inline-flex; gap: 4px; padding: 0 5px; font-size: 11px; }
+.tb-frame-toggle i { width: 11px; height: 11px; border-radius: 2px; }
+.tb-frame-toggle i.no-fill { background: linear-gradient(135deg, transparent 44%, #ec3535 45%, #ec3535 55%, transparent 56%) !important; }
+.tb-frame-palette { position: fixed; z-index: 2; width: 188px; padding: 9px; border: 1px solid var(--rule-2); border-radius: 9px; background: var(--surface); box-shadow: var(--shadow); display: grid; gap: 7px; font-size: 12px; }
+.tb-frame-palette strong { font-size: 11px; color: var(--ink-2); }
+.tb-frame-swatches { display: flex; justify-content: space-between; gap: 2px; }
+.tb-frame-extra { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.tb-frame-extra label { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; font-size: 10px; }
+.tb-frame-extra input { width: 24px; height: 24px; padding: 0; border: 0; background: transparent; }
