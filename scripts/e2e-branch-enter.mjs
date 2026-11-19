@@ -12,18 +12,20 @@ try{
   await page.$eval('.addnote',e=>e.click());await page.waitForSelector('.shapes-layer');
   const p=await page.$eval('.shapes-layer',e=>{const r=e.getBoundingClientRect();return{x:r.x+80,y:r.y+120};});
   await page.mouse.click(p.x,p.y);await page.waitForSelector('.tbox.tedit');
-  await page.keyboard.type('배전방식---가공배전: 전주와 전선을 이용해 공급');
-  await page.keyboard.press('Enter');await page.keyboard.type('하위 설명');await page.keyboard.press('Enter');await page.keyboard.type('다음 설명');await sleep(400);
+  await page.keyboard.type('경영학---마케팅');
+  await page.keyboard.press('Enter');await page.keyboard.type('인사관리');await page.keyboard.press('Enter');await page.keyboard.type('재무관리');await sleep(400);
   const saved=await page.evaluate(()=>[...window.__ayunpad.doc().shapes.values()].find(s=>s.t==='text').doc);
   assert.deepEqual(saved.content.map(n=>[n.content?.map(n=>n.text??'').join('')??'',n.attrs.depth,n.attrs.kind,n.attrs.side]),[
-    ['배전방식',1,'plain',true],['가공배전: 전주와 전선을 이용해 공급',2,'branch',false],['하위 설명',3,'branch',false],['다음 설명',3,'branch',false],
+    ['경영학',1,'plain',true],['마케팅',2,'branch',false],['인사관리',2,'branch',false],['재무관리',2,'branch',false],
   ]);
-  const rects=await page.$$eval('.tb-edit .ln',es=>es.map(e=>{const r=e.getBoundingClientRect();return{x:r.x,y:r.y,style:e.getAttribute('style')};}));
+  const rects=await page.$$eval('.tb-edit .ln',es=>es.map(e=>{const r=e.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(e);return{x:r.x,y:r.y,textX:range.getBoundingClientRect().x,style:e.getAttribute('style')};}));
   assert.ok(Math.abs(rects[0].y-rects[1].y)<1,'옆 주제어는 같은 줄에 표시');
-  assert.ok(rects[1].x>rects[0].x,'가공배전은 배전방식 오른쪽');
-  assert.ok(rects[2].y>rects[1].y,'하위 가지는 다음 줄');
-  assert.ok(/padding-left:\s*calc\(/.test(rects[2].style),'하위 가지는 옆 주제어 기준으로 들여쓰기');
-  console.log('ok  --- 변환 뒤 Enter는 옆 주제어의 하위 가지 · 다음 Enter는 형제 가지 · 같은 줄 배치 유지');
+  assert.ok(rects[1].x>rects[0].x,'마케팅은 경영학 오른쪽');
+  assert.ok(rects[2].y>rects[1].y,'형제 가지는 다음 줄');
+  assert.ok(/padding-left:\s*calc\(/.test(rects[2].style),'형제 가지는 옆 주제어 기준으로 정렬');
+  assert.ok(Math.abs(rects[1].textX-rects[2].textX)<1,'Shift+Tab 없이 옆 가지 첫 항목과 형제 항목의 글 시작 위치 일치');
+  assert.ok(Math.abs(rects[2].textX-rects[3].textX)<1);
+  console.log('ok  경영학 ┬─마케팅에서 Enter → 같은 깊이 인사관리·재무관리 · Shift+Tab 없이 글 시작 위치 일치');
   await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('.tbox .ln');
   const reloaded=await page.evaluate(()=>[...window.__ayunpad.doc().shapes.values()].find(s=>s.t==='text').doc);
   assert.deepEqual(reloaded,saved);assert.deepEqual(errors,[]);

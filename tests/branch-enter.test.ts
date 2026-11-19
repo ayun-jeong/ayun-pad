@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EditorState, TextSelection } from 'prosemirror-state';
-import { enterCmd } from '../src/editor/commands';
+import { enterCmd, indentCmd, sideCmd } from '../src/editor/commands';
 import { schema } from '../src/editor/schema';
 import { autoHlSpans, buildDecorations } from '../src/editor/decorations';
 
@@ -17,23 +17,23 @@ const rows = (state: EditorState) => Array.from({ length: state.doc.childCount }
 });
 
 describe('옆 가지 뒤 Enter', () => {
-  it('가공배전 아래 첫 자식을 만들고 그 다음 Enter는 자식의 형제를 만든다', () => {
+  it('가공배전과 같은 깊이의 형제를 만들고 다음 Enter도 같은 깊이를 유지한다', () => {
     let state = enter(stateFor('배전방식–가공배전: 전주와 전선을 이용해 공급'));
     expect(rows(state)).toEqual([
       {text:'배전방식',depth:2,kind:'branch',side:true},
       {text:'가공배전: 전주와 전선을 이용해 공급',depth:3,kind:'branch',side:false},
-      {text:'',depth:4,kind:'branch',side:false},
+      {text:'',depth:3,kind:'branch',side:false},
     ]);
     expect(state.doc.firstChild!.attrs.id).toBe('parent');
     expect(state.selection.$from.parent).toBe(state.doc.lastChild);
     state = state.apply(state.tr.insertText('지중배전'));
     state = enter(state);
     expect(rows(state).slice(-2)).toEqual([
-      {text:'지중배전',depth:4,kind:'branch',side:false},
-      {text:'',depth:4,kind:'branch',side:false},
+      {text:'지중배전',depth:3,kind:'branch',side:false},
+      {text:'',depth:3,kind:'branch',side:false},
     ]);
   });
-  it('직접 칠한 형광펜과 글씨 크기를 보존하고 하위 가지의 자동 색을 잇는다', () => {
+  it('직접 칠한 형광펜과 글씨 크기를 보존하고 형제 가지에는 같은 자동 색을 쓴다', () => {
     const doc = schema.node('doc',null,schema.node('line',{depth:2},[
       schema.text('배전방식',[schema.marks.hl.create({c:'b'})]),schema.text('–'),
       schema.text('가공배전',[schema.marks.size.create({v:1.2})]),schema.text(': 설명'),
@@ -43,12 +43,25 @@ describe('옆 가지 뒤 Enter', () => {
     expect(state.doc.child(1).firstChild!.marks[0].attrs.v).toBe(1.2);
     state=state.apply(state.tr.insertText('하위 내용'));
     const colors=autoHlSpans(buildDecorations(state.doc),0,state.doc.content.size).map(s=>({text:state.doc.textBetween(s.from,s.to),c:s.c}));
-    expect(colors).toEqual([{text:'가공배전',c:'g'},{text:'하위 내용',c:'p'}]);
+    expect(colors).toEqual([{text:'가공배전',c:'g'},{text:'하위 내용',c:'g'}]);
   });
-  it('여러 옆 가지도 마지막 주제어 아래로 이어진다', () => {
+  it('여러 옆 가지도 마지막 항목과 동일한 깊이로 이어진다', () => {
     expect(rows(enter(stateFor('A–B–C: 설명'))).map(r=>[r.text,r.depth,r.side])).toEqual([
-      ['A',2,true],['B',3,true],['C: 설명',4,false],['',5,false],
+      ['A',2,true],['B',3,true],['C: 설명',4,false],['',4,false],
     ]);
+  });
+  it('옆 가지 버튼으로 만든 첫 항목도 Enter 즉시 형제 깊이에 정렬한다', () => {
+    const doc=schema.node('doc',null,schema.node('line',{depth:1},schema.text('경영학')));
+    let state=EditorState.create({doc,selection:TextSelection.create(doc,4)});
+    sideCmd()(state,tr=>{state=state.apply(tr);});
+    state=state.apply(state.tr.insertText('마케팅'));state=enter(state);
+    expect(rows(state).map(r=>[r.text,r.depth,r.side])).toEqual([['경영학',1,true],['마케팅',2,false],['',2,false]]);
+  });
+  it('하위 가지는 필요할 때 Tab으로 명시적으로 들여쓴다', () => {
+    let state=enter(stateFor('경영학–마케팅',1));
+    expect(state.doc.lastChild!.attrs.depth).toBe(2);
+    indentCmd(1)(state,tr=>{state=state.apply(tr);});
+    expect(state.doc.lastChild!.attrs.depth).toBe(3);
   });
   it.each(['일반 설명','주제: 설명–이어서','2020–2025'])('옆 가지가 아닌 %s는 기존 줄바꿈 유지', text => {
     expect(rows(enter(stateFor(text))).map(r=>r.depth)).toEqual([2,2]);
@@ -57,6 +70,7 @@ describe('옆 가지 뒤 Enter', () => {
     const state=stateFor('A–B: 설명');
     const middle=state.apply(state.tr.setSelection(TextSelection.create(state.doc,4)));
     expect(rows(enter(middle)).map(r=>r.depth)).toEqual([2,2]);
-    expect(rows(enter(stateFor('A–B',7))).map(r=>r.depth)).toEqual([7,7]);
+    expect(rows(enter(stateFor('A–B',8))).map(r=>r.depth)).toEqual([8,8]);
+    expect(rows(enter(stateFor('A–B',7))).map(r=>r.depth)).toEqual([7,8,8]);
   });
 });
