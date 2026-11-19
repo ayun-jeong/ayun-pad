@@ -141,8 +141,12 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
     if (top && top.first === i && node.type.name === 'line') {
       const own = row.cells[top.d - 1];
       const t: TreeCell = own === 't' ? 'f' : own === 'l' ? 'h' : own === 'v' ? 'v' : '';
-      bg = treeBackground([t], () => '0px');
-      layout = `margin-top:calc(-1 * var(--lh));margin-left:${top.x.toFixed(2)}px;padding-left:var(--ind);`;
+      // 첫 옆 가지가 여러 줄로 감겨도 조상의 세로선이 그 높이 전체를 지나야 한다.
+      // 블록을 오른쪽으로 옮기면 바깥 선을 칠할 영역이 없어지므로, 글의 위치만 여백으로 맞춘다.
+      const cells: TreeCell[] = [...row.cells];
+      cells[top.d - 1] = t;
+      bg = treeBackground(cells, colBase);
+      layout = `margin-top:calc(-1 * var(--lh));padding-left:${colBase(d - 1)};`;
     } else if (top) {
       bg = treeBackground(row.cells, colBase);
       layout = `padding-left:${colBase(d - 1)};`;

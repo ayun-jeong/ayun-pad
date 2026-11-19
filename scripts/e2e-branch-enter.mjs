@@ -20,7 +20,7 @@ try{
   ]);
   const rects=await page.$$eval('.tb-edit .ln',es=>es.map(e=>{const r=e.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(e);return{x:r.x,y:r.y,textX:range.getBoundingClientRect().x,style:e.getAttribute('style')};}));
   assert.ok(Math.abs(rects[0].y-rects[1].y)<1,'옆 주제어는 같은 줄에 표시');
-  assert.ok(rects[1].x>rects[0].x,'마케팅은 경영학 오른쪽');
+  assert.ok(rects[1].textX>rects[0].textX,'마케팅은 경영학 오른쪽');
   assert.ok(rects[2].y>rects[1].y,'형제 가지는 다음 줄');
   assert.ok(/padding-left:\s*calc\(/.test(rects[2].style),'형제 가지는 옆 주제어 기준으로 정렬');
   assert.ok(Math.abs(rects[1].textX-rects[2].textX)<1,'Shift+Tab 없이 옆 가지 첫 항목과 형제 항목의 글 시작 위치 일치');
