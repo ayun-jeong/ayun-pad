@@ -120,7 +120,7 @@ export function trashed(lib: Library): NoteMeta[] {
   return [...lib.notes.values()].filter((n) => n.deleted).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
-// 처음 열었을 때 만든 견본만 있고 아무것도 고치지 않았는지. 다른 기기의 목록을 받기 전에 지워서 견본이 두 벌 생기지 않게 한다.
+// 기본 안내(또는 옛 견본)만 있고 아무것도 고치지 않았는지. 다른 기기 목록을 받을 때 기본 노트가 중복되지 않게 한다.
 export function isUntouchedSample(lib: Library): boolean {
   const seed = lib.ydoc.getMap<{ noteId: string; subjectId: string }>('meta').get('seed');
   if (!seed || lib.notes.size !== 1 || lib.subjects.size !== 1) return false;

@@ -324,11 +324,11 @@ export function App() {
     [setDraw],
   );
 
-  // 시작: 목록 열기 → (처음이면) 견본 → 로그인 확인 → 동기화
+  // 시작: 목록 열기 → (처음이면) 사용 안내 → 로그인 확인 → 동기화
   useEffect(() => {
     const onLib = () => bump();
     lib.ydoc.on('update', onLib);
-    // 이 기기의 첫 로그인: 서버에 이미 목록이 있으면 손대지 않은 견본은 지우고 받는다(견본이 두 벌 생기지 않게).
+    // 이 기기의 첫 로그인: 서버에 이미 목록이 있으면 손대지 않은 기본 안내·옛 견본은 지우고 받는다.
     hub.onLogin = async (uid) => {
       const key = `ayunpad-synced-${uid}`;
       if (!lsGet(key)) {
