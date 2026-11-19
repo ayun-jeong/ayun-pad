@@ -1,7 +1,8 @@
+import {tableHistoryKey} from './tables';
 import type { Node } from 'prosemirror-model';
-import { NodeSelection, Plugin, Selection, type Command, type EditorState, type Transaction } from 'prosemirror-state';
+import { NodeSelection, Plugin, Selection, type EditorState, type Transaction } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
-import { addColumnAfter, addRowAfter, deleteColumn, deleteRow, TableView } from 'prosemirror-tables';
+import { TableMap,TableView } from 'prosemirror-tables';
 import type { EditorView, NodeView } from 'prosemirror-view';
 import { yUndoPluginKey } from 'y-prosemirror';
 import { runUndo } from './undoKey';
@@ -510,123 +511,77 @@ class GraphView extends WidgetView {
 // 표: prosemirror-tables의 기본 뷰 + 크기(--s). 칸 안 줄은 일반 줄과 같은 규칙으로 칠해진다.
 // 끌어서 바꾼 열 너비는 '비율'로 써서 표를 줄여도 열이 같이 줄어든다.
 class PadTableView extends TableView {
-  private handle: HTMLElement;
-  private ctl: HTMLElement;
-  private ro: ResizeObserver;
-
-  constructor(
-    node: Node,
-    cellMinWidth: number,
-    private view?: EditorView,
-  ) {
-    super(node, cellMinWidth);
-    this.dom.classList.add('tblw');
-    this.handle = resizeHandle(
-      () => this.table,
-      () => this.dom,
-      () => (this.node.attrs.scale as number) ?? 1,
-      (scale) => {
-        const pos = this.pos();
-        if (pos != null && this.view) this.view.dispatch(this.view.state.tr.setNodeMarkup(pos, undefined, { ...this.node.attrs, scale }));
-      },
-    );
+  private handle:HTMLElement;
+  private ro:ResizeObserver;
+  private rowGuides=document.createElement('div');
+  private colGuides=document.createElement('div');
+  private cleanupDrag:(()=>void)|null=null;
+  private dead=false;
+  private pendingPlace=false;
+  constructor(node:Node,cellMinWidth:number,private view?:EditorView){
+    super(node,cellMinWidth);this.dom.classList.add('tblw');
+    this.handle=resizeHandle(()=>this.table,()=>this.dom,()=>this.node.attrs.scale??1,scale=>{const pos=this.pos();if(pos!=null&&this.view)this.view.dispatch(this.view.state.tr.setNodeMarkup(pos,undefined,{...this.node.attrs,scale}));});
     this.dom.appendChild(this.handle);
-    // 표 위 작은 막대: 행 · 열 넣고 빼기, 표 지우기
-    this.ctl = document.createElement('div');
-    this.ctl.className = 'tbl-ctl';
-    this.ctl.contentEditable = 'false';
-    const btn = (label: string, title: string, fn: () => void) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'wg-btn';
-      b.textContent = label;
-      b.title = title;
-      b.addEventListener('mousedown', (e) => e.preventDefault());
-      b.addEventListener('click', (e) => {
-        e.preventDefault();
-        fn();
-      });
-      this.ctl.appendChild(b);
-    };
-    btn('행＋', '아래에 행 넣기', () => this.cmd(addRowAfter));
-    btn('열＋', '오른쪽에 열 넣기', () => this.cmd(addColumnAfter));
-    btn('행－', '지금 행 지우기', () => this.cmd(deleteRow));
-    btn('열－', '지금 열 지우기', () => this.cmd(deleteColumn));
-    btn('표 지우기', '표를 통째로 지우기(⌘Z로 되돌림)', () => this.removeTable());
-    this.dom.appendChild(this.ctl);
-    this.ro = new ResizeObserver(() => this.placeHandle());
-    this.ro.observe(this.table);
-    this.applyScale();
+    this.colGuides.className='table-column-guides sh-ui';this.colGuides.contentEditable='false';this.dom.appendChild(this.colGuides);
+    this.rowGuides.className='table-row-guides sh-ui';this.rowGuides.contentEditable='false';this.dom.appendChild(this.rowGuides);
+    const select=document.createElement('button');select.type='button';select.className='table-move-handle sh-ui';select.textContent='⠿';select.title='표 선택 · 방향키로 이동';select.setAttribute('aria-label','표 선택 · 방향키 이동');select.contentEditable='false';select.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();const pos=this.pos();if(pos!=null&&this.view){this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc,pos)));this.view.focus();}});this.rowGuides.appendChild(select);
+    this.dom.addEventListener('mousedown',e=>{if(e.target!==this.dom&&e.target!==this.table)return;const pos=this.pos();if(pos!=null&&this.view){e.preventDefault();this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc,pos)));this.view.focus();}});
+    this.ro=new ResizeObserver(()=>this.placeHandle());this.ro.observe(this.table);this.applyScale();this.schedulePlace();
   }
-
-  // 표 노드의 문서 위치(TableView는 getPos를 받지 않아서 DOM으로 찾는다)
-  private pos(): number | null {
-    if (!this.view) return null;
-    try {
-      const $p = this.view.state.doc.resolve(this.view.posAtDOM(this.contentDOM, 0));
-      for (let d = $p.depth; d > 0; d--) if ($p.node(d).type.name === 'table') return $p.before(d);
-    } catch {
-      /* 이미 지워진 표 */
-    }
+  private pos():number|null {
+    if(!this.view)return null;
+    try{const p=this.view.state.doc.resolve(this.view.posAtDOM(this.contentDOM,0));for(let d=p.depth;d>0;d--)if(p.node(d).type.name==='table')return p.before(d);}catch{/* Removed table. */}
     return null;
   }
-
-  private placeHandle() {
-    this.handle.style.left = `${this.table.offsetLeft + this.table.offsetWidth}px`;
-    this.handle.style.top = `${this.table.offsetTop + this.table.offsetHeight}px`;
-    // 막대는 표 오른쪽 위(윗줄 글은 보통 왼쪽에 있어서 덜 가린다)
-    this.ctl.style.left = `${this.table.offsetLeft + this.table.offsetWidth}px`;
-    this.ctl.style.top = `${this.table.offsetTop}px`;
+  private schedulePlace(){if(this.pendingPlace)return;this.pendingPlace=true;queueMicrotask(()=>{this.pendingPlace=false;if(!this.dead)this.placeHandle();});}
+  private placeHandle(){
+    this.handle.style.left=`${this.table.offsetLeft+this.table.offsetWidth}px`;this.handle.style.top=`${this.table.offsetTop+this.table.offsetHeight}px`;
+    const rows=Array.from(this.table.rows),bounds=this.dom.getBoundingClientRect(),scale=this.table.getBoundingClientRect().width/(this.table.offsetWidth||1)||1;
+    while(this.rowGuides.children.length-1>rows.length)this.rowGuides.lastElementChild?.remove();
+    rows.forEach((row,i)=>{
+      let handle=this.rowGuides.children[i+1] as HTMLElement|undefined;
+      if(!handle){handle=document.createElement('div');handle.className='table-row-resize';handle.title='행 높이 조절';handle.setAttribute('role','separator');handle.setAttribute('aria-label',`${i+1}행 높이 조절`);handle.addEventListener('pointerdown',e=>this.resizeRow(i,e));this.rowGuides.appendChild(handle);}
+      const r=row.getBoundingClientRect();handle.style.left=`${(r.left-bounds.left)/scale}px`;handle.style.top=`${(r.bottom-bounds.top)/scale}px`;handle.style.width=`${Math.max(12,r.width/scale-8)}px`;
+    });
+    const cols=Array.from(this.colgroup.children);
+    while(this.colGuides.children.length>cols.length)this.colGuides.lastElementChild?.remove();
+    cols.forEach((col,i)=>{
+      let handle=this.colGuides.children[i] as HTMLElement|undefined;
+      if(!handle){handle=document.createElement('div');handle.className='table-column-resize';handle.title='열 너비 조절';handle.setAttribute('role','separator');handle.setAttribute('aria-label',`${i+1}열 너비 조절`);handle.addEventListener('pointerdown',e=>this.resizeColumn(i,e));this.colGuides.appendChild(handle);}
+      const r=col.getBoundingClientRect(),table=this.table.getBoundingClientRect();handle.style.left=`${(r.right-bounds.left)/scale}px`;handle.style.top=`${(table.top-bounds.top)/scale}px`;handle.style.height=`${table.height/scale}px`;
+    });
   }
-
-  // 표 명령: 커서가 이 표 안에 없으면 마지막 칸으로 옮긴 뒤
-  private cmd(c: Command) {
-    const v = this.view;
-    const pos = this.pos();
-    if (!v || pos == null) return;
-    const $f = v.state.selection.$from;
-    let inThis = false;
-    for (let d = $f.depth; d > 0; d--) if ($f.node(d).type.name === 'table') inThis = $f.before(d) === pos;
-    if (!inThis) v.dispatch(v.state.tr.setSelection(Selection.near(v.state.doc.resolve(pos + this.node.nodeSize - 1), -1)));
-    c(v.state, v.dispatch, v);
-    v.focus();
+  private resizeColumn(index:number,event:PointerEvent){
+    if(!this.view||!this.view.editable||event.button!==0)return;
+    event.preventDefault();event.stopPropagation();this.cleanupDrag?.();tableHistoryKey.getState(this.view.state)?.();const selected=this.pos();if(selected!=null){this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc,selected)));this.view.focus();}
+    const columns=Array.from(this.colgroup.children) as HTMLElement[],zoom=this.table.getBoundingClientRect().width/(this.table.offsetWidth||1)||1,s=Number(this.node.attrs.scale)||1;
+    const widths=columns.map(col=>col.getBoundingClientRect().width/zoom/s),initial=[...widths],styles=columns.map(col=>col.style.cssText),tableStyle=this.table.style.cssText,cells=Array.from(this.table.querySelectorAll('td,th')) as HTMLElement[],minimums=cells.map(cell=>cell.style.minWidth),start=event.clientX;
+    const move=(e:PointerEvent)=>{widths[index]=Math.max(24/s,initial[index]+(e.clientX-start)/zoom/s);columns.forEach((col,i)=>col.style.width=`${widths[i]*s}px`);cells.forEach(cell=>cell.style.minWidth='24px');const total=widths.reduce((a,b)=>a+b,0)*s;this.table.style.width=`${total}px`;this.table.style.minWidth=`${total}px`;};
+    const clean=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',cancel);window.removeEventListener('blur',cancel);this.cleanupDrag=null;};
+    const cancel=()=>{this.table.style.cssText=tableStyle;columns.forEach((col,i)=>col.style.cssText=styles[i]);cells.forEach((cell,i)=>cell.style.minWidth=minimums[i]);clean();this.placeHandle();};
+    const up=()=>{if(Math.abs(widths[index]-initial[index])<.01){cancel();return;}const pos=this.pos(),view=this.view,current=pos==null?null:view?.state.doc.nodeAt(pos);if(!view||!current||pos==null||TableMap.get(current).width!==widths.length){cancel();return;}const map=TableMap.get(current),tr=view.state.tr;current.descendants((cell,relative)=>{if(!['cell','header_cell'].includes(cell.type.spec.tableRole??''))return true;const rect=map.findCell(relative);tr.setNodeMarkup(pos+1+relative,undefined,{...cell.attrs,colwidth:widths.slice(rect.left,rect.right).map(w=>Math.round(w*100)/100)});return false;});view.dispatch(tr);tableHistoryKey.getState(view.state)?.();clean();this.placeHandle();};
+    this.cleanupDrag=clean;window.addEventListener('pointermove',move);window.addEventListener('pointerup',up);window.addEventListener('pointercancel',cancel);window.addEventListener('blur',cancel);
   }
-
-  private removeTable() {
-    const v = this.view;
-    const pos = this.pos();
-    if (!v || pos == null) return;
-    v.dispatch(v.state.tr.delete(pos, pos + this.node.nodeSize).scrollIntoView());
-    v.focus();
+  private resizeRow(index:number,event:PointerEvent){
+    if(!this.view||!this.view.editable||event.button!==0)return;
+    event.preventDefault();event.stopPropagation();this.cleanupDrag?.();tableHistoryKey.getState(this.view.state)?.();const selected=this.pos();if(selected!=null){this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc,selected)));this.view.focus();}
+    const row=this.table.rows[index],scale=this.table.getBoundingClientRect().width/(this.table.offsetWidth||1)||1,initial=row.getBoundingClientRect().height/scale,start=event.clientY;
+    const original=row.style.cssText;let height=initial;
+    const move=(e:PointerEvent)=>{height=Math.max(20,initial+(e.clientY-start)/scale);row.style.height=`${height}px`;row.style.setProperty('--cell-min-height','20px');};
+    const clean=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',cancel);window.removeEventListener('blur',cancel);this.cleanupDrag=null;};
+    const cancel=()=>{row.style.cssText=original;clean();this.placeHandle();};
+    const up=()=>{if(Math.abs(height-initial)<.01){cancel();return;}clean();const pos=this.pos();if(pos==null||!this.view)return;let offset=pos+1;for(let i=0;i<index;i++)offset+=this.node.child(i).nodeSize;const current=this.view.state.doc.nodeAt(offset);if(current?.type.name==='table_row'){this.view.dispatch(this.view.state.tr.setNodeMarkup(offset,undefined,{...current.attrs,height:Math.round(height*100)/100}));tableHistoryKey.getState(this.view.state)?.();}};
+    this.cleanupDrag=clean;window.addEventListener('pointermove',move);window.addEventListener('pointerup',up);window.addEventListener('pointercancel',cancel);window.addEventListener('blur',cancel);
   }
-
-  private applyScale() {
-    this.dom.style.setProperty('--s', String((this.node.attrs.scale as number) ?? 1));
-    const cols = Array.from(this.colgroup.children) as HTMLElement[];
-    const px = cols.map((c) => parseFloat(c.style.width) || 0);
-    const total = px.reduce((a, b) => a + b, 0);
-    if (cols.length && px.every((w) => w > 0)) cols.forEach((c, i) => (c.style.width = `${(px[i] / total) * 100}%`));
-    this.placeHandle();
+  private applyScale(){
+    this.dom.style.setProperty('--s',String(this.node.attrs.scale??1));this.dom.style.left=`${this.node.attrs.x??0}px`;this.dom.style.top=`${this.node.attrs.y??0}px`;
+    const cols=Array.from(this.colgroup.children) as HTMLElement[],px=cols.map(c=>parseFloat(c.style.width)||0),total=px.reduce((a,b)=>a+b,0);
+    if(cols.length&&px.every(w=>w>0)){cols.forEach((c,i)=>c.style.width=`${px[i]/total*100}%`);this.table.style.width=`calc(${total}px * var(--s,1))`;this.table.style.minWidth=`calc(${total}px * var(--s,1))`;}this.placeHandle();
   }
-
-  update(node: Node): boolean {
-    if (!super.update(node)) return false;
-    this.applyScale();
-    return true;
-  }
-
-  ignoreMutation(record: Parameters<TableView['ignoreMutation']>[0]): boolean {
-    if (record.type !== 'selection' && (record.target === this.dom || this.handle.contains(record.target as globalThis.Node) || this.ctl.contains(record.target as globalThis.Node))) return true;
-    return super.ignoreMutation(record);
-  }
-
-  stopEvent(e: Event): boolean {
-    return this.handle.contains(e.target as globalThis.Node) || this.ctl.contains(e.target as globalThis.Node);
-  }
-
-  destroy() {
-    this.ro.disconnect();
-  }
+  update(node:Node){if(!super.update(node))return false;this.applyScale();this.schedulePlace();return true;}
+  ignoreMutation(record:Parameters<TableView['ignoreMutation']>[0]){if(this.cleanupDrag&&record.type==='attributes'&&(record.target instanceof HTMLTableRowElement||record.target instanceof HTMLTableCellElement)&&this.table.contains(record.target))return true;if(record.type!=='selection'&&(record.target===this.dom||this.rowGuides.contains(record.target as globalThis.Node)||this.colGuides.contains(record.target as globalThis.Node)||this.handle.contains(record.target as globalThis.Node)))return true;return super.ignoreMutation(record);}
+  stopEvent(e:Event){return this.handle.contains(e.target as globalThis.Node)||this.rowGuides.contains(e.target as globalThis.Node)||this.colGuides.contains(e.target as globalThis.Node);}
+  destroy(){this.dead=true;this.cleanupDrag?.();this.ro.disconnect();}
 }
 
 export const nodeViews = {
@@ -641,8 +596,8 @@ export const TableViewClass = PadTableView;
 export function makeTable(rows: number, cols: number): Node {
   const r = Math.max(1, Math.min(30, Math.round(rows)));
   const c = Math.max(1, Math.min(12, Math.round(cols)));
-  const cell = (header: boolean) => (header ? schema.nodes.table_header : schema.nodes.table_cell).create(null, schema.nodes.line.create());
-  const rowsArr = Array.from({ length: r }, (_, i) => schema.nodes.table_row.create(null, Array.from({ length: c }, () => cell(i === 0 && r > 1))));
+  const cell = () => schema.nodes.table_cell.create(null, schema.nodes.line.create());
+  const rowsArr = Array.from({ length: r }, () => schema.nodes.table_row.create(null, Array.from({ length: c }, cell)));
   return schema.nodes.table.create(null, rowsArr);
 }
 
@@ -675,6 +630,7 @@ export function insertBlock(state: EditorState, dispatch: ((tr: Transaction) => 
   if (after >= tr.doc.content.size || tr.doc.resolve(after).nodeAfter?.type !== schema.nodes.line) tr.insert(after, schema.nodes.line.create({ depth: baseDepth }));
   const inside = node.type === schema.nodes.table ? at + 1 : after + 1;
   tr.setSelection(Selection.near(tr.doc.resolve(Math.min(inside, tr.doc.content.size))));
+  if(node.type===schema.nodes.table)tr.setStoredMarks([]);
   const um = (yUndoPluginKey.getState(state) as { undoManager?: { stopCapturing(): void } } | undefined)?.undoManager;
   um?.stopCapturing(); // 위젯 넣기는 한 걸음으로 되돌린다
   dispatch(tr.scrollIntoView());

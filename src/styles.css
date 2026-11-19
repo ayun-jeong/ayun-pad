@@ -273,12 +273,9 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
 .sheet-src { position: relative; }
 .pad-text .blk { margin: 0; }
 .pad-text .tableWrapper { overflow: visible; }
-.pad-text table { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: 100%; margin: 0; }
-.pad-text td, .pad-text th { position: relative; vertical-align: top; padding: 0 0.8mm; box-shadow: inset -0.2mm 0 0 #4a4f57, inset 0 -0.2mm 0 #4a4f57; font-weight: inherit; text-align: left; }
-.pad-text tr:first-child > td, .pad-text tr:first-child > th { box-shadow: inset -0.2mm 0 0 #4a4f57, inset 0 -0.2mm 0 #4a4f57, inset 0 0.2mm 0 #4a4f57; }
-.pad-text td:first-child, .pad-text th:first-child { box-shadow: inset -0.2mm 0 0 #4a4f57, inset 0 -0.2mm 0 #4a4f57, inset 0.2mm 0 0 #4a4f57; }
-.pad-text tr:first-child > td:first-child, .pad-text tr:first-child > th:first-child { box-shadow: inset -0.2mm 0 0 #4a4f57, inset 0 -0.2mm 0 #4a4f57, inset 0.2mm 0 0 #4a4f57, inset 0 0.2mm 0 #4a4f57; }
-.pad-text th { background: #f1f3f5; font-weight: 600; }
+.pad-text table {border-collapse:collapse;border-spacing:0;table-layout:fixed;width:100%;margin:0;}
+.pad-text td,.pad-text th {position:relative;vertical-align:top;padding:2px 3px;min-width:24px;min-height:20px;height:var(--cell-min-height,24px);font-weight:400;text-align:left;box-shadow:none;}
+.pad-text td>.ln,.pad-text th>.ln {min-height:var(--cell-min-height,24px);}
 .pad-text .selectedCell::after { content: ''; position: absolute; inset: 0; background: rgba(0, 100, 232, 0.12); pointer-events: none; }
 .pad-text .column-resize-handle { position: absolute; right: -0.4mm; top: 0; bottom: 0; width: 0.8mm; background: #0064e8; pointer-events: none; }
 .pad-text.resize-cursor { cursor: col-resize; }
@@ -500,7 +497,7 @@ body.drawing .toasts { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 104
 /* 표 · 그래프 · 연표 크기(--s, 글자도 같이). 오른쪽 아래 모서리 손잡이로 */
 /* 줄이는 건 표 자체만(바깥 상자의 들여쓰기 · 가지선은 그대로) */
 .pad-text .tblw { position: relative; }
-.pad-text .tblw > table { --lh: calc(var(--lh0) * var(--s, 1)); font-size: calc(var(--fs0) * var(--s, 1)); line-height: var(--lh); width: calc(100% * var(--s, 1)) !important; min-width: 0 !important; }
+.pad-text .tblw > table { --lh: calc(var(--lh0) * var(--s, 1)); font-size: calc(var(--fs0) * var(--s, 1)); line-height: var(--lh); width: calc(100% * var(--s, 1)); }
 .pad-text .tblw td, .pad-text .tblw th { padding: 0 calc(0.8mm * var(--s, 1)); }
 
 .wg-size { position: absolute; right: -1.2mm; bottom: -1.2mm; width: 2.6mm; height: 2.6mm; transform: none; display: none; z-index: 3; cursor: nwse-resize; touch-action: none; border-radius: 0.5mm; background: #fff linear-gradient(135deg, transparent 42%, #0064e8 42% 54%, transparent 54% 66%, #0064e8 66% 78%, transparent 78%); box-shadow: 0 0 0 0.2mm #0064e8; }
@@ -790,3 +787,37 @@ body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: non
 .app:not(.reading) .fold-box-window image[data-sid] {pointer-events:visiblePainted;cursor:move;}
 
 .add-page-content {position:sticky;top:calc((100dvh - var(--topbar-height,56px))/2 - 65px);display:flex;flex-direction:column;align-items:center;gap:12px;}
+
+.table-toolbar {position:fixed;z-index:65;display:flex;align-items:center;gap:3px;flex-wrap:wrap;max-width:calc(100vw - 16px);padding:5px 7px;background:var(--surface);border:1px solid var(--rule-2);border-radius:10px;box-shadow:var(--shadow);font:12px var(--ui);color:var(--ink);}
+.table-toolbar button,.table-toolbar select {font:inherit;color:inherit;background:transparent;border:0;border-radius:5px;min-height:28px;padding:4px 6px;cursor:pointer;}
+.table-toolbar button:hover,.table-toolbar button.on {background:var(--bg);}
+.table-toolbar button:disabled {opacity:.35;cursor:default;}
+.table-tool-separator {height:18px;border-left:1px solid var(--rule);margin:0 2px;}
+.table-style-popover {position:absolute;top:calc(100% + 6px);left:0;display:flex;align-items:center;gap:7px;flex-wrap:wrap;width:min(330px,calc(100vw - 24px));padding:10px;border:1px solid var(--rule-2);border-radius:10px;background:var(--surface);box-shadow:var(--shadow);}
+.table-style-popover.above {top:auto;bottom:calc(100% + 6px);}
+.table-palette {display:flex;gap:5px;flex-basis:100%;}
+.table-palette .table-color {height:25px;width:25px;min-height:25px;border:1px solid #c7ccd4;border-radius:50%;padding:0;}
+.table-palette .table-color:hover {outline:2px solid var(--focus);outline-offset:2px;}
+.table-style-popover input[type=color] {width:32px;height:27px;padding:2px;border:1px solid var(--rule-2);border-radius:5px;background:var(--surface);}
+.table-style-popover select {border:1px solid var(--rule-2);}
+@media print {.table-toolbar {display:none!important;}}
+
+.pad-text td .ln.title,.pad-text th .ln.title {font-weight:400;}
+
+.table-row-guides {position:absolute;inset:0;pointer-events:none;}
+.table-row-resize {position:absolute;height:8px;transform:translateY(-4px);pointer-events:auto;cursor:row-resize;touch-action:none;z-index:4;display:none;}
+.table-row-resize::after {content:'';position:absolute;left:0;right:0;top:3px;height:2px;background:#0064e8;opacity:0;}
+.table-row-resize:hover::after {opacity:1;}
+.tblw:hover .table-row-resize,.tblw.tbl-cur .table-row-resize,.tblw.ProseMirror-selectednode .table-row-resize {display:block;}
+.table-move-handle {position:absolute;top:1px;left:-19px;width:18px;height:24px;padding:0;border:1px solid #a5c1e7;border-radius:4px;background:#f2f7ff;color:#3268b3;cursor:pointer;pointer-events:auto;display:none;}
+.tblw:hover .table-move-handle,.tblw.tbl-cur .table-move-handle,.tblw.ProseMirror-selectednode .table-move-handle {display:block;}
+.reading .table-row-guides {display:none;}
+
+.table-column-guides {position:absolute;inset:0;pointer-events:none;}
+.table-column-resize {position:absolute;width:8px;transform:translateX(-4px);pointer-events:auto;cursor:col-resize;touch-action:none;z-index:5;display:none;}
+.table-column-resize::after {content:'';position:absolute;top:0;bottom:0;left:3px;width:2px;background:#0064e8;opacity:0;}
+.table-column-resize:hover::after {opacity:1;}
+.tblw:hover .table-column-resize,.tblw.tbl-cur .table-column-resize,.tblw.ProseMirror-selectednode .table-column-resize {display:block;}
+.reading .table-column-guides {display:none;}
+
+.tblw.ProseMirror-selectednode ::selection {background:transparent;}

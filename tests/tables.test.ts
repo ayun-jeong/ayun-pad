@@ -1,0 +1,24 @@
+import type {Node} from 'prosemirror-model';
+import {describe,it,expect} from 'vitest';
+import {EditorState,NodeSelection,TextSelection,type Command} from 'prosemirror-state';
+import {CellSelection,TableMap} from 'prosemirror-tables';
+import {schema} from '../src/editor/schema';
+import {makeTable} from '../src/editor/widgets';
+import {borderTableCells,fillTableCells,moveTableCell,tableTarget,tintTableCells} from '../src/editor/tables';
+import {cellInlineStyle,tableColor} from '../src/editor/tableStyles';
+import {hasBoxContent} from '../src/draw/TextBox';
+const create=()=>EditorState.create({schema,doc:schema.node('doc',null,[makeTable(3,3)])});
+const run=(state:EditorState,cmd:Command)=>{cmd(state,tr=>{state=state.apply(tr);});return state;};
+const cell=(state:EditorState,r:number,c:number)=>{const t=state.doc.firstChild!,map=TableMap.get(t);return 1+map.map[r*map.width+c];};
+const cursor=(state:EditorState,r:number,c:number)=>state.apply(state.tr.setSelection(TextSelection.near(state.doc.resolve(cell(state,r,c)+1))));
+describe('스마트 표',()=>{
+ it('빈 표는 글 없는 상자 정리에서 보존하며 모든 행은 일반 셀이다',()=>{const doc=create().doc;expect(hasBoxContent(doc)).toBe(true);doc.firstChild!.forEach(row=>row.forEach(n=>expect(n.type.name).toBe('table_cell')));expect(hasBoxContent(schema.node('doc',null,[schema.node('line')]))).toBe(false);});
+ it('위아래는 동일 열, 좌우는 동일 행으로 이동하고 끝에서 유지한다',()=>{let s=cursor(create(),1,1);for(const [dir,r,c]of [['down',2,1],['down',2,1],['left',2,0],['left',2,0],['up',1,0],['right',1,1]] as const){s=run(s,moveTableCell(dir));expect(tableTarget(s)?.positions).toEqual([cell(s,r,c)]);}});
+ it('한 셀과 직사각형 다중 선택에만 채움·투명도를 적용한다',()=>{let s=cursor(create(),1,1);s=run(s,fillTableCells('#52D407',.2));expect(s.doc.nodeAt(cell(s,1,1))!.attrs.backgroundColor).toBe('#52D407');expect(s.doc.nodeAt(cell(s,0,0))!.attrs.backgroundColor).toBeNull();s=s.apply(s.tr.setSelection(CellSelection.create(s.doc,cell(s,0,0),cell(s,1,1))));s=run(s,fillTableCells('#0064E8',1));s=run(s,tintTableCells(.2));expect(tableTarget(s)?.positions).toHaveLength(4);for(const pos of tableTarget(s)!.positions)expect(cellInlineStyle(s.doc.nodeAt(pos)!.attrs)).toContain('rgba(0,100,232,0.2)');expect(s.doc.nodeAt(cell(s,2,2))!.attrs.backgroundColor).toBeNull();});
+ it('표 객체를 고르면 전체 셀에 적용한다',()=>{let s=create();s=s.apply(s.tr.setSelection(NodeSelection.create(s.doc,0)));s=run(s,fillTableCells('#EC3535',1));expect(tableTarget(s)?.positions).toHaveLength(9);for(const pos of tableTarget(s)!.positions)expect(s.doc.nodeAt(pos)!.attrs.backgroundColor).toBe('#EC3535');});
+ it('전체·외곽·내부·가로·없음 테두리 마스크를 저장한다',()=>{for(const mode of ['all','outer','inner','horizontal','none'] as const){let s=create();s=s.apply(s.tr.setSelection(NodeSelection.create(s.doc,0)));s=run(s,borderTableCells('#4D00E8',1.5,mode));const corner=s.doc.nodeAt(cell(s,0,0))!.attrs,middle=s.doc.nodeAt(cell(s,1,1))!.attrs;expect(corner.borderTop.startsWith('1.5px')).toBe(['all','outer','horizontal'].includes(mode));expect(middle.borderTop.startsWith('1.5px')).toBe(['all','inner','horizontal'].includes(mode));expect(middle.borderLeft.startsWith('1.5px')).toBe(['all','inner'].includes(mode));}});
+ it('선택 경계 양쪽의 공유 테두리를 일치시켜 이전 선이 남지 않는다',()=>{let s=cursor(create(),1,1);s=run(s,borderTableCells('#0064E8',2,'none'));expect(s.doc.nodeAt(cell(s,1,0))!.attrs.borderRight).toBe('0px solid transparent');expect(s.doc.nodeAt(cell(s,0,1))!.attrs.borderBottom).toBe('0px solid transparent');});
+ it('색상은 안전한 CSS 색만 쓰고 인라인 스타일로 출력한다',()=>{expect(tableColor('url(evil)')).toBeNull();expect(tableColor('rgb(18, 52, 86)')).toBe('#123456');expect(cellInlineStyle({backgroundColor:'#123456',backgroundOpacity:.2,borderColor:'#0064E8',borderWidth:2})).toContain('border-top:2px solid #0064E8');});
+ it('이전 헤더도 td로 출력하면서 사용자가 직접 준 볼드는 보존한다',()=>{const header=schema.nodes.table_header.create(null,schema.node('line',null,schema.text('Bold',[schema.marks.b.create()])));const dom=schema.nodes.table_header.spec.toDOM!(header) as readonly unknown[];expect(dom[0]).toBe('td');expect(header.firstChild!.firstChild!.marks[0].type.name).toBe('b');});
+ it('열 너비·행 높이·표 좌표는 JSON 저장을 왕복한다',()=>{const t=makeTable(2,2),rows:Node[]=[];t.forEach(row=>{const cells:Node[]=[];row.forEach(c=>cells.push(c.type.create({...c.attrs,colwidth:[73]},c.content)));rows.push(row.type.create({...row.attrs,height:51},cells));});const changed=t.type.create({...t.attrs,x:1,y:10},rows),restored=schema.nodeFromJSON(changed.toJSON());expect(restored.attrs).toMatchObject({x:1,y:10});expect(restored.firstChild!.attrs.height).toBe(51);expect(restored.firstChild!.firstChild!.attrs.colwidth).toEqual([73]);});
+});

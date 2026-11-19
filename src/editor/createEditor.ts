@@ -1,3 +1,5 @@
+import {tableKeyboard} from './tables';
+import {tableToolbar} from './tableToolbar';
 import { baseKeymap, chainCommands, deleteSelection, joinBackward, joinForward, selectNodeBackward, selectNodeForward, toggleMark } from 'prosemirror-commands';
 import { undoInputRule } from 'prosemirror-inputrules';
 import { keymap } from 'prosemirror-keymap';
@@ -33,6 +35,7 @@ export interface EngineOptions {
   undo: Command;
   redo: Command;
   main?: { fragment: Y.XmlFragment; undoManager?: Y.UndoManager };
+  stopCapturing?():void;
   keys?: Record<string, Command>; // 글상자: Esc로 빠져나가기 등
 }
 
@@ -54,8 +57,8 @@ function paperPlugin(settings: RuleSettings): Plugin {
 export function enginePlugins(o: EngineOptions): Plugin[] {
   const plugins: Plugin[] = [readOnlyPlugin(o.settings)];
   if (o.main) plugins.push(paperPlugin(o.settings), ySyncPlugin(o.main.fragment), yUndoPlugin(o.main.undoManager ? { undoManager: o.main.undoManager } : undefined), slashPlugin(o.host));
+  plugins.push(tableKeyboard(()=>!!o.settings.readOnly,()=>{o.stopCapturing?.();o.main?.undoManager?.stopCapturing();}),columnResizing({View:TableViewClass,cellMinWidth:24,defaultCellMinWidth:40,handleWidth:0}),tableEditing({allowTableNodeSelection:true}),tableCursorPlugin(),tableToolbar(()=>!!o.settings.readOnly,()=>{o.stopCapturing?.();o.main?.undoManager?.stopCapturing();}));
   plugins.push(mathMenuPlugin(o.settings), shortcutPlugin(o.host), rulesPlugin(o.settings));
-  if (o.main) plugins.push(columnResizing({ View: TableViewClass, cellMinWidth: 24 }), tableEditing({ allowTableNodeSelection: true }), tableCursorPlugin());
   if (o.keys) plugins.push(keymap(o.keys));
   plugins.push(
     keymap({

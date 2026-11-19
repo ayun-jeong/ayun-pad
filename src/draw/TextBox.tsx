@@ -1,3 +1,4 @@
+import {tableTarget} from '../editor/tables';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Fragment, Node, Slice, type Mark } from 'prosemirror-model';
@@ -43,6 +44,8 @@ export function plainText(doc: Node): string {
   doc.forEach((n) => out.push(lineText(n).replace(/​/g, ' ')));
   return out.join('\n');
 }
+
+export const hasBoxContent=(doc:Node)=>doc.content.content.some(n=>n.type.name!=='line'||n.content.size>0);
 
 export const emptyTextDoc = () => schema.node('doc', null, [schema.node('line')]).toJSON() as unknown;
 
@@ -293,6 +296,7 @@ export function TextBox({ layer, r, um, settings, host, active, autoFocus, onSav
   const box = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const [math, setMath] = useState<MathMenuState | null>(null);
+  const [inTable,setInTable]=useState(false);
   const cb = useRef({ onSave });
   cb.current = { onSave };
   const key = JSON.stringify(r.doc ?? null) + r.text;
@@ -309,6 +313,7 @@ export function TextBox({ layer, r, um, settings, host, active, autoFocus, onSav
         plugins: enginePlugins({
           host,
           settings,
+          stopCapturing:()=>um?.stopCapturing(),
           undo: () => (um?.undo(), true),
           redo: () => (um?.redo(), true),
           keys: { Escape: leave, 'Mod-Enter': leave },
@@ -333,6 +338,7 @@ export function TextBox({ layer, r, um, settings, host, active, autoFocus, onSav
         const next = this.state.apply(tr);
         if (next === this.state) return; // 막힌 거래(읽기 모드)
         this.updateState(next);
+        setInTable(!!tableTarget(next));
         if (textBoxes.last === this) notifySelection();
         if (tr.docChanged) cb.current.onSave(next.doc);
         const ms = mathKey.getState(next);
@@ -342,6 +348,7 @@ export function TextBox({ layer, r, um, settings, host, active, autoFocus, onSav
     view.current = v;
     v.dom.addEventListener('focus', () => {
       textBoxes.last = v;
+      setInTable(!!tableTarget(v.state));
       notifySelection();
       const next = textBoxes.next;
       textBoxes.next = null;
@@ -390,22 +397,23 @@ export function TextBox({ layer, r, um, settings, host, active, autoFocus, onSav
       onFocus={onFocus}
       onBlur={(e) => {
         const target = e.relatedTarget as HTMLElement | null;
-        if (!e.currentTarget.contains(target) && target?.closest('.tb-bar')?.getAttribute('data-box-id') !== r.id) onBlur();
+        if (!e.currentTarget.contains(target) && target?.closest('.tb-bar,.table-toolbar')?.getAttribute('data-box-id') !== r.id) onBlur();
       }}
       onPointerDown={(e) => {
         // 한 번 누르기는 고르기(끌면 바로 옮김), 두 번 눌러야 고치기. 고치는 중이면 그대로 글을 고친다.
+        if(!reading&&(e.target as Element).closest('.tblw,table')){e.stopPropagation();return;}
         if (active || (e.target as Element).closest('.tb-bar')) return;
         e.preventDefault();
         onPick(e);
       }}
     >
-      {selected && !active && !reading && <TbBar anchor={box} view={view.current} r={r} editing={false} onPatch={onPatch} um={um} />}
+      {selected && !active && !reading && !inTable && <TbBar anchor={box} view={view.current} r={r} editing={false} onPatch={onPatch} um={um} />}
       <div ref={mount} className="tb-mount" />
       {active && (
         <>
-          {!reading && <TbBar anchor={box} view={view.current} r={r} editing onPatch={onPatch} um={um} />}
-          <span className="tb-grip" title="끌어서 옮기기" aria-label="글상자 옮기기" onPointerDown={(e) => onDrag('move', e)} />
-          <span className="tb-width" title="끌어서 폭 바꾸기" aria-label="글상자 폭" onPointerDown={(e) => onDrag('width', e)} />
+          {!reading && !inTable && <TbBar anchor={box} view={view.current} r={r} editing onPatch={onPatch} um={um} />}
+          {!inTable&&<span className="tb-grip" title="끌어서 옮기기" aria-label="글상자 옮기기" onPointerDown={(e) => onDrag('move', e)} />}
+          {!inTable&&<span className="tb-width" title="끌어서 폭 바꾸기" aria-label="글상자 폭" onPointerDown={(e) => onDrag('width', e)} />}
           <button
             type="button"
             className="tb-del"

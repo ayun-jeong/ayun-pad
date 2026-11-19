@@ -1,3 +1,4 @@
+import {tableCellAttributes,cellInlineStyle} from './tableStyles';
 import { Schema, type DOMOutputSpec, type Mark, type NodeSpec } from 'prosemirror-model';
 import { tableNodes } from 'prosemirror-tables';
 import { clampDepth, isPenKey } from './model';
@@ -52,13 +53,24 @@ function widget(name: string): NodeSpec {
   };
 }
 
-const tables = tableNodes({ tableGroup: 'block', cellContent: 'line+', cellAttributes: {} });
+const tables = tableNodes({ tableGroup: 'block', cellContent: 'line+', cellAttributes: tableCellAttributes });
 tables.table = {
   ...tables.table,
-  attrs: { ...blockAttrs, scale: { default: 1 } }, // scale: 표 크기(칸 글자도 같이) 0.35~1
-  parseDOM: [{ tag: 'table', getAttrs: (el) => ({ depth: depthOf(el as HTMLElement) }) }],
-  toDOM: (n): DOMOutputSpec => ['table', { class: 'tbl', 'data-depth': String(n.attrs.depth) }, ['tbody', 0]],
+  attrs: { ...blockAttrs, scale: { default: 1 }, x:{default:0}, y:{default:0} }, // scale: 표 크기(칸 글자도 같이) 0.35~1
+  parseDOM: [{ tag: 'table', getAttrs: (el) => ({ depth: depthOf(el as HTMLElement),x:Number((el as HTMLElement).dataset.x)||0,y:Number((el as HTMLElement).dataset.y)||0 }) }],
+  toDOM: (n): DOMOutputSpec => ['table', { class: 'tbl', 'data-depth': String(n.attrs.depth),'data-x':String(n.attrs.x??0),'data-y':String(n.attrs.y??0),style:`position:relative;left:${n.attrs.x??0}px;top:${n.attrs.y??0}px` }, ['tbody', 0]],
 };
+
+tables.table_row={...tables.table_row,attrs:{height:{default:null}},parseDOM:[{tag:'tr',getAttrs:el=>({height:(el as HTMLElement).style.height?Math.max(20,parseFloat((el as HTMLElement).style.height)||20):null})}],toDOM:n=>['tr',n.attrs.height?{style:`height:${Math.max(20,n.attrs.height)}px;--cell-min-height:20px`}:{},0]};
+
+// 이전 헤더 노드도 호환하되 셀 자체에 굵기·음영을 강제하지 않는다.
+for(const name of ['table_cell','table_header'] as const){
+  const original=tables[name].toDOM!;
+  tables[name]={...tables[name],toDOM:n=>{
+    const dom=original(n) as [string,Record<string,unknown>,number];
+    return ['td',{...dom[1],style:cellInlineStyle(n.attrs)},0];
+  }};
+}
 
 // 문서 = 블록의 목록. 블록은 대부분 줄이고, 표 · 수직선(연표) · 그래프가 끼어들 수 있다.
 // 줄마다 깊이(1~8)와 종류(보통 줄 / 꺾쇠 줄), 그리고 그림이 붙을 때 쓰는 고정 id만 저장한다.

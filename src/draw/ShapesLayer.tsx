@@ -1,3 +1,4 @@
+import type {EditorView} from 'prosemirror-view';
 import {prepareImage, useImageSource, peekImageSource, importImageSource} from '../store/imageAssets';
 import { DrawingHistory, DRAWING_HISTORY_EVENT } from './drawingHistory';
 import { copyGroups, expandGroups, selectionIds } from './groups';
@@ -6,7 +7,7 @@ import { ArrangeMenu } from './ArrangeMenu';
 import { leadingCmd, sizeCmd, trackCmd } from '../editor/commands';
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 import { Slice } from 'prosemirror-model';
-import { Selection } from 'prosemirror-state';
+import { NodeSelection,Selection } from 'prosemirror-state';
 import { createPortal, flushSync } from 'react-dom';
 import * as Y from 'yjs';
 import { clipboardTextSerializer } from '../editor/clipboard';
@@ -15,7 +16,7 @@ import type { RuleSettings } from '../editor/inputRules';
 import { PEN_NAME, type PenKey } from '../editor/model';
 import { isMac, keyId, type ShortcutHost } from '../editor/shortcuts';
 import { circleCmd } from '../editor/commands';
-import { liveBox, emptyTextDoc, penWhole, plainText, TextBox, textDoc, wholeBox, withEffects } from './TextBox';
+import { liveBox, emptyTextDoc, hasBoxContent, penWhole, plainText, TextBox, textDoc, wholeBox, withEffects } from './TextBox';
 import { clip, copyShapes, forgetOnOtherCopy, shapesIn } from './clip';
 import {
   anchorAt,
@@ -623,7 +624,9 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     let changed = false;
     host.querySelectorAll<HTMLElement>('.tbox[data-sid]').forEach((el) => {
       const id = el.dataset.sid!;
-      const h = el.offsetHeight / PX_PER_MM;
+      const rect=el.getBoundingClientRect(),scale=rect.width/(el.offsetWidth||1)||1;
+      let h=el.offsetHeight/PX_PER_MM;
+      for(const table of el.querySelectorAll('table'))h=Math.max(h,(table.getBoundingClientRect().bottom-rect.top)/scale/PX_PER_MM);
       if (Math.abs((textH.current.get(id) ?? 0) - h) > 0.05) {
         textH.current.set(id, h);
         changed = true;
@@ -749,6 +752,23 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     ix.guides = s.lines.length || s.gaps.length ? s : null;
     return [dx + s.dx, dy + s.dy];
   };
+
+  const tableNudgeRef=useRef<(event:CustomEvent<{view:EditorView;pos:number;dx:number;dy:number;handled:boolean}>)=>void>(()=>{});
+  const tableGuideTimer=useRef(0);
+  const tableGuides=useRef<Guides|null>(null);
+  tableNudgeRef.current=event=>{
+    const d=event.detail;if(readRef.current||!src.contains(d.view.dom))return;
+    const node=d.view.state.doc.nodeAt(d.pos),dom=d.view.nodeDOM(d.pos) as HTMLElement|null;
+    if(!node||!dom||node.type.name!=='table')return;
+    const table=dom.querySelector('table')??dom,r=table.getBoundingClientRect(),a=toMM({clientX:r.left,clientY:r.top},true),b=toMM({clientX:r.right,clientY:r.bottom},true);
+    const next={x:a.x+d.dx/PX_PER_MM,y:a.y+d.dy/PX_PER_MM,w:b.x-a.x,h:b.y-a.y};
+    const own=d.view.dom.closest<HTMLElement>('.tbox')?.dataset.sid;
+    const guide=coordGuides(next,[next.x,next.x+next.w/2,next.x+next.w],[next.y,next.y+next.h/2,next.y+next.h],snapTargets(new Set(own?[own]:[])));
+    tableGuides.current=guide.lines.length||guide.gaps.length?guide:null;
+    d.handled=true;const tr=d.view.state.tr.setNodeMarkup(d.pos,undefined,{...node.attrs,x:(node.attrs.x??0)+d.dx,y:(node.attrs.y??0)+d.dy});d.view.dispatch(tr.setSelection(NodeSelection.create(tr.doc,d.pos)));
+    clearTimeout(tableGuideTimer.current);tableGuideTimer.current=window.setTimeout(()=>{tableGuides.current=null;repaint();},900);repaint();
+  };
+  useEffect(()=>{const on=(event:Event)=>tableNudgeRef.current(event as Parameters<typeof tableNudgeRef.current>[0]);window.addEventListener('ayunpad-table-nudge',on);return()=>{window.removeEventListener('ayunpad-table-nudge',on);clearTimeout(tableGuideTimer.current);};},[]);
 
   // 그리기 그만두기(Esc): 찍은 점은 버린다
   const cancelPath = () => {
@@ -1650,7 +1670,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       return;
     }
     const s = shapes.get(id);
-    if (s?.t === 'text' && !s.frame && !s.text.trim()) write(() => shapes.delete(s.id));
+    if (s?.t === 'text' && !s.frame && !hasBoxContent(textDoc(s))) write(() => shapes.delete(s.id));
     repaint();
   };
 
@@ -1674,7 +1694,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   const selBoxes = draw ? [...selRs.map((r) => bboxOf(r, th)), ...wsel.map((w) => w.b)] : [];
   const group = selBoxes.length > 1 ? union(selBoxes) : null;
   const mq = ix.marquee?.moved ? boxOf(ix.marquee.a, ix.marquee.b) : null;
-  const guides = ix.guides;
+  const guides = reading?null:tableGuides.current??ix.guides;
 
   return (
     <div
@@ -1758,8 +1778,11 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
               autoFocus={autoFocusId.current === r.id}
               onSave={(doc) => {
                 const s = shapes.get(r.id);
-                if (s?.t === 'text') putTyping({ ...s, doc: doc.toJSON(), text: plainText(doc) });
-                else if (pending?.id === r.id && plainText(doc).trim()) {
+                if (s?.t === 'text') {
+                  if(!s.frame&&!hasBoxContent(doc)&&textDoc(s).content.content.some(n=>n.type.name==='table')){write(()=>shapes.delete(s.id));setEditing(null);}
+                  else putTyping({ ...s, doc: doc.toJSON(), text: plainText(doc) });
+                }
+                else if (pending?.id === r.id && hasBoxContent(doc)) {
                   // 첫 글자: 이때 저장(만든 것 + 첫 글자가 되돌리기 한 칸)
                   put({ ...pending, doc: doc.toJSON(), text: plainText(doc) });
                   setPending(null);
