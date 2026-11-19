@@ -106,6 +106,22 @@ export function lineInfos(container: Node): LineInfo[] {
 
 const isCell = (n: Node) => n.type.spec.tableRole === 'cell' || n.type.spec.tableRole === 'header_cell';
 
+// An empty leaf is an input placeholder, not another visible sibling. Keep
+// its document node/depth and the ancestor lines needed by later real items.
+function emptyLeafBranches(nodes: Node[], infos: LineInfo[]): Set<number> {
+  const visible = nodes.map(n => n.type.name !== 'line' ||
+    n.content.content.some(child => !child.isText || !!child.text?.trim()));
+  const hidden = new Set<number>();
+  nodes.forEach((_node, i) => {
+    if (visible[i] || infos[i].kind !== 'branch') return;
+    for (let j = i + 1; j < nodes.length && infos[j].depth > infos[i].depth; j++) {
+      if (visible[j]) return;
+    }
+    hidden.add(i);
+  });
+  return hidden;
+}
+
 // 그릇 하나에 가지선 · 자동 볼펜 · 자동 형광펜을 단다. base = 그릇 안쪽이 시작하는 문서 위치.
 // 표 칸도 그릇이라 칸 안에서 '- '로 만든 꺾쇠 줄도 똑같이 칠해진다.
 // 옆 가지(side): 부모 글 바로 옆 x에서 자식들이 시작한다. 첫 자식은 한 줄 위(부모와 같은 줄)로 올라가
@@ -117,6 +133,8 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
   const tree = computeTree(infos, treeTop);
   const nodes: Node[] = [];
   container.forEach((n) => nodes.push(n));
+  const hidden = emptyLeafBranches(nodes, infos);
+  const visibleTree = hidden.size ? computeTree(infos, treeTop, hidden) : tree;
   const styles = nodes.map((n, k) =>
     auto && n.type.name === 'line' ? autoStyle(lineText(n), n.attrs.kind as Kind, n.attrs.kind !== 'branch' && tree[k].hasBranchChild) : null,
   );
@@ -125,7 +143,7 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
   let i = 0;
   container.forEach((node, offset) => {
     const pos = base + offset;
-    const row = tree[i];
+    const row = {...tree[i],cells:visibleTree[i].cells};
     const d = infos[i].depth + (row.rootless ? 1 : 0); // 칸 수로 센 깊이
     while (stack.length && d <= stack[stack.length - 1].d) stack.pop();
     const colBase = (c: number) => {

@@ -39,6 +39,7 @@
     "e2e:drawing-undo": "node scripts/e2e-drawing-undo.mjs",
     "e2e:group-member": "node scripts/e2e-group-member.mjs",
     "e2e:toolbar-pan": "node scripts/e2e-toolbar-pan.mjs",
+    "e2e:branch-tail": "node scripts/e2e-branch-tail.mjs",
     "e2e:branch-wrap": "node scripts/e2e-branch-wrap.mjs",
     "e2e:table-mobile": "node scripts/e2e-table-mobile.mjs",
     "e2e:smart-table": "node scripts/e2e-smart-table.mjs",

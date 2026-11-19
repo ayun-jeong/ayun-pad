@@ -18,21 +18,29 @@ export interface TreeRow {
 // 보이지 않는 뿌리 밑에 있는 것처럼 한 단계 깊게 세서, 맨 바깥 꺾쇠 줄끼리도 ┌─ ├─ └─ │ 로 잇는다.
 // 뒤에서부터 훑으며 "같은 깊이의 꺾쇠 형제가 뒤에 남아 있나"를 깊이별로 기억한다.
 // 깊이 d 줄의 칸 c(1..d-1)는 깊이 c+1 조상(또는 자기)의 가지가 이어지는지를 그린다.
-export function computeTree(lines: LineInfo[], top: TreeTop = 'corner'): TreeRow[] {
+export function computeTree(lines: LineInfo[], top: TreeTop = 'corner', hiddenBranches: ReadonlySet<number> = new Set()): TreeRow[] {
   const shift: number[] = new Array(lines.length).fill(0);
   const start: boolean[] = new Array(lines.length).fill(false);
   let run = false;
+  let seen = false;
   lines.forEach((l, i) => {
     if (l.depth <= 1) {
-      start[i] = l.kind === 'branch' && !run;
-      run = l.kind === 'branch';
+      if (l.kind === 'branch') {
+        if (!run) seen = false;
+        start[i] = !seen && !hiddenBranches.has(i);
+        if (!hiddenBranches.has(i)) seen = true;
+        run = true;
+      } else {
+        run = false;
+        seen = false;
+      }
     }
     if (run) shift[i] = 1;
   });
   const rows: TreeRow[] = new Array(lines.length);
   const hasNext: boolean[] = new Array(MAX_DEPTH + 3).fill(false);
   for (let i = lines.length - 1; i >= 0; i--) {
-    const kind = lines[i].kind;
+    const kind = hiddenBranches.has(i) ? 'plain' : lines[i].kind;
     const d = lines[i].depth + shift[i];
     const cells: Cell[] = [];
     for (let k = 1; k <= d - 2; k++) cells.push(hasNext[k + 1] ? 'v' : '');
