@@ -2,7 +2,7 @@ import {tableTarget} from '../editor/tables';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Fragment, Node, Slice, type Mark } from 'prosemirror-model';
-import { AllSelection, EditorState, Selection, type Command } from 'prosemirror-state';
+import { AllSelection, EditorState, NodeSelection, Selection, type Command } from 'prosemirror-state';
 import { Transform } from 'prosemirror-transform';
 import { EditorView } from 'prosemirror-view';
 import type * as Y from 'yjs';
@@ -372,7 +372,14 @@ export function TextBox({ layer, r, um, settings, host, active, autoFocus, onSav
     const ext = textDoc(r);
     if (ext.eq(v.state.doc)) return;
     const pos = Math.min(v.state.selection.head, ext.content.size);
-    v.updateState(EditorState.create({ schema, doc: ext, plugins: v.state.plugins, selection: Selection.near(ext.resolve(pos)) }));
+    let selection:Selection=Selection.near(ext.resolve(pos));
+    const previous=v.state.selection;
+    if(previous instanceof NodeSelection&&previous.node.type.name==='table'){
+      let at=-1;ext.forEach((node,offset)=>{if(node.type.name==='table'&&node.attrs.id===previous.node.attrs.id)at=offset;});
+      if(at>=0)selection=NodeSelection.create(ext,at);
+    }
+    v.updateState(EditorState.create({ schema, doc: ext, plugins: v.state.plugins, selection }));
+    setInTable(!!tableTarget(v.state));
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 노트 설정 '제목 없는 트리 첫 가지'(┌─ / ├─)가 바뀌면 가지선을 다시 그린다
