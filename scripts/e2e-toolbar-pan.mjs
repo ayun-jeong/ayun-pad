@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';import {spawn} from 'node:child_process';import puppeteer from 'puppeteer-core';
+const url='http://localhost:4357/ayun-pad/',server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--port','4357','--strictPort'],{stdio:'ignore'}),sleep=ms=>new Promise(r=>setTimeout(r,ms));let browser;
+try{
+ for(let i=0;i<60;i++){try{if((await fetch(url)).ok)break;}catch{}await sleep(200);}
+ browser=await puppeteer.launch({executablePath:process.env.CHROME??'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,args:['--disable-gpu']});const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.evaluateOnNewDocument(()=>{localStorage.setItem('ayunpad-zoom','2');localStorage.setItem('ayunpad-read','0');});await page.setViewport({width:640,height:900});await page.goto(url,{waitUntil:'networkidle0'});await page.waitForSelector('.editor');
+ await page.keyboard.down('Alt');await page.keyboard.press('KeyD');await page.keyboard.up('Alt');await page.waitForSelector('.drawbar');await page.waitForSelector('.shapes-layer.tool-select');
+ await page.$eval('.desk',e=>{e.scrollTop=240;e.scrollLeft=60;});
+ const desk=()=>page.$eval('.desk',e=>({x:e.scrollLeft,y:e.scrollTop,drag:e.classList.contains('canvas-dragging')}));
+ const bar=await page.$eval('.drawbar',e=>{const r=e.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+3};});const before=await desk();
+ await page.mouse.move(bar.x,bar.y);await page.mouse.down();await page.mouse.move(bar.x-90,bar.y-18,{steps:8});await page.mouse.up();assert.deepEqual(await desk(),before,'도구 막대 여백을 끌어도 필기 화면은 이동하지 않음');
+ await page.mouse.move(bar.x,bar.y);await page.mouse.down({button:'middle'});await page.mouse.move(bar.x-70,bar.y-10,{steps:5});await page.mouse.up({button:'middle'});assert.deepEqual(await desk(),before,'도구 막대 중간 버튼도 필기 화면 이동으로 전달하지 않음');
+ await page.$eval('.drawbar',e=>e.scrollLeft=0);const center=await page.$eval('.drawbar',e=>{const r=e.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2};});await page.mouse.move(center.x,center.y);await page.mouse.wheel({deltaX:180,deltaY:0});await sleep(150);assert.ok(await page.$eval('.drawbar',e=>e.scrollLeft>0));assert.deepEqual(await desk(),before);
+ await page.$eval('.drawbar',e=>e.scrollLeft=e.scrollWidth);await page.mouse.wheel({deltaX:300,deltaY:100});await sleep(150);assert.deepEqual(await desk(),before);console.log('ok  도구 막대 여백·중간 버튼 드래그는 필기 화면과 분리 · 가로 스크롤 및 끝까지 스크롤해도 화면 고정');
+ // Drag a native scrollbar thumb when the browser exposes a non-overlay scrollbar.
+ const track=await page.$eval('.drawbar',e=>{e.scrollLeft=0;const r=e.getBoundingClientRect(),h=e.offsetHeight-e.clientHeight-2;return{h,x:r.left+1+e.clientWidth*e.clientWidth/e.scrollWidth/2,y:r.bottom-1-h/2};});
+ if(track.h>2){await page.mouse.move(track.x,track.y);await page.mouse.down();await page.mouse.move(track.x+70,track.y,{steps:8});await page.mouse.up();assert.ok(await page.$eval('.drawbar',e=>e.scrollLeft>0));assert.deepEqual(await desk(),before);console.log('ok  실제 가로 스크롤바 손잡이도 정상 작동');}
+ const gray=await page.$eval('.desk',e=>{const r=e.getBoundingClientRect();return{x:r.left+5,y:r.top+130};});await page.mouse.move(gray.x,gray.y);await page.mouse.down();await page.mouse.move(gray.x,gray.y-45,{steps:8});await page.mouse.up();assert.ok((await desk()).y>before.y+30);assert.equal((await desk()).drag,false);
+ const stable=await desk();await page.mouse.move(gray.x,gray.y);await page.mouse.down();await page.evaluate(()=>window.dispatchEvent(new Event('blur')));await page.mouse.move(gray.x,gray.y-40,{steps:5});await page.mouse.up();assert.deepEqual(await desk(),stable,'창 포커스를 잃으면 이동 종료');
+ await page.mouse.move(gray.x,gray.y);await page.mouse.down();await page.evaluate(()=>window.dispatchEvent(new PointerEvent('pointermove',{pointerId:1,buttons:0,clientX:10,clientY:10})));await page.mouse.move(gray.x,gray.y-40,{steps:5});await page.mouse.up();assert.deepEqual(await desk(),stable,'마우스를 놓은 이동 이벤트는 화면을 끌지 않음');
+ await page.mouse.move(gray.x,gray.y);await page.mouse.down();await page.mouse.move(bar.x,bar.y,{steps:8});await page.mouse.up();assert.equal((await desk()).drag,false,'도구 막대 위에서 놓아도 화면 이동을 종료');const released=await desk();await page.mouse.move(gray.x,gray.y,{steps:5});assert.deepEqual(await desk(),released);
+ assert.deepEqual(errors,[]);console.log('ok  회색 여백을 직접 끌 때는 정상 이동 · 포커스 상실/버튼 해제 뒤 이동이 남지 않음 · 실행 오류 없음');
+}finally{await browser?.close();server.kill();}

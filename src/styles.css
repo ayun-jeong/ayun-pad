@@ -338,7 +338,7 @@ body.copying, body.copying * { cursor: copy !important; }
 .tbox.boxed { border-color: currentColor; padding: 0 0.8mm; }
 textarea.tbox.tedit { pointer-events: auto; resize: none; overflow: hidden; outline: 0.25mm dashed #0064e8; outline-offset: 0.3mm; display: block; }
 
-.drawbar { position: fixed; bottom: max(14px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 25; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: calc(100vw - 24px); padding: 6px 8px; background: var(--surface); border: 1px solid var(--rule-2); border-radius: 12px; box-shadow: var(--shadow); font-size: 13px; }
+.drawbar { overscroll-behavior: contain; touch-action: pan-x; user-select: none; position: fixed; bottom: max(14px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 25; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: calc(100vw - 24px); padding: 6px 8px; background: var(--surface); border: 1px solid var(--rule-2); border-radius: 12px; box-shadow: var(--shadow); font-size: 13px; }
 .drawbar .dgroup { display: inline-flex; align-items: center; gap: 2px; padding-right: 6px; border-right: 1px solid var(--rule); }
 .drawbar button { border: 1px solid transparent; background: transparent; border-radius: 7px; padding: 4px 7px; display: inline-flex; align-items: center; gap: 4px; min-height: 30px; white-space: nowrap; }
 .drawbar button:hover { border-color: var(--rule-2); }

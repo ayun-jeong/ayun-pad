@@ -1827,7 +1827,8 @@ const mod = isMac ? '⌘' : 'Ctrl+';
 function DrawBar({ draw, sel, member, exitMember, wcount, drawing, setDraw, history, update, format, highlight, remove, duplicate, groupSelection, arrangeSelection, finish, toTools }: BarProps) {
   // 커서를 뺏지 않고, 누름이 그림 층(종이)으로 올라가지 않게
   const keep = (e: React.PointerEvent) => {
-    e.preventDefault();
+    // 단추는 편집 커서를 유지하고, 막대 자체의 스크롤바는 브라우저가 끌 수 있게 둔다.
+    if ((e.target as Element).closest('button')) e.preventDefault();
     e.stopPropagation();
   };
   const n = sel.length + wcount;

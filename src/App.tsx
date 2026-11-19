@@ -1270,6 +1270,8 @@ export function App() {
       <div className="note-workspace">
       <main ref={deskRef} onPointerDownCapture={(e) => {
         const target = e.target as Element;
+        // React 포털의 이벤트도 이 캡처 단계에 오지만 화면 이동은 실제 필기 영역에서 시작한 누름만 받는다.
+        if (!e.currentTarget.contains(target) || target.closest('.drawbar, .tb-bar, [role="toolbar"], .menu, .panel')) return;
         const middle = e.button === 1;
         const background = mode === 'edit' && (!draw || draw.tool === 'select') && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey &&
           !target.closest('.paper, .phalf, .fold-live-window, .tbox, .sh-hit, .sh-ui, .pctl, input, textarea, button, select, [contenteditable="true"]');
@@ -1281,18 +1283,19 @@ export function App() {
         let moved = false;
         const move = (ev: PointerEvent) => {
           if (ev.pointerId !== pointer) return;
+          if (!(ev.buttons & (middle ? 4 : 1))) { clean(); return; }
           if (!moved && Math.hypot(ev.clientX - x, ev.clientY - y) < 4) return;
           moved = true; desk.classList.add('canvas-dragging');
           desk.scrollLeft = left - (ev.clientX - x); desk.scrollTop = top - (ev.clientY - y);
         };
-        const clean = () => { desk.classList.remove('canvas-dragging'); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
+        const clean = () => { desk.classList.remove('canvas-dragging'); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up, true); window.removeEventListener('pointercancel', up, true); window.removeEventListener('blur', clean); };
         const up = (ev: PointerEvent) => {
           if (ev.pointerId !== pointer) return;
           clean();
           if (!moved && !middle && ev.type === 'pointerup') window.dispatchEvent(new CustomEvent('ayunpad-clear-selection', { detail: { x, y } }));
         };
         panCleanup.current = clean;
-        window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+        window.addEventListener('pointermove', move); window.addEventListener('pointerup', up, true); window.addEventListener('pointercancel', up, true); window.addEventListener('blur', clean);
       }} className={`desk${mode === 'edit' && (!draw || draw.tool === 'select') ? ' direct-pan' : ''}${draw ? ' drawing' : ''}${OWN_PINCH ? ' own-pinch' : ''}`}>
         {zoomBadge && <div className="zoom-badge">{Math.round(zoom * 100)}%</div>}
         {ready && noteId ? (
