@@ -1,5 +1,5 @@
 import { DrawingHistory, DRAWING_HISTORY_EVENT } from './drawingHistory';
-import { copyGroups, expandGroups } from './groups';
+import { copyGroups, expandGroups, selectionIds } from './groups';
 import { arrangeSelected, arrangementTargetCount, type Arrange } from './arrange';
 import { ArrangeMenu } from './ArrangeMenu';
 import { leadingCmd, sizeCmd, trackCmd } from '../editor/commands';
@@ -207,6 +207,7 @@ type MoveDrag = { mode: 'move'; start: XY; bases: Resolved[]; moved: boolean; to
 type EditDrag = { mode: 'point' | 'corner' | 'side' | 'width' | 'ctrl'; id: string; i: number; side?: 0 | 1; start: XY; base: Resolved; moved: boolean };
 
 interface Ix {
+  member: string | null; // 그룹 관계를 보존한 채 구성원 하나만 수정
   history: DrawingHistory;
   sel: string[]; // 고른 그림(여러 개)
   wsel: string[]; // 고른 위젯(표 · 그래프 · 연표)
@@ -233,7 +234,7 @@ const freeOf = (q: XY, last: XY | null, ortho: boolean) => ({ x: !(ortho && last
 export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, tick, draw, setDraw, onExtent, onCaret, caretXY, widgets, caught, onTextMarquee, host, settings, reading, paper = true, onLegacyEdit }: Props) {
   const [, repaint] = useReducer((x: number) => x + 1, 0);
   const layer = useRef<HTMLDivElement>(null);
-  const ix = useRef<Ix>({ history: new DrawingHistory(), sel: [], wsel: [], drawing: null, cursor: null, press: null, node: null, box: null, drag: null, drafts: new Map(), marquee: null, guides: null, last: null, pid: null }).current;
+  const ix = useRef<Ix>({ member: null, history: new DrawingHistory(), sel: [], wsel: [], drawing: null, cursor: null, press: null, node: null, box: null, drag: null, drafts: new Map(), marquee: null, guides: null, last: null, pid: null }).current;
   // 새 글상자는 첫 글자를 쓸 때 저장한다(그냥 나가면 흔적 없이 사라지고 되돌리기 칸도 안 남는다)
   const [pending, setPending] = useState<TextShape | null>(null);
   const geo = useRef<{ lines: Lines; W: number; H: number } | null>(null);
@@ -260,7 +261,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     if (readRef.current) return;
     e.preventDefault();
     e.stopPropagation();
-    ix.sel = expandGroups(shapes.values(), [id]);
+    if (ix.member !== id) ix.member = null;
+    ix.sel = selectionIds(shapes.values(), [id], ix.member);
     ix.wsel = [];
     // 누른 채 끌면 바로 옮기기, 곧 한 번 더 누르면 두 번 누르기(글상자는 고치기)
     const r = byId(id);
@@ -269,7 +271,11 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     const twice = !!ix.last && now - ix.last.t < DOUBLE_MS[e.pointerType === 'touch' ? 'touch' : 'mouse'] && dist(ix.last.p, p) * pxPerMm() < DOUBLE_PX;
     ix.last = twice ? null : { t: now, p };
     // 첫 누름에서 고르기 모드로 전환하는 렌더가 아직 끝나지 않아도 두 번째 누름을 받는다.
+    if (twice && r?.group && ix.member !== r.id && r.t === 'path') {
+      enterMember(r.id); setDraw({ tool: 'select', picked: true }); return repaint();
+    }
     if (twice && r && r.t !== 'path') {
+      enterMember(r.id);
       setDraw({ tool: 'select', picked: true });
       if (r.t === 'text') focusBox(r.id, { x: e.clientX, y: e.clientY });
       else editShape(r.id);
@@ -342,7 +348,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     const focused = document.activeElement as HTMLElement | null;
     if (focused?.closest('.tbox')) focused.blur();
     getSelection()?.removeAllRanges();
-    ix.sel = []; ix.wsel = []; ix.node = null; ix.marquee = null; ix.guides = null;
+    ix.member = null; ix.sel = []; ix.wsel = []; ix.node = null; ix.marquee = null; ix.guides = null;
     setEditing(null);
     const drawing = drawRef.current;
     if (drawing?.picked) setDraw(null);
@@ -546,6 +552,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   useEffect(() => {
     if (!active) {
       ix.history.clear();
+      ix.member = null;
       ix.sel = [];
       ix.wsel = [];
       ix.marquee = null;
@@ -583,7 +590,11 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     if (!hidden) geo.current = { lines, W, H };
   }
   const resolved = all.map((s) => ix.drafts.get(s.id) ?? resolve(s, lines));
-  ix.sel = expandGroups(shapes.values(), ix.sel);
+  if (ix.member && !shapes.get(ix.member)?.group) {
+    if (!shapes.has(ix.member)) ix.sel = [];
+    ix.member = null;
+  }
+  ix.sel = selectionIds(shapes.values(), ix.sel, ix.member);
   pickedBoxes.ids = draw && !reading ? ix.sel.filter((id) => id !== editing && shapes.get(id)?.t === 'text') : [];
   useEffect(() => () => void (pickedBoxes.ids = []), []);
   const byId = (id: string | null | undefined) => (id ? resolved.find((r) => r.id === id) : undefined);
@@ -630,8 +641,22 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   const putTyping = useCallback((s: Shape) => !readRef.current && ydoc.transact(() => shapes.set(s.id, clean(s)), SHAPES), [ydoc, shapes]);
   const nextZ = () => all.reduce((m, s) => Math.max(m, s.z), 0) + 1;
   const pickOnly = (ids: string[]) => {
-    ix.sel = expandGroups(shapes.values(), ids);
+    if (ids.length !== 1 || ids[0] !== ix.member) ix.member = null;
+    ix.sel = selectionIds(shapes.values(), ids, ix.member);
     ix.wsel = [];
+  };
+  const enterMember = (id: string) => {
+    if (!shapes.get(id)?.group) return false;
+    ix.member = id; ix.sel = [id]; ix.wsel = []; ix.node = null;
+    return true;
+  };
+  const exitMember = () => {
+    const group = ix.member ? shapes.get(ix.member)?.group : null;
+    const focused = document.activeElement as HTMLElement | null;
+    if (focused?.closest('.tbox')) focused.blur();
+    ix.member = null; setEditing(null);
+    const first = group ? [...shapes.values()].find(s => s.group === group)?.id : null;
+    pickOnly(first ? [first] : []); repaint();
   };
   // ⌥ 복제로 끄는 동안 원본 자리에 남는 흐린 모습. 글상자는 그려진 것을 복제해 원래 자리에(선 · 도형은 SVG로 그린다)
   const ghostRef = useRef<HTMLDivElement>(null);
@@ -963,6 +988,11 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     const one = ix.sel.length === 1 && !ix.wsel.length ? byId(ix.sel[0]) : undefined;
     ix.node = null;
     const insideShape = topHit(p, tol) ?? [...resolved].reverse().find(r => (r.t === 'rect' || r.t === 'ellipse') && hit({...r, fill: 'k'}, p, tol, th));
+    if (dbl && insideShape?.group && ix.member !== insideShape.id) {
+      enterMember(insideShape.id);
+      if (insideShape.t === 'text') { focusBox(insideShape.id, {x:e.clientX,y:e.clientY}); return repaint(); }
+      if (insideShape.t === 'path') return repaint();
+    }
     if (dbl && insideShape && (insideShape.t === 'rect' || insideShape.t === 'ellipse')) { editShape(insideShape.id); return repaint(); }
     if (one) {
       const hi = handles(one, th).findIndex((h) => dist(h, p) <= tol * 1.3);
@@ -993,6 +1023,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     }
     const target = topHit(p, tol) ?? [...resolved].reverse().find(r => (r.t === 'rect' || r.t === 'ellipse') && hit({...r, fill: 'k'}, p, 0, th));
     if (!target) {
+      ix.member = null;
       // 빈 곳: 끌면 영역 고르기(⇧는 더하기), 그냥 누르면 놓을 때 고름 풀기
       ix.marquee = { a: p, b: p, add: e.shiftKey, base: e.shiftKey ? [...ix.sel] : [], wbase: e.shiftKey ? [...ix.wsel] : [], moved: false };
       return repaint();
@@ -1007,11 +1038,13 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       }
     }
     if (dbl && target.t === 'text') {
+      enterMember(target.id);
       pickOnly([target.id]);
       focusBox(target.id, { x: e.clientX, y: e.clientY });
       return repaint();
     }
     // ⇧+누르기는 고름에 넣었다 빼기, 그냥 누르기는 그것만(이미 고른 것을 누르면 같이 끌 수 있게 놓을 때 정한다)
+    if (e.shiftKey || ix.member !== target.id) ix.member = null;
     const inSel = ix.sel.includes(target.id);
     let toggle: string | undefined;
     let only: string | undefined;
@@ -1255,6 +1288,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   };
   const groupSelection = (ungroup = false) => {
     const ids = expandGroups(shapes.values(), ix.sel);
+    ix.member = null;
     const list = ids.map((id) => shapes.get(id)).filter((s): s is Shape => !!s);
     if (ungroup ? !list.some((s) => s.group) : list.length < 2) {
       host.toast(ungroup ? '해제할 그룹을 골라 주세요' : '두 개 이상의 글상자 · 도형을 골라 주세요');
@@ -1468,6 +1502,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
         if (ix.drawing) cancelPath(); // 그리던 선 · 화살표는 버린다
         else if (ix.box || ix.marquee) finishOrCancel();
         else if (ix.node) ix.node = null; // 고른 점부터 풀고(그다음 ⌫는 경로째), 한 번 더 누르면 고름을 푼다
+        else if (ix.member) exitMember();
         else if (any) pickOnly([]);
         else setDraw(null);
         repaint();
@@ -1585,7 +1620,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
         e.preventDefault();
         const p = toMM(e);
         const target = topHit(p, 1.2) ?? [...resolved].reverse().find(r => (r.t === 'rect' || r.t === 'ellipse') && hit({ ...r, fill: 'k' }, p, 1.2, th));
-        if (target && (target.t === 'rect' || target.t === 'ellipse')) editShape(target.id);
+        if (target) { enterMember(target.id); if (target.t === 'rect' || target.t === 'ellipse') editShape(target.id); else repaint(); }
       }}
     >
       <svg className="shapes-svg" viewBox={`0 0 ${W.toFixed(3)} ${H.toFixed(3)}`} preserveAspectRatio="xMinYMin meet" aria-hidden="true">
@@ -1665,6 +1700,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
               }}
               onFocus={() => {
                 if (autoFocusId.current === r.id) autoFocusId.current = null;
+                enterMember(r.id);
                 if (drawRef.current) pickOnly([r.id]);
                 setEditing(r.id);
               }}
@@ -1696,6 +1732,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
           <DrawBar
             draw={draw}
             sel={selShapes()}
+            member={!!ix.member}
+            exitMember={exitMember}
             wcount={wsel.length}
             drawing={!!ix.drawing}
             setDraw={(p) => {
@@ -1761,6 +1799,8 @@ function GuideMarks({ g }: { g: Guides }) {
 }
 
 interface BarProps {
+  member: boolean;
+  exitMember(): void;
   draw: DrawState;
   sel: Shape[];
   wcount: number;
@@ -1784,7 +1824,7 @@ const mod = isMac ? '⌘' : 'Ctrl+';
 
 // 그리기 막대. 무엇이든 고르면 고른 것(여러 개면 모두)의 색 · 굵기 · 직각 · 화살촉 · 점선 · 글씨 · 형광펜 · 복제 · 지우기,
 // 고른 게 없으면 새로 그릴 도구와 설정.
-function DrawBar({ draw, sel, wcount, drawing, setDraw, history, update, format, highlight, remove, duplicate, groupSelection, arrangeSelection, finish, toTools }: BarProps) {
+function DrawBar({ draw, sel, member, exitMember, wcount, drawing, setDraw, history, update, format, highlight, remove, duplicate, groupSelection, arrangeSelection, finish, toTools }: BarProps) {
   // 커서를 뺏지 않고, 누름이 그림 층(종이)으로 올라가지 않게
   const keep = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -1866,6 +1906,7 @@ function DrawBar({ draw, sel, wcount, drawing, setDraw, history, update, format,
             <button type="button" className="dtools" onClick={toTools} title="고르기를 풀고 그리기 도구로(새로 그리기)">
               ‹ 도구
             </button>
+            {member && <button type="button" onClick={exitMember} aria-label="그룹 전체 선택" title="그룹 내부 편집 끝내기">그룹 전체</button>}
             {n > 1 ? <b>{n}개</b> : sel.length === 0 ? <b>위젯</b> : null}
           </div>
           {sel.length > 0 && swatches}
