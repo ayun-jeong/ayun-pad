@@ -32,7 +32,9 @@
     "e2e:mobile-reading-size": "node scripts/e2e-mobile-reading-size.mjs",
     "e2e:branch-enter": "node scripts/e2e-branch-enter.mjs",
     "e2e:panel-zoom": "node scripts/e2e-panel-zoom.mjs",
-    "e2e:shape-text": "node scripts/e2e-shape-text.mjs"
+    "e2e:shape-text": "node scripts/e2e-shape-text.mjs",
+    "e2e:text-align": "node scripts/e2e-text-align.mjs",
+    "e2e:shape-sync": "node scripts/e2e-shape-sync.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.3",

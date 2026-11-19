@@ -6,7 +6,7 @@ import { Transform } from 'prosemirror-transform';
 import { EditorView } from 'prosemirror-view';
 import type * as Y from 'yjs';
 import { clipboardTextParser, clipboardTextSerializer } from '../editor/clipboard';
-import { eraseHl, penCmd, sizeCmd } from '../editor/commands';
+import { alignCmd, eraseHl, penCmd, sizeCmd, type TextAlign } from '../editor/commands';
 import { engineNodeViews, enginePlugins, markComposing } from '../editor/createEditor';
 import { autoKey, lineText } from '../editor/decorations';
 import { normalizeBranchDashes } from '../editor/inlineBranches';
@@ -89,7 +89,7 @@ export function tboxStyle(r: Resolved & { t: 'text' }): CSSProperties {
   if (r.frame) {
     st.border = `${r.w}mm ${r.dash ? 'dashed' : 'solid'} ${strokeOf(r.stroke ?? 'k')}`;
     st.borderRadius = r.frame === 'ellipse' ? '50%' : '0';
-    st.padding = r.frame === 'ellipse' ? `${Math.max(2, (r.bh ?? 10) * .146)}mm ${Math.max(2, r.bw * .146)}mm` : '2mm';
+    st.padding = r.frame === 'ellipse' ? `${Math.max(2, (r.bh ?? 10) * .146)}mm ${Math.max(2, r.bw * .146)}mm` : '0.25mm 0.8mm';
     if (r.fill) st.background = `color-mix(in srgb, ${strokeOf(r.fill)} 18%, transparent)`;
   }
   const fs = r.fs ?? 1;
@@ -149,6 +149,19 @@ function TbBar({ anchor, view, r, editing, onPatch, um }: { anchor: RefObject<HT
     else eraseHl(tr, [{ from: a, to: b }]); // 지우기는 자동 형광펜(꺾쇠 줄 · 대제목)까지
     v.dispatch(tr);
   };
+  const align = (value: TextAlign) => {
+    if (!view) return;
+    um?.stopCapturing();
+    alignCmd(value, !editing || view.state.selection.empty)(view.state, view.dispatch, view);
+    um?.stopCapturing();
+  };
+  const alignments = new Set<string>();
+  if (view) {
+    const sel = view.state.selection, whole = !editing || sel.empty;
+    view.state.doc.nodesBetween(whole ? 0 : sel.from, whole ? view.state.doc.content.size : sel.to, (node, pos) => {
+      if (node.type === schema.nodes.line && (whole || (pos + 1 < sel.to && pos + node.nodeSize - 1 >= sel.from))) alignments.add(node.attrs.align ?? 'left');
+    });
+  }
   const fs = r.fs ?? 1;
   const size = (dir: 1 | -1) => {
     if (editing && view && !view.state.selection.empty) {
@@ -238,6 +251,17 @@ function TbBar({ anchor, view, r, editing, onPatch, um }: { anchor: RefObject<HT
       <button type="button" title="글씨 크게" aria-label="글씨 크게" onClick={() => size(1)}>
         가+
       </button>
+      </div>
+      <span className="tb-sep" />
+      <div className="tb-control-group" role="group" aria-label="글자 정렬">
+        {(['left', 'center', 'right'] as const).map(value => {
+          const name = { left: '왼쪽', center: '가운데', right: '오른쪽' }[value];
+          const x = value === 'left' ? 3 : value === 'center' ? 6 : 9;
+          const on = alignments.size === 1 && alignments.has(value);
+          return <button key={value} type="button" className={on ? 'on' : ''} aria-label={`${name} 정렬`} title={`${name} 정렬`} aria-pressed={on} onClick={() => align(value)}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><path d={`M3 5h18M${x} 10h12M3 15h18M${x} 20h12`} /></svg>
+          </button>;
+        })}
       </div>
       <span className="tb-sep" />
       {!r.frame && <button type="button" className={r.box ? 'on' : ''} title="테두리" aria-label="테두리" onClick={() => onPatch({ box: !r.box })}>

@@ -12,6 +12,9 @@ describe('도형 안의 글상자', () => {
     expect(style.background).toContain('#FFCB10');
     expect(style.minHeight).toContain('30mm');
   });
+  it('네모의 기본 위아래 여백은 0.25mm로 작게 둔다', () => {
+    expect(tboxStyle({...shape,frame:'rect'}).padding).toBe('0.25mm 0.8mm');
+  });
   it('일반 글상자는 폭 손잡이 하나, 도형은 원래의 모서리·변 손잡이 8개를 갖는다', () => {
     expect(handles(shape,()=>30)).toEqual([{x:10,y:20},{x:50,y:20},{x:50,y:50},{x:10,y:50},{x:30,y:20},{x:50,y:35},{x:30,y:50},{x:10,y:35}]);
     expect(handles({...shape,frame:undefined},()=>30)).toEqual([{x:50,y:35}]);

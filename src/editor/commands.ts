@@ -108,7 +108,7 @@ function splitLine(tr: Transaction): Transaction {
   const $p = tr.selection.$from;
   const line = $p.parent;
   if (line.type !== schema.nodes.line) return tr;
-  const attrs = { depth: line.attrs.depth, kind: line.attrs.kind };
+  const attrs = { depth: line.attrs.depth, kind: line.attrs.kind, align: line.attrs.align };
   if ($p.parentOffset === 0 && line.content.size > 0) tr.insert($p.before(), schema.nodes.line.create(attrs));
   else tr.split($p.pos, 1, [{ type: schema.nodes.line, attrs }]);
   return tr.scrollIntoView();
@@ -150,7 +150,7 @@ export const enterCmd: Command = (state, dispatch) => {
           ...line.attrs, id: i === 0 ? line.attrs.id : null, depth: depth + i,
           kind: i === 0 ? line.attrs.kind : 'branch', side: i < branches.length - 1,
         }, line.content.cut(span.from, i === branches.length - 1 ? line.content.size : span.to)));
-        rows.push(schema.nodes.line.create({ depth: depth + branches.length, kind: 'branch' }));
+        rows.push(schema.nodes.line.create({ depth: depth + branches.length, kind: 'branch', align: line.attrs.align }));
         const pos = $f.before();
         const tr = state.tr.replaceWith(pos, $f.after(), rows);
         const head = pos + rows.slice(0, -1).reduce((size, row) => size + row.nodeSize, 0) + 1;
@@ -409,6 +409,24 @@ export function leadingCmd(value: number, absolute = false): Command {
       if (node.type !== schema.nodes.line || pos + 1 >= to || pos + node.nodeSize - 1 < from) return;
       const leading = Math.round(clamp(absolute ? value : (node.attrs.leading ?? 1) + value, 0.5, 3) * 1000) / 1000;
       tr.setNodeMarkup(pos, undefined, { ...node.attrs, leading: leading === 1 ? null : leading });
+    });
+    if (tr.docChanged) dispatch?.(tr);
+    return true;
+  };
+}
+
+// 글자 정렬은 문단 속성으로 저장한다. 선택한 문단, 또는 도구 막대에서 지정한 글상자 전체에 적용한다.
+export type TextAlign = 'left' | 'center' | 'right';
+export function alignCmd(align: TextAlign, whole = false): Command {
+  return (state, dispatch) => {
+    const { selection } = state;
+    if (!whole && selection.empty && selection.$from.depth === 0) return false;
+    const from = whole ? 0 : selection.empty ? selection.$from.before() : selection.from;
+    const to = whole ? state.doc.content.size : selection.empty ? selection.$from.after() : selection.to;
+    const tr = state.tr;
+    state.doc.nodesBetween(from, to, (node, pos) => {
+      if (node.type !== schema.nodes.line || (!whole && !selection.empty && (pos + 1 >= to || pos + node.nodeSize - 1 < from))) return;
+      if (node.attrs.align !== align) tr.setNodeMarkup(pos, undefined, { ...node.attrs, align });
     });
     if (tr.docChanged) dispatch?.(tr);
     return true;
