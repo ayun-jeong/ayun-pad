@@ -128,13 +128,18 @@ function emptyLeafBranches(nodes: Node[], infos: LineInfo[]): Set<number> {
 // 부모 글 뒤에 붙고(┬─ 또는 ──), 나머지 자식은 그 아래 같은 x에 줄을 맞춘다(├─ └─ │). 줄 높이는 그대로라 쪽 나눔이 안 흔들린다.
 // 제목 없는 트리(맨 바깥이 꺾쇠 줄)는 칸이 하나 더 있어서 글을 한 칸 더 들인다(깊이 1 꺾쇠 줄도 ┌─ ├─ └─ 뒤에서 시작).
 // 자동 형광펜 색은 hlLevels(부모 색의 다음 색, 같은 가지 형제는 같은 색).
-function decorate(container: Node, base: number, decos: Decoration[], auto: boolean, sideX: SideX | null, treeTop: TreeTop) {
+function decorate(container: Node, base: number, decos: Decoration[], auto: boolean, sideX: SideX | null, treeTop: TreeTop, activePos: number | null) {
   const infos = lineInfos(container);
   const tree = computeTree(infos, treeTop);
   const nodes: Node[] = [];
   container.forEach((n) => nodes.push(n));
   const hidden = emptyLeafBranches(nodes, infos);
-  const visibleTree = hidden.size ? computeTree(infos, treeTop, hidden) : tree;
+  const idleTree = hidden.size ? computeTree(infos, treeTop, hidden) : tree;
+  let hasPreview = false;
+  container.forEach((_node, offset, index) => {
+    if (base + offset === activePos && hidden.delete(index)) hasPreview = true;
+  });
+  const visibleTree = hasPreview ? computeTree(infos, treeTop, hidden) : idleTree;
   const styles = nodes.map((n, k) =>
     auto && n.type.name === 'line' ? autoStyle(lineText(n), n.attrs.kind as Kind, n.attrs.kind !== 'branch' && tree[k].hasBranchChild) : null,
   );
@@ -156,14 +161,16 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
     const top = stack[stack.length - 1];
     let layout = '';
     let bg: string;
+    const firstCells = (source: Cell[]): TreeCell[] => {
+      const cells: TreeCell[] = [...source];
+      const own = cells[top.d - 1];
+      cells[top.d - 1] = own === 't' ? 'f' : own === 'l' ? 'h' : own === 'v' ? 'v' : '';
+      return cells;
+    };
     if (top && top.first === i && node.type.name === 'line') {
-      const own = row.cells[top.d - 1];
-      const t: TreeCell = own === 't' ? 'f' : own === 'l' ? 'h' : own === 'v' ? 'v' : '';
       // 첫 옆 가지가 여러 줄로 감겨도 조상의 세로선이 그 높이 전체를 지나야 한다.
       // 블록을 오른쪽으로 옮기면 바깥 선을 칠할 영역이 없어지므로, 글의 위치만 여백으로 맞춘다.
-      const cells: TreeCell[] = [...row.cells];
-      cells[top.d - 1] = t;
-      bg = treeBackground(cells, colBase);
+      bg = treeBackground(firstCells(row.cells), colBase);
       layout = `margin-top:calc(-1 * var(--lh));padding-left:${colBase(d - 1)};`;
     } else if (top) {
       bg = treeBackground(row.cells, colBase);
@@ -172,17 +179,21 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
       bg = treeBackground(row.cells);
       if (row.rootless) layout = `padding-left:calc(var(--ind) * ${d - 1});`;
     }
-    const style = layout + (bg ? `background:${bg}` : '');
+    const idleBg = hasPreview ? (top
+      ? treeBackground(top.first === i && node.type.name === 'line' ? firstCells(idleTree[i].cells) : idleTree[i].cells, colBase)
+      : treeBackground(idleTree[i].cells)) : '';
+    const style = layout + (bg ? `background:${bg};` : '') + (hasPreview ? `--idle-tree:${idleBg || 'none'};` : '');
+    const previewAttrs = hasPreview ? { 'data-branch-editing': 'true' } : {};
     if (sideX && node.type.name === 'line' && node.attrs.side && i + 1 < infos.length && infos[i + 1].depth === infos[i].depth + 1) {
       const x = node.attrs.id ? sideX[node.attrs.id as string] : undefined;
       if (x !== undefined && x >= 0) stack.push({ d, x, first: i + 1 });
     }
     if (node.type.name !== 'line') {
-      decos.push(Decoration.node(pos, pos + node.nodeSize, { style, class: 'blk', 'data-depth': String(node.attrs.depth ?? 1) }));
+      decos.push(Decoration.node(pos, pos + node.nodeSize, { ...previewAttrs, style, class: 'blk', 'data-depth': String(node.attrs.depth ?? 1) }));
       if (node.type.name === 'table')
         node.descendants((child, p) => {
           if (!isCell(child)) return true;
-          decorate(child, pos + 1 + p + 1, decos, auto, null, treeTop);
+          decorate(child, pos + 1 + p + 1, decos, auto, null, treeTop, activePos);
           return false;
         });
       i++;
@@ -190,7 +201,7 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
     }
     const kind = node.attrs.kind as Kind;
     const isTitle = kind !== 'branch' && row.hasBranchChild;
-    decos.push(Decoration.node(pos, pos + node.nodeSize, { style, class: isTitle ? 'ln title' : 'ln' }));
+    decos.push(Decoration.node(pos, pos + node.nodeSize, { ...previewAttrs, style, class: isTitle ? 'ln title' : 'ln' }));
     if (!auto) {
       i++;
       return;
@@ -230,9 +241,9 @@ export function autoHlSpans(set: DecorationSet, from: number, to: number): (Span
   return out.sort((x, y) => x.from - y.from);
 }
 
-export function buildDecorations(doc: Node, auto = true, sideX: SideX = {}, top: TreeTop = 'corner'): DecorationSet {
+export function buildDecorations(doc: Node, auto = true, sideX: SideX = {}, top: TreeTop = 'corner', activePos: number | null = null): DecorationSet {
   const decos: Decoration[] = [];
-  decorate(doc, 0, decos, auto, sideX, top);
+  decorate(doc, 0, decos, auto, sideX, top, activePos);
   return DecorationSet.create(doc, decos);
 }
 
@@ -253,6 +264,7 @@ export function headRange(state: EditorState): { from: number; to: number } {
 }
 
 interface AutoState {
+  focused: boolean;
   deco: DecorationSet;
   composing: boolean;
   auto: boolean; // 노트 설정 '자동 색'
@@ -269,18 +281,21 @@ export function autoPlugin(settings?: { treeTop?: TreeTop }): Plugin<AutoState> 
   return new Plugin<AutoState>({
     key: autoKey,
     state: {
-      init: (_, state) => ({ deco: buildDecorations(state.doc, true, {}, topOf()), composing: false, auto: true, sideX: {}, top: topOf() }),
+      init: (_, state) => ({ deco: buildDecorations(state.doc, true, {}, topOf()), composing: false, auto: true, sideX: {}, top: topOf(), focused: false }),
       apply(tr, prev, _old, next) {
-        const meta = tr.getMeta(autoKey) as { composing?: boolean; rebuild?: boolean; auto?: boolean; sideX?: SideX } | undefined;
+        const meta = tr.getMeta(autoKey) as { composing?: boolean; rebuild?: boolean; auto?: boolean; sideX?: SideX; focused?: boolean } | undefined;
+        const focused = meta?.focused ?? prev.focused;
         const composing = meta?.composing ?? prev.composing;
         const auto = meta?.auto ?? prev.auto;
         const sideX = meta?.sideX ?? prev.sideX;
-        if (composing) return { ...prev, deco: prev.deco.map(tr.mapping, tr.doc), composing, auto, sideX };
+        if (composing) return { ...prev, deco: prev.deco.map(tr.mapping, tr.doc), composing, auto, sideX, focused };
         // 조합이 끝난 첫 거래는 글이 안 바뀌었어도 다시 칠한다(조합 중에 미뤄 둔 색)
         const ended = prev.composing;
         const top = topOf();
-        if (!tr.docChanged && !meta?.rebuild && !meta?.sideX && !ended && auto === prev.auto && top === prev.top) return { ...prev, composing, auto, sideX };
-        return { deco: buildDecorations(next.doc, auto, sideX, top), composing, auto, sideX, top };
+        if (!tr.docChanged && !meta?.rebuild && !meta?.sideX && !ended && auto === prev.auto && top === prev.top && focused === prev.focused && !(focused && tr.selectionSet)) return { ...prev, composing, auto, sideX, focused };
+        const $from = next.selection.$from;
+        const activePos = focused && next.selection.empty && $from.parent.type.name === 'line' ? $from.before() : null;
+        return { deco: buildDecorations(next.doc, auto, sideX, top, activePos), composing, auto, sideX, top, focused };
       },
     },
     // 옆 가지 부모 줄의 글이 어디서 끝나는지 그릴 때마다 재서(글을 고치면 자식도 따라 옮겨진다) 바뀌었으면 다시 칠한다
@@ -338,6 +353,14 @@ export function autoPlugin(settings?: { treeTop?: TreeTop }): Plugin<AutoState> 
     props: {
       decorations: (state) => autoKey.getState(state)?.deco,
       handleDOMEvents: {
+        focus(view) {
+          view.dispatch(view.state.tr.setMeta(autoKey, { focused: true }));
+          return false;
+        },
+        blur(view) {
+          view.dispatch(view.state.tr.setMeta(autoKey, { focused: false }));
+          return false;
+        },
         compositionstart(view) {
           view.dispatch(view.state.tr.setMeta(autoKey, { composing: true }));
           return false;

@@ -821,3 +821,7 @@ body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: non
 .reading .table-column-guides {display:none;}
 
 .tblw.ProseMirror-selectednode ::selection {background:transparent;}
+
+/* Empty input branches are visible only while editing, never in print clones. */
+.print-root [data-branch-editing] { background: var(--idle-tree, none) !important; }
+@media print { .pad-text [data-branch-editing] { background: var(--idle-tree, none) !important; } }

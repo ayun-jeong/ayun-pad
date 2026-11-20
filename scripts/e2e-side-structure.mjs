@@ -34,6 +34,20 @@ try {
   await end('ai');await page.keyboard.press('Enter');await sleep(250);
   let data=await rows();assert.deepEqual(data.map(n=>[n.text,n.depth,n.side]),[['AI 활용',2,true],['기물용',3,false],['',3,false],['산불 조기 대응 시스템: 송전철탑과 카메라 영상 분석',3,false],['AI 고독사 예방 서비스: 설명',3,false]]);
   let g=await geometry();assert.ok(Math.abs(g[2].y-g[1].bottom)<1,'새 빈 형제가 첫 옆 항목 바로 아래에 배치');
+  const blankLayers=()=>page.$$eval('.tbox.tedit .tb-edit .ln',els=>(getComputedStyle(els[2]).backgroundImage.match(/linear-gradient/g)??[]).length);
+  const activeLayers=await blankLayers();assert.ok(activeLayers>=2,'Enter 직후 글자가 없는 가지에도 꺾쇠가 즉시 보임');
+  await page.keyboard.press('Tab');assert.ok(await blankLayers()>=2,'Tab으로 만든 빈 하위 가지도 보임');
+  assert.equal((await rows())[2].depth,4);await page.keyboard.down('Shift');await page.keyboard.press('Tab');await page.keyboard.up('Shift');
+  assert.equal((await rows())[2].depth,3);
+  await page.$eval('.tbox.tedit .tb-edit',el=>el.blur());await sleep(100);
+  const idleLayers=await page.$$eval('.tbox[data-sid="side-test"] .ln',els=>(getComputedStyle(els[2]).backgroundImage.match(/linear-gradient/g)??[]).length);
+  assert.ok(idleLayers<activeLayers,'커서가 벗어나면 빈 꺾쇠만 숨김');
+  await page.$eval('.tbox[data-sid="side-test"] .tb-edit',el=>el.focus());await sleep(100);
+  assert.equal(await blankLayers(),activeLayers,'다시 입력할 때 빈 가지 표시 복원');
+  await page.evaluate(()=>window.dispatchEvent(new Event('beforeprint')));
+  assert.equal(await page.$$eval('.print-root .tbox[data-sid="side-test"] .ln',els=>(getComputedStyle(els[2]).backgroundImage.match(/linear-gradient/g)??[]).length),idleLayers,'입력 중 인쇄해도 빈 꼬리는 제외');
+  await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));
+
   await page.keyboard.type('새 형제');await sleep(200);g=await geometry();assert.ok(Math.abs(g[1].x-g[2].x)<1,'새 항목 글 시작점이 같은 수직선에 정렬');
   assert.equal((await rows())[3].id,'wildfire');await page.screenshot({path:'/tmp/ayun-pad-side-enter.png'});
   // 이미 분리된 중첩 옆가지의 부모 끝에서 Enter: 하위 트리를 보존한다.

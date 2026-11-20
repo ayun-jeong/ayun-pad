@@ -1,6 +1,8 @@
 import {describe,it,expect} from 'vitest';
 import {schema} from '../src/editor/schema';
 import {buildDecorations} from '../src/editor/decorations';
+import {EditorState,TextSelection} from 'prosemirror-state';
+import {autoPlugin,autoKey} from '../src/editor/decorations';
 import {computeTree} from '../src/editor/tree';
 const branch=(depth:number)=>({depth,kind:'branch' as const}),plain=(depth:number)=>({depth,kind:'plain' as const});
 describe('빈 가지의 불필요한 꼬리',()=>{
@@ -24,5 +26,24 @@ describe('빈 가지의 불필요한 꼬리',()=>{
   expect(JSON.stringify(p)).toContain('linear-gradient');expect(doc.childCount).toBe(3);expect(doc.child(2).attrs.kind).toBe('branch');
   const rows=decos.find().filter(d=>d.from===doc.child(0).nodeSize+doc.child(1).nodeSize);
   expect(JSON.stringify(rows)).not.toContain('linear-gradient');
+ });
+});
+
+describe('입력 중 빈 가지 표시',()=>{
+ it('Enter·Tab으로 만든 빈 가지는 포커스가 있을 때 즉시 보이고 벗어나면 꼬리를 숨긴다',()=>{
+  const doc=schema.node('doc',null,[schema.node('line',{id:'a',depth:1,kind:'branch'},schema.text('항목')),schema.node('line',{id:'b',depth:1,kind:'branch'})]);
+  const at=doc.firstChild!.nodeSize;
+  let state=EditorState.create({doc,selection:TextSelection.create(doc,at+1),plugins:[autoPlugin()]});
+  const background=()=>JSON.stringify(autoKey.getState(state)!.deco.find().filter(d=>d.from===at));
+  expect(background()).not.toContain('linear-gradient');
+  state=state.apply(state.tr.setMeta(autoKey,{focused:true}));
+  expect(background()).toContain('linear-gradient');
+  state=state.apply(state.tr.setSelection(TextSelection.create(state.doc,1)));
+  expect(background()).not.toContain('linear-gradient');
+  state=state.apply(state.tr.setSelection(TextSelection.create(state.doc,at+1)));
+  expect(background()).toContain('linear-gradient');
+  state=state.apply(state.tr.setMeta(autoKey,{focused:false}));
+  expect(background()).not.toContain('linear-gradient');
+  expect(state.doc).toBe(doc);
  });
 });
