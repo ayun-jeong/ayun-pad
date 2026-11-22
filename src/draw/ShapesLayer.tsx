@@ -12,7 +12,7 @@ import { Slice } from 'prosemirror-model';
 import { NodeSelection,Selection } from 'prosemirror-state';
 import { createPortal, flushSync } from 'react-dom';
 import * as Y from 'yjs';
-import { clipboardTextSerializer } from '../editor/clipboard';
+import { clipboardTextSerializer, pastedNoteDoc } from '../editor/clipboard';
 import { newId } from '../editor/ids';
 import type { RuleSettings } from '../editor/inputRules';
 import { PEN_NAME, type PenKey } from '../editor/model';
@@ -1442,12 +1442,13 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     if (!drawRef.current) setDraw({ tool: 'select', picked: true }); // 붙인 것을 고른 채로(바로 옮기기 · 지우기)
   };
   // 그리기 중에 글을 붙여 넣으면 화면 가운데에 글상자로
-  const pasteText = (text: string) => {
+  const pasteText = (text: string, html = '') => {
     const L = layer.current?.getBoundingClientRect();
     const y = L ? clamp((window.innerHeight / 2 - L.top) / pxPerMm(), 0, Math.max(0, H - pitch)) : 10;
     const x = 8;
     const t = text.replace(/\r/g, '');
-    const s: Shape = { id: newId(), t: 'text', a: anchorAt({ x, y }, lines), bw: Math.max(8, Math.min(70, W - x - 2)), text: t, doc: textDoc({ text: t }).toJSON(), c: 'k', w: DEFAULT_W, z: nextZ() };
+    const doc=pastedNoteDoc(t,html);
+    const s: Shape = { id: newId(), t: 'text', a: anchorAt({ x, y }, lines), bw: Math.max(8, Math.min(70, W - x - 2)), text: plainText(doc), doc: doc.toJSON(), c: 'k', w: DEFAULT_W, z: nextZ() };
     put(s);
     pickOnly([s.id]);
     if (!drawRef.current) setDraw({ tool: 'select', picked: true }); // 글쓰기 화면이면 붙인 것을 고른 채(바로 옮기기)
@@ -1658,7 +1659,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     e.preventDefault();
     pasted.current = true;
     const text = e.clipboardData?.getData('text/plain') ?? '';
-    if (text.trim()) pasteText(text);
+    if (text.trim()) pasteText(text,e.clipboardData?.getData('text/html')??'');
     else if (clip.shapes) pasteShapes(clip.shapes, null);
   };
   useEffect(() => {

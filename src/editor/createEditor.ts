@@ -8,7 +8,7 @@ import { columnResizing, tableEditing } from 'prosemirror-tables';
 import { EditorView } from 'prosemirror-view';
 import { redo, undo, ySyncPlugin, ySyncPluginKey, yUndoPlugin } from 'y-prosemirror';
 import type * as Y from 'yjs';
-import { clipboardTextParser, clipboardTextSerializer } from './clipboard';
+import { clipboardTextParser, clipboardTextSerializer, treePastePlugin } from './clipboard';
 import { enterCmd, insertBr, selectWidgetAfter, selectWidgetBefore, unbranchAtStart } from './commands';
 import { autoKey, autoPlugin } from './decorations';
 import { findPlugin } from './find';
@@ -58,6 +58,7 @@ export function enginePlugins(o: EngineOptions): Plugin[] {
   const plugins: Plugin[] = [readOnlyPlugin(o.settings)];
   if (o.main) plugins.push(paperPlugin(o.settings), ySyncPlugin(o.main.fragment), yUndoPlugin(o.main.undoManager ? { undoManager: o.main.undoManager } : undefined), slashPlugin(o.host));
   plugins.push(tableKeyboard(()=>!!o.settings.readOnly,()=>{o.stopCapturing?.();o.main?.undoManager?.stopCapturing();}),columnResizing({View:TableViewClass,cellMinWidth:24,defaultCellMinWidth:40,handleWidth:0}),tableEditing({allowTableNodeSelection:true}),tableCursorPlugin(),tableToolbar(()=>!!o.settings.readOnly,()=>{o.stopCapturing?.();o.main?.undoManager?.stopCapturing();}));
+  plugins.push(treePastePlugin());
   plugins.push(mathMenuPlugin(o.settings), shortcutPlugin(o.host), rulesPlugin(o.settings));
   if (o.keys) plugins.push(keymap(o.keys));
   plugins.push(

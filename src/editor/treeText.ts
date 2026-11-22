@@ -17,6 +17,12 @@ export function serializeTree(lines: TextLine[], top: TreeTop = 'corner'): strin
   return lines.map((l, i) => cellsToText(rows[i].cells) + l.text).join('\n');
 }
 
+// Only leading tree/list syntax is structural; symbols inside ordinary prose
+// stay text. Rich HTML and canvas pastes use this same detection.
+export function hasTreeSyntax(text: string): boolean {
+  return /^[\t \u00a0\u3000│┃┆┊]*(?:[├└┌┣┗┏╠╚╔╟╰╭][─━═╌┄-]*|[-*•·]\s+)/m.test(text);
+}
+
 function gcd(a: number, b: number): number {
   return b ? gcd(b, a % b) : a;
 }
@@ -34,12 +40,23 @@ function spaceUnit(lines: string[]): number {
 // 붙여넣을 때: ┌─ ├─ └─ │ 트리 글, '- ' 목록, 탭·스페이스 들여쓰기 글을 깊이와 꺾쇠로 읽는다.
 // 맨 위 줄들이 다 들여 있으면(제목 없는 트리 · 통째로 들인 글) 그만큼 빼고 센다.
 export function parseTreeText(text: string): TextLine[] {
-  const raw = text.replace(/\r\n?/g, '\n').split('\n');
+  const normalized = text.replace(/\r\n?/g, '\n');
+  const fenced = /^```[^\n]*\n([\s\S]*?)\n```\s*$/.exec(normalized.trim());
+  const raw = (fenced && hasTreeSyntax(fenced[1]) ? fenced[1] : normalized).split('\n');
   while (raw.length && !raw[raw.length - 1].trim()) raw.pop();
-  const glyph = /[│├└┌]/.test(text);
-  const unit = glyph ? 3 : spaceUnit(raw);
+  const glyph = /^[\t \u00a0\u3000│┃┆┊]*[├└┌┣┗┏╠╚╔╟╰╭]/m.test(text);
+  let unit = spaceUnit(raw);
+  if (glyph) {
+    // The width after │ varies between sources (│└, │ └, │  └, ┃   ┗).
+    // Infer a column from those prefixes as well as space-only indentation.
+    for (const line of raw) {
+      const bar = /^[│┃┆┊]( *)(?=[│┃┆┊├└┌┣┗┏╠╚╔╟╰╭])/.exec(line);
+      if (bar) unit = unit ? gcd(unit,bar[1].length+1) : bar[1].length+1;
+    }
+    if (!unit) unit = 3;
+  }
   const parsed = raw.map((line) => {
-    let s = line.replace(/ /g, ' ');
+    let s = line.replace(/[ 　]/g, ' ');
     let level = 0;
     let kind: Kind = 'plain';
     let viaGlyph = false;
@@ -49,7 +66,7 @@ export function parseTreeText(text: string): TextLine[] {
         s = s.slice(1);
         continue;
       }
-      const conn = /^[├└┌]─*\s?/.exec(s);
+      const conn = /^[├└┌┣┗┏╠╚╔╟╰╭][─━═╌┄-]*[ \t]?/.exec(s);
       if (conn) {
         level++;
         kind = 'branch';
@@ -57,7 +74,7 @@ export function parseTreeText(text: string): TextLine[] {
         s = s.slice(conn[0].length);
         break;
       }
-      const bar = /^│ {0,2}/.exec(s);
+      const bar = new RegExp(`^[│┃┆┊] {0,${Math.max(0,unit-1)}}`).exec(s);
       if (bar) {
         level++;
         s = s.slice(bar[0].length);
