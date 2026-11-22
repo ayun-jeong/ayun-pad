@@ -1,3 +1,4 @@
+import { pathBoxHandles, resizePath } from './pathTransform';
 import { handwrittenStar } from './star';
 import type {EditorView} from 'prosemirror-view';
 import {prepareImage, useImageSource, peekImageSource, importImageSource} from '../store/imageAssets';
@@ -217,6 +218,7 @@ type MoveDrag = { mode: 'move'; start: XY; bases: Resolved[]; moved: boolean; to
 type EditDrag = { mode: 'point' | 'corner' | 'side' | 'width' | 'ctrl'; id: string; i: number; side?: 0 | 1; start: XY; base: Resolved; moved: boolean };
 
 interface Ix {
+  pathEdit: string | null; // 더블클릭한 경로만 점·곡선 손잡이 편집
   member: string | null; // 그룹 관계를 보존한 채 구성원 하나만 수정
   history: DrawingHistory;
   sel: string[]; // 고른 그림(여러 개)
@@ -244,7 +246,7 @@ const freeOf = (q: XY, last: XY | null, ortho: boolean) => ({ x: !(ortho && last
 export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, tick, draw, setDraw, onExtent, onCaret, caretXY, widgets, caught, onTextMarquee, host, settings, reading, paper = true, onLegacyEdit }: Props) {
   const [, repaint] = useReducer((x: number) => x + 1, 0);
   const layer = useRef<HTMLDivElement>(null);
-  const ix = useRef<Ix>({ member: null, history: new DrawingHistory(), sel: [], wsel: [], drawing: null, cursor: null, press: null, node: null, box: null, drag: null, drafts: new Map(), marquee: null, guides: null, last: null, pid: null }).current;
+  const ix = useRef<Ix>({ pathEdit: null, member: null, history: new DrawingHistory(), sel: [], wsel: [], drawing: null, cursor: null, press: null, node: null, box: null, drag: null, drafts: new Map(), marquee: null, guides: null, last: null, pid: null }).current;
   // 새 글상자는 첫 글자를 쓸 때 저장한다(그냥 나가면 흔적 없이 사라지고 되돌리기 칸도 안 남는다)
   const [pending, setPending] = useState<TextShape | null>(null);
   const geo = useRef<{ lines: Lines; W: number; H: number } | null>(null);
@@ -272,6 +274,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     e.preventDefault();
     e.stopPropagation();
     if (ix.member !== id) ix.member = null;
+    if (ix.pathEdit !== id) ix.pathEdit = null;
     ix.sel = selectionIds(shapes.values(), [id], ix.member);
     ix.wsel = [];
     // 누른 채 끌면 바로 옮기기, 곧 한 번 더 누르면 두 번 누르기(글상자는 고치기)
@@ -281,8 +284,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     const twice = !!ix.last && now - ix.last.t < DOUBLE_MS[e.pointerType === 'touch' ? 'touch' : 'mouse'] && dist(ix.last.p, p) * pxPerMm() < DOUBLE_PX;
     ix.last = twice ? null : { t: now, p };
     // 첫 누름에서 고르기 모드로 전환하는 렌더가 아직 끝나지 않아도 두 번째 누름을 받는다.
-    if (twice && r?.group && ix.member !== r.id && r.t === 'path') {
-      enterMember(r.id); setDraw({ tool: 'select', picked: true }); return repaint();
+    if (twice && r?.t === 'path' && ix.pathEdit !== r.id) {
+      enterMember(r.id); ix.pathEdit=r.id; ix.node=null; setDraw({ tool: 'select', picked: true }); return repaint();
     }
     if (twice && r && r.t !== 'path') {
       enterMember(r.id);
@@ -653,6 +656,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   const putTyping = useCallback((s: Shape) => !readRef.current && ydoc.transact(() => shapes.set(s.id, clean(s)), SHAPES), [ydoc, shapes]);
   const nextZ = () => all.reduce((m, s) => Math.max(m, s.z), 0) + 1;
   const pickOnly = (ids: string[]) => {
+    if (ids.length !== 1 || ids[0] !== ix.pathEdit) ix.pathEdit = null;
     if (ids.length !== 1 || ids[0] !== ix.member) ix.member = null;
     ix.sel = selectionIds(shapes.values(), ids, ix.member);
     ix.wsel = [];
@@ -666,7 +670,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     const group = ix.member ? shapes.get(ix.member)?.group : null;
     const focused = document.activeElement as HTMLElement | null;
     if (focused?.closest('.tbox')) focused.blur();
-    ix.member = null; setEditing(null);
+    ix.member = null; ix.pathEdit = null; setEditing(null);
     const first = group ? [...shapes.values()].find(s => s.group === group)?.id : null;
     pickOnly(first ? [first] : []); repaint();
   };
@@ -931,15 +935,20 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     if (inY && Math.abs(p.x - b.x) <= tol) return 3;
     return -1;
   };
+  const selectionHandles = (r: Resolved) => r.t === 'path' && ix.pathEdit !== r.id ? pathBoxHandles(r) : handles(r,th);
   const hoverCursor = (p: XY, tol: number): string => {
     const one = ix.sel.length === 1 && !ix.wsel.length ? byId(ix.sel[0]) : undefined;
     if (one?.t === 'text') {
       const hi = handles(one, th).findIndex(h => dist(h, p) <= tol * 1.3);
       return hi < 0 ? '' : one.frame ? ['nwse-resize', 'nesw-resize', 'nwse-resize', 'nesw-resize', 'ns-resize', 'ew-resize', 'ns-resize', 'ew-resize'][hi] : 'ew-resize';
     }
-    if (one?.t === 'path') return [...one.pts, ...knobs(one).map((k) => k.at)].some((h) => dist(h, p) <= tol * 1.3) ? 'move' : '';
+    if (one?.t === 'path') {
+      if(ix.pathEdit===one.id)return [...one.pts,...knobs(one).map(k=>k.at)].some(h=>dist(h,p)<=tol*1.3)?'move':'';
+      const hi=selectionHandles(one).findIndex(h=>dist(h,p)<=tol*1.3);
+      return hi>=0?['nwse-resize','nesw-resize','nwse-resize','nesw-resize','ns-resize','ew-resize','ns-resize','ew-resize'][hi]:inBox(p,bboxOf(one,th))?'move':'';
+    }
     if (!one || (one.t !== 'rect' && one.t !== 'ellipse' && one.t !== 'image')) return '';
-    const hi = handles(one, th).findIndex((h) => dist(h, p) <= tol * 1.3);
+    const hi = selectionHandles(one).findIndex((h) => dist(h, p) <= tol * 1.3);
     if (hi >= 0) return ['nwse-resize', 'nesw-resize', 'nwse-resize', 'nesw-resize', 'ns-resize', 'ew-resize', 'ns-resize', 'ew-resize'][hi];
     const side = one.t === 'rect' ? sideAt(one, p, tol) : -1;
     if (side >= 0) return side % 2 ? 'ew-resize' : 'ns-resize';
@@ -1025,26 +1034,30 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     const insideShape = topHit(p, tol) ?? [...resolved].reverse().find(r => (r.t === 'rect' || r.t === 'ellipse') && hit({...r, fill: 'k'}, p, tol, th));
     if (dbl && insideShape?.group && ix.member !== insideShape.id) {
       enterMember(insideShape.id);
+      if(insideShape.t==='path'){ix.pathEdit=insideShape.id;ix.node=null;}
       if (insideShape.t === 'text') { focusBox(insideShape.id, {x:e.clientX,y:e.clientY}); return repaint(); }
       if (insideShape.t === 'path' || insideShape.t === 'image') return repaint();
     }
+    if(dbl && insideShape?.t==='path' && ix.pathEdit!==insideShape.id){
+      pickOnly([insideShape.id]);ix.pathEdit=insideShape.id;ix.node=null;return repaint();
+    }
     if (dbl && insideShape && (insideShape.t === 'rect' || insideShape.t === 'ellipse')) { editShape(insideShape.id); return repaint(); }
     if (one) {
-      const hi = handles(one, th).findIndex((h) => dist(h, p) <= tol * 1.3);
+      const hi = selectionHandles(one).findIndex((h) => dist(h, p) <= tol * 1.3);
       // 곡선 손잡이: 점과 겹치면 더 가까운 쪽
-      const kb = one.t === 'path' ? knobs(one).find((k) => dist(k.at, p) <= tol * 1.3) : undefined;
-      if (kb && (hi < 0 || dist(kb.at, p) < dist(handles(one, th)[hi], p))) {
+      const kb = one.t === 'path' && ix.pathEdit===one.id ? knobs(one).find((k) => dist(k.at, p) <= tol * 1.3) : undefined;
+      if (kb && (hi < 0 || dist(kb.at, p) < dist(selectionHandles(one)[hi], p))) {
         ix.drag = { mode: 'ctrl', id: one.id, i: kb.i, side: kb.side, start: p, base: one, moved: false };
         return repaint();
       }
       if (hi >= 0) {
-        if (dbl && one.t === 'path' && one.pts.length > 2) {
+        if (dbl && one.t === 'path' && ix.pathEdit===one.id && one.pts.length > 2) {
           put(unresolve({ ...one, ...removePoint(one, hi) }, lines));
           return repaint();
         }
-        if (one.t === 'path') ix.node = { id: one.id, i: hi }; // 점 고르기: ⌫로 그 점만 지운다
+        if (one.t === 'path' && ix.pathEdit===one.id) ix.node = { id: one.id, i: hi }; // 점 고르기: ⌫로 그 점만 지운다
         ix.drag =
-          one.t === 'path' || (one.t === 'text' && !one.frame)
+          (one.t === 'path' && ix.pathEdit===one.id) || (one.t === 'text' && !one.frame)
             ? { mode: one.t === 'path' ? 'point' : 'width', id: one.id, i: hi, start: p, base: one, moved: false }
             : { mode: hi >= 4 ? 'side' : 'corner', id: one.id, i: hi >= 4 ? hi - 4 : hi, start: p, base: one, moved: false };
         return repaint();
@@ -1056,15 +1069,15 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
         return repaint();
       }
     }
-    const target = topHit(p, tol) ?? [...resolved].reverse().find(r => (r.t === 'rect' || r.t === 'ellipse') && hit({...r, fill: 'k'}, p, 0, th));
+    const target = topHit(p, tol) ?? (one?.t==='path' && ix.pathEdit!==one.id && inBox(p,bboxOf(one,th))?one:undefined) ?? [...resolved].reverse().find(r => (r.t === 'rect' || r.t === 'ellipse') && hit({...r, fill: 'k'}, p, 0, th));
     if (!target) {
-      ix.member = null;
+      ix.member = null;ix.pathEdit=null;
       // 빈 곳: 끌면 영역 고르기(⇧는 더하기), 그냥 누르면 놓을 때 고름 풀기
       ix.marquee = { a: p, b: p, add: e.shiftKey, base: e.shiftKey ? [...ix.sel] : [], wbase: e.shiftKey ? [...ix.wsel] : [], moved: false };
       return repaint();
     }
     // 선분 위 두 번 누르기: 그 자리에 점을 끼운다(곡선이면 모양 그대로 나눔)
-    if (dbl && target.t === 'path') {
+    if (dbl && target.t === 'path' && ix.pathEdit===target.id) {
       const at = nearSegment(target, p, tol * 1.5);
       if (at) {
         put(unresolve({ ...target, ...insertPoint(target, at.i, at.t, p) }, lines));
@@ -1164,6 +1177,9 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       const q = e.shiftKey ? q0 : snapPt(q0, skip, b.pts.filter((_, i) => i !== g.i), freeOf(q0, nb, !!b.o), e, (n) => bboxOf(with_(n), th));
       if (e.shiftKey) ix.guides = null;
       next = with_(q);
+    } else if ((g.mode === 'corner' || g.mode === 'side') && b.t === 'path') {
+      const q=snapPt(p,skip,[],{x:g.mode==='corner'||g.i%2===1,y:g.mode==='corner'||g.i%2===0},e);
+      next=resizePath(b,g.i,q,g.mode==='side');
     } else if ((g.mode === 'corner' || g.mode === 'side') && b.t === 'text' && b.frame) {
       const frame = {...b, t: b.frame, b: {x: b.a.x + b.bw, y: b.a.y + th(b.id)}};
       const q = snapPt(p, skip, [], {x: g.mode === 'corner' || g.i % 2 === 1, y: g.mode === 'corner' || g.i % 2 === 0}, e);
@@ -1559,6 +1575,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
         if (ix.drawing) cancelPath(); // 그리던 선 · 화살표는 버린다
         else if (ix.box || ix.marquee) finishOrCancel();
         else if (ix.node) ix.node = null; // 고른 점부터 풀고(그다음 ⌫는 경로째), 한 번 더 누르면 고름을 푼다
+        else if(ix.pathEdit){ix.pathEdit=null;ix.node=null;if(ix.member)exitMember();}
         else if (ix.member) exitMember();
         else if (any) pickOnly([]);
         else setDraw(null);
@@ -1693,9 +1710,10 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   const preview = dr && dr.pts.length ? pathGeom({ pts: ix.cursor ? [...dr.pts, ix.cursor] : dr.pts, cs: ix.cursor ? [...dr.cs, null] : dr.cs, o: draw?.ortho, w: draw?.w ?? DEFAULT_W }).d : null;
   const lastCs = dr?.cs[dr.cs.length - 1];
   const one = selRs.length === 1 && !wsel.length ? selRs[0] : undefined;
-  const hs = draw && one ? handles(one, th) : [];
-  const hsz = 1.5;
-  const ks = draw && one?.t === 'path' ? knobs(one) : []; // 고른 경로의 곡선 손잡이
+  const hs = draw && one ? selectionHandles(one) : [];
+  const handleBox = one?.t==='path' && ix.pathEdit!==one.id ? bboxOf(one,th) : null;
+  const hsz = handleBox ? Math.min(1.5,Math.max(.7,Math.min(handleBox.w,handleBox.h)/5)) : 1.5;
+  const ks = draw && one?.t === 'path' && ix.pathEdit===one.id ? knobs(one) : []; // 고른 경로의 곡선 손잡이
   const nodeOn = (i: number) => !!one && one.t === 'path' && ix.node?.id === one.id && ix.node.i === i;
   const selBoxes = draw ? [...selRs.map((r) => bboxOf(r, th)), ...wsel.map((w) => w.b)] : [];
   const group = selBoxes.length > 1 ? union(selBoxes) : null;
@@ -1715,7 +1733,11 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
         e.preventDefault();
         const p = toMM(e);
         const target = topHit(p, 1.2) ?? [...resolved].reverse().find(r => (r.t === 'rect' || r.t === 'ellipse') && hit({ ...r, fill: 'k' }, p, 1.2, th));
-        if (target) { enterMember(target.id); if (target.t === 'rect' || target.t === 'ellipse') editShape(target.id); else repaint(); }
+        if (target) {
+          enterMember(target.id);
+          if(target.t==='path' && ix.pathEdit!==target.id){pickOnly([target.id]);ix.pathEdit=target.id;ix.node=null;}
+          if (target.t === 'rect' || target.t === 'ellipse') editShape(target.id); else repaint();
+        }
       }}
     >
       <svg className="shapes-svg" style={{zIndex:resolved.length+2}} viewBox={`0 0 ${W.toFixed(3)} ${H.toFixed(3)}`} preserveAspectRatio="xMinYMin meet" aria-hidden="true">
@@ -1753,7 +1775,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
             <line key={`kl${k.i}-${k.side}`} className="sh-ui sh-knobline" x1={one.pts[k.i].x} y1={one.pts[k.i].y} x2={k.at.x} y2={k.at.y} />
           ))}
         {hs.map((h, i) => (
-          <rect key={i} style={{cursor:one?.t==='text'&&!one.frame?'ew-resize':['nwse-resize','nesw-resize','nwse-resize','nesw-resize','ns-resize','ew-resize','ns-resize','ew-resize'][i]}} className={`sh-ui sh-handle${one?.t === 'text' ? ' sh-text-width' : one?.t==='image'?' sh-image-handle':''}${nodeOn(i) ? ' on' : ''}`} x={h.x - hsz / 2} y={h.y - hsz / 2} width={hsz} height={hsz} rx={0.25} />
+          <rect key={i} style={{cursor:one?.t==='path'&&ix.pathEdit===one.id?'move':one?.t==='text'&&!one.frame?'ew-resize':['nwse-resize','nesw-resize','nwse-resize','nesw-resize','ns-resize','ew-resize','ns-resize','ew-resize'][i]}} className={`sh-ui sh-handle${one?.t === 'text' ? ' sh-text-width' : one?.t==='image'?' sh-image-handle':''}${nodeOn(i) ? ' on' : ''}`} x={h.x - hsz / 2} y={h.y - hsz / 2} width={hsz} height={hsz} rx={0.25} />
         ))}
         {ks.map((k) => (
           <circle key={`k${k.i}-${k.side}`} className="sh-ui sh-knob" cx={k.at.x} cy={k.at.y} r={0.65} />
@@ -1830,6 +1852,8 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
           <DrawBar
             draw={draw}
             sel={selShapes()}
+            pathEditing={!!one&&ix.pathEdit===one.id}
+            exitPathEdit={()=>{ix.pathEdit=null;ix.node=null;repaint();}}
             member={!!ix.member}
             exitMember={exitMember}
             wcount={wsel.length}
@@ -1898,6 +1922,8 @@ function GuideMarks({ g }: { g: Guides }) {
 }
 
 interface BarProps {
+  pathEditing: boolean;
+  exitPathEdit():void;
   member: boolean;
   exitMember(): void;
   draw: DrawState;
@@ -1924,7 +1950,7 @@ const mod = isMac ? '⌘' : 'Ctrl+';
 
 // 그리기 막대. 무엇이든 고르면 고른 것(여러 개면 모두)의 색 · 굵기 · 직각 · 화살촉 · 점선 · 글씨 · 형광펜 · 복제 · 지우기,
 // 고른 게 없으면 새로 그릴 도구와 설정.
-function DrawBar({ draw, sel, member, exitMember, wcount, drawing, setDraw, history, update, format, highlight, remove, duplicate, groupSelection, arrangeSelection, reorder, finish, toTools }: BarProps) {
+function DrawBar({ draw, sel, pathEditing, exitPathEdit, member, exitMember, wcount, drawing, setDraw, history, update, format, highlight, remove, duplicate, groupSelection, arrangeSelection, reorder, finish, toTools }: BarProps) {
   // 커서를 뺏지 않고, 누름이 그림 층(종이)으로 올라가지 않게
   const keep = (e: React.PointerEvent) => {
     // 단추는 편집 커서를 유지하고, 막대 자체의 스크롤바는 브라우저가 끌 수 있게 둔다.
@@ -2007,7 +2033,8 @@ function DrawBar({ draw, sel, member, exitMember, wcount, drawing, setDraw, hist
             <button type="button" className="dtools" onClick={toTools} title="고르기를 풀고 그리기 도구로(새로 그리기)">
               ‹ 도구
             </button>
-            {member && <button type="button" onClick={exitMember} aria-label="그룹 전체 선택" title="그룹 내부 편집 끝내기">그룹 전체</button>}
+            {pathEditing && <button type="button" onClick={exitPathEdit} title="점 편집을 끝내고 전체 이동·크기 조절 (Esc)">세부 편집 완료</button>}
+              {member && <button type="button" onClick={exitMember} aria-label="그룹 전체 선택" title="그룹 내부 편집 끝내기">그룹 전체</button>}
             {n > 1 ? <b>{n}개</b> : sel.length === 0 ? <b>위젯</b> : null}
           </div>
           {sel.some(s=>s.t!=='image') && swatches}

@@ -1641,7 +1641,7 @@ try {
         const m = el.getScreenCTM();
         return [p.x * m.a + m.e, p.y * m.d + m.f];
       });
-      await page.mouse.click(...q);
+      await page.mouse.click(...q, { count: 2 });
       await sleep(150);
     };
     await pickA();
