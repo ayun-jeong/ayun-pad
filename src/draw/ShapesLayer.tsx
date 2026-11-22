@@ -1,3 +1,4 @@
+import { handwrittenStar } from './star';
 import type {EditorView} from 'prosemirror-view';
 import {prepareImage, useImageSource, peekImageSource, importImageSource} from '../store/imageAssets';
 import { DrawingHistory, DRAWING_HISTORY_EVENT } from './drawingHistory';
@@ -139,9 +140,10 @@ const TOOLS: { t: Tool; name: string; key: string }[] = [
   { t: 'line', name: '선', key: 'L' },
   { t: 'rect', name: '네모', key: 'R' },
   { t: 'ellipse', name: '원', key: 'O' },
+  { t: 'star', name: '별표', key: 'S' },
   { t: 'text', name: '글상자', key: 'T' },
 ];
-const TOOL_KEYS: Record<string, Tool> = { KeyV: 'select', KeyA: 'arrow', KeyL: 'line', KeyR: 'rect', KeyO: 'ellipse', KeyT: 'text' };
+const TOOL_KEYS: Record<string, Tool> = { KeyV: 'select', KeyA: 'arrow', KeyL: 'line', KeyR: 'rect', KeyO: 'ellipse', KeyT: 'text', KeyS: 'star' };
 const PEN_CODES: Record<string, PenKey> = { KeyR: 'r', KeyB: 'b', KeyK: 'k', KeyP: 'p', KeyY: 'y', KeyG: 'g' };
 // 글상자 글씨 크기 · 자간 · 행간(한 번 누를 때 얼마나, 어디까지)
 const FMT = { fs: { step: 0.1, min: 0.6, max: 2.5, base: 1 }, ls: { step: 0.02, min: -0.1, max: 0.4, base: 0 }, lh: { step: 0.1, min: 0.8, max: 2.5, base: 1 } } as const;
@@ -898,16 +900,20 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     ix.history.clear();
     ix.box = null;
     ix.guides = null;
-    if (!box || !d || (d.tool !== 'rect' && d.tool !== 'ellipse')) return;
+    if (!box || !d || (d.tool !== 'rect' && d.tool !== 'ellipse' && d.tool !== 'star')) return;
     let a = box.a;
     let b = p;
     const bb = boxOf(a, b);
     if (bb.w < 1 && bb.h < 1) {
-      const [w, h] = d.tool === 'rect' ? [18, pitch * 2] : [12, pitch * 1.6];
+      const [w, h] = d.tool === 'star' ? [9, 9] : d.tool === 'rect' ? [18, pitch * 2] : [12, pitch * 1.6];
       a = { x: p.x - w / 2, y: p.y - h / 2 };
       b = { x: p.x + w / 2, y: p.y + h / 2 };
     }
-    const s: Shape = { id: newId(), t: d.tool, a: anchorAt(a, lines), b: anchorAt(b, lines), c: d.c, w: d.w, z: nextZ() };
+    const star = d.tool === 'star' ? handwrittenStar(a,b) : null;
+    const base = {id:newId(),c:d.c,w:d.w,z:nextZ()};
+    const s: Shape = star
+      ? {...base,t:'path',pts:star.pts.map(p=>anchorAt(p,lines)),cs:star.cs,head:0}
+      : {...base,t:d.tool as 'rect'|'ellipse',a:anchorAt(a,lines),b:anchorAt(b,lines)};
     put(s);
     pickOnly([s.id]);
     if (!d.lock) setDraw({ tool: 'select' });
@@ -998,7 +1004,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       ix.press = { p: dr.pts[dr.pts.length - 1], moved: false, i: dr.pts.length - 1 };
       return repaint();
     }
-    if (d.tool === 'rect' || d.tool === 'ellipse') {
+    if (d.tool === 'rect' || d.tool === 'ellipse' || d.tool === 'star') {
       pickOnly([]);
       const a = snapPt(p, new Set(), [], { x: true, y: true }, e);
       ix.history.record({drawing:ix.drawing,box:ix.box});
@@ -1459,7 +1465,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
     return()=>window.removeEventListener(DRAWING_HISTORY_EVENT,on);
   },[]);
 
-  // 그리기 중 키: 도구 V A L R O T, H 직각, Q 고정, [ ] 굵기, ⌥색 / ⌥⇧색 형광펜 · 채우기, ⌥, ⌥. 자간, ⌥⇧, ⌥⇧. 행간, ⌘⇧, ⌘⇧. 글씨 크기,
+  // 그리기 중 키: 도구 V A L R O S T, H 직각, Q 고정, [ ] 굵기, ⌥색 / ⌥⇧색 형광펜 · 채우기, ⌥, ⌥. 자간, ⌥⇧, ⌥⇧. 행간, ⌘⇧, ⌘⇧. 글씨 크기,
   // ⌘A 모두 고르기, ⌘C ⌘X ⌘V, ⌫ 지우기(그리는 중이면 마지막 점), Enter · Esc 끝내기
   useEffect(() => {
     if (!draw) {
@@ -1727,7 +1733,9 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
         )}
         {dr?.pts.map((p, i) => <circle key={i} className="sh-ui" cx={p.x} cy={p.y} r={0.55} fill="#fff" stroke="#0064e8" strokeWidth={0.2} />)}
         {ix.box && draw && (
-          <ShapeSvg r={{ id: 'draft', t: draw.tool === 'ellipse' ? 'ellipse' : 'rect', a: ix.box.a, b: ix.box.b, c: draw.c, w: draw.w, z: 0 }} />
+          <ShapeSvg r={draw.tool === 'star'
+            ? {id:'draft',t:'path',...handwrittenStar(ix.box.a,ix.box.b),head:0,c:draw.c,w:draw.w,z:0}
+            : {id:'draft',t:draw.tool === 'ellipse' ? 'ellipse' : 'rect',a:ix.box.a,b:ix.box.b,c:draw.c,w:draw.w,z:0}} />
         )}
         {selBoxes.map((b, i) => (
           <SelBox key={i} b={b} />

@@ -20,7 +20,7 @@ try {
   assert.equal(await page.$('.top .tb-draw, .top .sync-dot'), null);
   assert.equal(await page.$$eval('.top .insert-btn', es => es.length), 1);
   await page.click('.insert-btn'); await page.waitForSelector('.panel.insert');
-  assert.deepEqual(await page.$$eval('.ins-drawing button', es => es.map(e => e.textContent)), ['글상자', '화살표', '선', '네모', '원', '선택 · 이동']);
+  assert.deepEqual(await page.$$eval('.ins-drawing button', es => es.map(e => e.textContent)), ['글상자', '화살표', '선', '네모', '원', '별표']);
   assert.ok(await page.$('.panel.insert input[aria-label="행"]'));
   await page.$$eval('.ins-drawing button', es => es.find(e => e.textContent === '화살표').click());
   await page.waitForSelector('.shapes-layer.tool-arrow');

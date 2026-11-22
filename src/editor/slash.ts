@@ -100,6 +100,7 @@ export const SLASH_ITEMS: SlashItem[] = [
   { name: '화살표', alias: ['arrow'], hint: '누를 때마다 꺾이고, 두 번 눌러 끝', run: draw('draw-arrow') },
   { name: '선', alias: ['line'], hint: '화살촉 없는 꺾은선', run: draw('draw-line') },
   { name: '네모', alias: ['rect', '사각형'], hint: '끌어서 네모', run: draw('draw-rect') },
+  { name: '별표', alias: ['별', 'star', '손글씨 별'], hint: '손으로 그린 별표 · 누르거나 끌어서 크기 조절', run: draw('draw-star') },
   { name: '원', alias: ['동그라미', 'circle', 'ellipse'], hint: '끌어서 동그라미', run: draw('draw-ellipse') },
 ];
 

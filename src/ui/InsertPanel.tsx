@@ -6,7 +6,6 @@ import { insertChronology, insertGraph, insertNumberLine, insertTable } from '..
 import type { GraphTpl } from '../editor/widgets';
 
 interface Props {
-  drawing: boolean;
   target(): EditorView | null; // 넣을 편집기(쓰던 글상자)
   place(fn: (v: EditorView) => void): void; // 넣을 편집기가 없으면: 누른 자리에 새 글상자를 만들고 거기에
   app(action: AppAction): void;
@@ -24,7 +23,7 @@ const n = (v: string, d: number) => (v.trim() !== '' && Number.isFinite(Number(v
 
 // '＋ 넣기': 표 · 수직선 · 연표 · 그래프 · 분수 · 루트 · 글상자. 쓰던 글상자의 커서 줄 다음에 넣는다.
 // 쓰던 글상자가 없으면 넣을 곳을 누르게 하고 그 자리 새 글상자에 넣는다. 본문에서 / 를 쳐도 같다(/표 3x4, /연표 2016 10).
-export function InsertPanel({ drawing, target, place, app, onClose }: Props) {
+export function InsertPanel({ target, place, app, onClose }: Props) {
   const [rows, setRows] = useState('3');
   const [cols, setCols] = useState('3');
   const [line, setLine] = useState('10');
@@ -64,8 +63,8 @@ export function InsertPanel({ drawing, target, place, app, onClose }: Props) {
           ['draw-line', '선', 'M5 19 19 5'],
           ['draw-rect', '네모', 'M5 5h14v14H5z'],
           ['draw-ellipse', '원', 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16'],
-          ['draw', drawing ? '그리기 종료' : '선택 · 이동', 'M4 8V4h4m8 0h4v4m0 8v4h-4m-8 0H4v-4'],
-        ] satisfies [AppAction, string, string][]).map(([action, label, path]) => <button key={action} type="button" className={action === 'draw' ? 'tb-draw' : undefined} onClick={() => { onClose(); app(action); }} title={action === 'draw' ? '그리기 도구와 여러 개 선택 (⌥D)' : `${label} 넣기`}>
+          ['draw-star', '별표', 'M12 3 5 21 22 9 2 10 19 21 11.5 2.7 11 5'],
+        ] satisfies [AppAction, string, string][]).map(([action, label, path]) => <button key={action} type="button" onClick={() => { onClose(); app(action); }} title={action === 'draw-star' ? '손글씨 별표 넣기 · 누르거나 끌어서 그리기' : `${label} 넣기`}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={path} /></svg><span>{label}</span>
         </button>)}
       </div>

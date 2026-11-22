@@ -26,6 +26,7 @@ export type AppAction =
   | 'draw-arrow'
   | 'draw-line'
   | 'draw-rect'
+  | 'draw-star'
   | 'draw-ellipse'
   | 'read';
 

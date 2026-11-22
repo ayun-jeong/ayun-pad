@@ -18,7 +18,7 @@ try {
     for (const [i, x] of [10, 30].entries()) shapes.set(`rect-${i}`, { id: `rect-${i}`, t: 'rect', a: anchor(x, 20), b: anchor(x + 10, 30), c: 'r', w: .2, z: i });
     shapes.set('text-group', { id: 'text-group', t: 'text', a: anchor(50, 20), bw: 30, text: 'Group note', c: 'k', w: .2, z: 2 });
   });
-  await page.waitForSelector('.tbox'); await page.click('.insert-btn'); await page.click('.panel.insert .tb-draw'); await page.waitForSelector('.drawbar');
+  await page.waitForSelector('.tbox'); await page.keyboard.down('Alt'); await page.keyboard.press('KeyD'); await page.keyboard.up('Alt'); await page.waitForSelector('.drawbar');
   await page.evaluate(() => document.activeElement?.blur());
   const mod = await page.evaluate(() => /Mac/.test(navigator.platform) ? 'Meta' : 'Control');
   const key = async (code, shift = false) => { await page.keyboard.down(mod); if (shift) await page.keyboard.down('Shift'); await page.keyboard.press(code); if (shift) await page.keyboard.up('Shift'); await page.keyboard.up(mod); };

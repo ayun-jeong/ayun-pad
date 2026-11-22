@@ -20,7 +20,7 @@ try {
     shapes.set('b', { id: 'b', t: 'ellipse', a: anchor(40, 50), b: anchor(60, 70), c: 'k', w: .2, z: 1 });
     shapes.set('c', { id: 'c', t: 'text', a: anchor(65, 80), bw: 30, text: 'Keep this note', c: 'r', w: .2, z: 2 });
   });
-  await page.waitForSelector('.tbox'); await page.click('.insert-btn'); await page.click('.panel.insert .tb-draw'); await page.waitForSelector('.drawbar');
+  await page.waitForSelector('.tbox'); await page.keyboard.down('Alt'); await page.keyboard.press('KeyD'); await page.keyboard.up('Alt'); await page.waitForSelector('.drawbar');
   await page.evaluate(() => document.activeElement?.blur());
   const mod = await page.evaluate(() => /Mac/.test(navigator.platform) ? 'Meta' : 'Control');
   const key = async code => { await page.keyboard.down(mod); await page.keyboard.press(code); await page.keyboard.up(mod); };

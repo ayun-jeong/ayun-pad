@@ -68,7 +68,7 @@ export interface TextShape extends Base {
 
 export type Shape = PathShape | BoxShape | TextShape | ImageShape;
 
-export type Tool = 'select' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'text';
+export type Tool = 'select' | 'line' | 'arrow' | 'rect' | 'ellipse' | 'star' | 'text';
 
 export interface XY {
   x: number;

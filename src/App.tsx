@@ -86,7 +86,7 @@ function initialReading(): boolean {
 }
 const READ_HINT = '읽기 모드예요. 고치려면 위쪽 ‘읽기 중’을 눌러 끄세요 (⌥L)';
 // 읽기 모드에서 막는 것(노트를 고치는 판 · 도구)
-const EDIT_ACTIONS = new Set<AppAction>(['type', 'draw', 'draw-text', 'draw-arrow', 'draw-line', 'draw-rect', 'draw-ellipse', 'insert', 'emph', 'pitch-down', 'pitch-up', 'pen-picker', 'hl-picker']);
+const EDIT_ACTIONS = new Set<AppAction>(['type', 'draw', 'draw-text', 'draw-arrow', 'draw-line', 'draw-rect', 'draw-ellipse', 'draw-star', 'insert', 'emph', 'pitch-down', 'pitch-up', 'pen-picker', 'hl-picker']);
 // 글은 글상자로 쓴다. 빈 종이를 누르면 그 자리에 글상자가 생긴다.
 const BOX_HINT = '글상자에서 써요 · 빈 종이를 누르면 그 자리에 글상자가 생겨요';
 // 사파리(gesture 이벤트)가 아닌 폰 · 태블릿(안드로이드 등)은 두 손가락 오므리기 · 벌리기를 직접 받아 노트 배율로
@@ -618,6 +618,10 @@ export function App() {
           break;
         case 'draw-rect':
           startDraw('rect');
+          break;
+        case 'draw-star':
+          startDraw('star');
+          toast('누르면 작은 별표 · 끌어서 크기 조절 · Shift로 가로세로 비율 맞추기');
           break;
         case 'draw-ellipse':
           startDraw('ellipse');
@@ -1416,7 +1420,6 @@ export function App() {
       {help && <Help onClose={() => setHelp(false)} />}
       {insert && viewRef.current && (
         <InsertPanel
-          drawing={!!draw}
           target={activeView}
           place={(fn) => {
             // 쓰던 글상자가 없으면: 넣을 곳을 누르면 그 자리에 글상자를 만들고 거기에 넣는다
