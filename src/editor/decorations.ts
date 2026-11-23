@@ -216,7 +216,7 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
     const start = pos + 1;
     const block = blocked(node);
     if (st.red) for (const s of subtract(st.red, block.pen)) decos.push(Decoration.inline(start + s.from, start + s.to, { class: 'a-red' }, { autoPen: 'r' }));
-    for (const blue of st.blue) for (const s of subtract(blue, block.pen)) decos.push(Decoration.inline(start + s.from, start + s.to, { class: 'a-blue' }));
+    for (const blue of st.blue) for (const s of subtract(blue, block.pen)) decos.push(Decoration.inline(start + s.from, start + s.to, { class: 'a-blue' }, { autoPen: 'b' }));
     if (st.black) for (const s of subtract(st.black, [...block.pen, ...st.blue])) decos.push(Decoration.inline(start + s.from, start + s.to, { class: 'a-black' }, { autoPen: 'k' }));
     const level = levels[i];
     if (st.hl && level < HL_BY_DEPTH.length) {

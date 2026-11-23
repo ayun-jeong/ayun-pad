@@ -1,3 +1,4 @@
+import {selectedPenColors} from '../editor/penSelection';
 import {tableTarget} from '../editor/tables';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
@@ -129,6 +130,9 @@ const TB_HL: PenKey[] = ['y', 'r', 'b', 'g', 'p'];
 
 // 글상자를 고르거나 고치는 동안 바로 위에 뜨는 막대. 글자를 끌어 골랐으면 고른 글자만, 아니면 글상자 전체에.
 function TbBar({ anchor, view, r, editing, onPatch, um }: { anchor: RefObject<HTMLDivElement | null>; view: EditorView | null; r: Resolved & { t: 'text' }; editing: boolean; onPatch(p: Partial<TextShape>): void; um: Y.UndoManager | null }) {
+  const [,refreshColors]=useState(0);
+  useEffect(()=>observeBoxSelection(()=>refreshColors(n=>n+1)),[view]);
+  const penColors=view?selectedPenColors(view.state,r.c,!editing):new Set([r.c]);
   // 누를 때 글상자에서 커서 · 고른 글자가 빠지지 않게
   const keep = (e: React.SyntheticEvent) => {
     e.preventDefault();
@@ -228,7 +232,7 @@ function TbBar({ anchor, view, r, editing, onPatch, um }: { anchor: RefObject<HT
       role="toolbar" aria-label="글상자 꾸미기" onPointerDown={keep} onMouseDown={keep}>
       <div className="tb-control-group" role="group" aria-label="글자색">
       {TB_COLORS.map((k) => (
-        <button key={k} type="button" className={r.c === k ? 'on' : ''} title={`${PEN_NAME[k]} 글자(끌어 고른 글자만, 아니면 글상자 전체)`} aria-label={`${PEN_NAME[k]} 글자`} onClick={() => color(k)}>
+        <button key={k} type="button" className={penColors.size===1&&penColors.has(k) ? 'on' : ''} aria-pressed={penColors.size===1&&penColors.has(k)} title={`${PEN_NAME[k]} 글자(끌어 고른 글자만, 아니면 글상자 전체)`} aria-label={`${PEN_NAME[k]} 글자`} onClick={() => color(k)}>
           <i style={{ background: strokeOf(k) }} />
         </button>
       ))}
@@ -379,6 +383,7 @@ export function TextBox({ layer, r, um, settings, host, active, autoFocus, onSav
       if(at>=0)selection=NodeSelection.create(ext,at);
     }
     v.updateState(EditorState.create({ schema, doc: ext, plugins: v.state.plugins, selection }));
+    notifySelection();
     setInTable(!!tableTarget(v.state));
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
