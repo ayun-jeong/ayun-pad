@@ -161,7 +161,7 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
 .pen-b { color: var(--pen-b); }
 .pen-k { color: var(--pen-k); }
 .pen-p { color: var(--pen-p); }
-.pen-y { color: #a87900; }
+.pen-y { color: #e69a00; }
 .pen-g { color: var(--pen-g); }
 .mf { line-height: 0; }
 /* 형광펜: 글자 높이의 절반쯤 되는 얇은 띠, 끝은 비스듬하고 번진 펜 자국. 띠마다 끝 모양을 조금씩 다르게. */
