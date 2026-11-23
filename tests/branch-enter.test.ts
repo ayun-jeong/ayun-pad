@@ -103,3 +103,23 @@ describe('옆 가지 뒤 Enter', () => {
     expect(rows(enter(stateFor('A–B',7))).map(r=>r.depth)).toEqual([7,8,8]);
   });
 });
+
+describe('기존 인라인 옆가지 아래 Tab 연결',()=>{
+  it('A–B–C 바로 아래에서 Tab하면 실제 옆가지 구조를 만들고 C 아래에 정렬한다',()=>{
+    const line=(text:string,depth:number,id:string)=>schema.node('line',{depth,kind:'branch',id},schema.text(text,[schema.marks.size.create({v:1.2})]));
+    const doc=schema.node('doc',null,[line('사업',1,'root'),line('ESG 활동–E–신재생: 설명',2,'esg'),line('EERS',3,'eers'),line('설명',4,'child'),line('S',3,'s')]);
+    let state=EditorState.create({doc,selection:TextSelection.create(doc,doc.child(0).nodeSize+doc.child(1).nodeSize+2)});
+    let calls=0;indentCmd(1)(state,tr=>{calls++;state=state.apply(tr);});
+    expect(calls).toBe(1);
+    expect(rows(state).map(r=>[r.text,r.depth,r.side])).toEqual([['사업',1,false],['ESG 활동',2,true],['E',3,true],['신재생: 설명',4,false],['EERS',4,false],['설명',5,false],['S',3,false]]);
+    expect(state.selection.$from.parent.attrs.id).toBe('eers');expect(state.selection.$from.parentOffset).toBe(1);
+    expect(state.doc.child(1).attrs.id).toBe('esg');expect(state.doc.child(3).firstChild!.marks[0].attrs.v).toBe(1.2);
+    indentCmd(-1)(state,tr=>{state=state.apply(tr);});expect(state.doc.child(4).attrs.depth).toBe(3);
+  });
+  it('콜론 뒤 대시와 숫자 범위는 옆가지로 분해하지 않는다',()=>{
+    for(const text of ['주제: 설명–계속','2020–2025']){
+      const doc=schema.node('doc',null,[schema.node('line',{depth:1},schema.text(text)),schema.node('line',{depth:1,kind:'branch'},schema.text('다음'))]);
+      let state=EditorState.create({doc,selection:TextSelection.create(doc,doc.firstChild!.nodeSize+1)});indentCmd(1)(state,tr=>{state=state.apply(tr);});expect(state.doc.childCount).toBe(2);expect(state.doc.firstChild!.textContent).toBe(text);
+    }
+  });
+});

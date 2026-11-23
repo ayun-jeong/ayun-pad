@@ -47,7 +47,27 @@ function selectedLines(state: EditorState): { c: Ctx; a: number; b: number } | n
 
 // Tab / ⇧Tab: 고른 줄과 그 자식 줄의 깊이를 한 단계씩. 못 바꿔도 Tab은 삼킨다(포커스가 다른 곳으로 가지 않게).
 export function indentCmd(delta: 1 | -1): Command {
-  return (state, dispatch) => {
+  return (initial, dispatch) => {
+    let state = initial;
+    const tr = initial.tr;
+    const before = selectedLines(state);
+    // A literal A–B–C line must become actual side-branch nodes before
+    // calculating Tab's parent/depth limit and the continuation's x position.
+    if (delta > 0 && before?.c.depth === 0 && before.a > 0) {
+      const parent = before.c.container.child(before.a - 1);
+      const text = lineText(parent), colon = findColon(text);
+      const spans = parent.type === schema.nodes.line ? inlineBranches(colon >= 0 ? text.slice(0, colon) : text) : [];
+      if (spans.length && parent.attrs.depth + spans.length - 1 <= MAX_DEPTH) {
+        const rows = spans.map((span, i) => schema.nodes.line.create({
+          ...parent.attrs, id: i === 0 ? parent.attrs.id : null,
+          depth: parent.attrs.depth + i, kind: i === 0 ? parent.attrs.kind : 'branch',
+          side: i < spans.length - 1,
+        }, parent.content.cut(span.from, i === spans.length - 1 ? parent.content.size : span.to)));
+        const pos = positions(before.c)[before.a - 1];
+        tr.replaceWith(pos, pos + parent.nodeSize, rows);
+        state = initial.apply(tr);
+      }
+    }
     const sel = selectedLines(state);
     if (!sel) return true;
     const { c, a, b } = sel;
@@ -58,13 +78,13 @@ export function indentCmd(delta: 1 | -1): Command {
     const line = c.container.child(a);
     const prev = fresh ? prevInfo(c) : null;
     if (fresh && (!prev || (prev.noTitle && (line.attrs.depth as number) >= prev.depth))) {
-      dispatch?.(state.tr.setNodeMarkup(positions(c)[a], undefined, { ...line.attrs, kind: 'branch' }).scrollIntoView());
+      dispatch?.(tr.setNodeMarkup(positions(c)[a], undefined, { ...line.attrs, kind: 'branch' }).scrollIntoView());
       return true;
     }
     const plan = planIndent(lineInfos(c.container), a, b, delta);
-    if (!plan || !dispatch) return true;
+    if (!dispatch) return true;
+    if (!plan) { if (tr.docChanged) dispatch(tr.scrollIntoView()); return true; }
     const pos = positions(c);
-    const tr = state.tr;
     for (let i = plan.from; i <= plan.to; i++) {
       const attrs = { ...c.container.child(i).attrs, depth: plan.depths[i - plan.from] };
       tr.setNodeMarkup(pos[i], undefined, fresh && i === a ? { ...attrs, kind: 'branch' } : attrs);

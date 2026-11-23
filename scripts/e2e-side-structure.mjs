@@ -50,6 +50,16 @@ try {
 
   await page.keyboard.type('새 형제');await sleep(200);g=await geometry();assert.ok(Math.abs(g[1].x-g[2].x)<1,'새 항목 글 시작점이 같은 수직선에 정렬');
   assert.equal((await rows())[3].id,'wildfire');await page.screenshot({path:'/tmp/ayun-pad-side-enter.png'});
+  // A pasted/literal inline chain must also support Tab below its side topic.
+  await seed([line('business','사업',1),line('esg','ESG 활동–E–신재생: 설명',2),line('eers','EERS 고효율 기기 보급',3),line('other','S',3)]);
+  const literal=await page.evaluate(()=>window.__ayunpad.doc().shapes.get('side-test').doc);await sleep(600);
+  await end('eers');await page.keyboard.press('Tab');await sleep(250);
+  data=await rows();assert.deepEqual(data.map(n=>[n.text,n.depth,n.side]),[['사업',1,false],['ESG 활동',2,true],['E',3,true],['신재생: 설명',4,false],['EERS 고효율 기기 보급',4,false],['S',3,false]]);
+  g=await geometry();assert.ok(Math.abs(g[3].x-g[4].x)<1,'Tab aligns EERS under the side topic');
+  assert.ok(Math.abs(g[2].y-g[3].y)<1,'expanded inline topics stay on the same visual row');
+  assert.ok(await page.$eval('.tbox.tedit .ln[data-id="eers"]',e=>getComputedStyle(e).backgroundImage.includes('linear-gradient')),'continuation draws connecting branch lines');
+  const mod=await page.evaluate(()=>/Mac/.test(navigator.platform)?'Meta':'Control');await page.keyboard.down(mod);await page.keyboard.press('KeyZ');await page.keyboard.up(mod);await sleep(150);
+  assert.deepEqual(await page.evaluate(()=>window.__ayunpad.doc().shapes.get('side-test').doc),literal,'one undo restores the original inline line and indentation');
   // 이미 분리된 중첩 옆가지의 부모 끝에서 Enter: 하위 트리를 보존한다.
   await page.click('.top .read-btn');await page.click('.top .read-btn');
   await seed([line('a','A',1,true),line('b','B',2,true),line('c','C',3),line('detail','C의 설명',4),line('sibling','기존 형제',3)]);
