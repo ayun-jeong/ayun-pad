@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { fitPitch, halfLabel, type Typo } from '../editor/layout';
+import { A4_W, fitPitch, halfLabel, textWidth, type Typo } from '../editor/layout';
 import { buildHalf, buildSheet, countHalves, labelled, PX_PER_MM } from './pages';
 
 export type ViewMode = 'edit' | 'half' | 'a4';
@@ -267,5 +267,21 @@ export function PagesView({ mode, source, typo, zoom, version, reading, pageInfo
 export function buildPrintSheets(host: HTMLElement, source: HTMLElement, typo: Typo) {
   host.replaceChildren();
   const halves = countHalves(source, typo);
-  for (let s = 0; s < Math.ceil(halves / 2); s++) host.appendChild(buildSheet(source, typo, s, halves));
+  for (let s = 0; s < Math.ceil(halves / 2); s++) {
+    const sheet = buildSheet(source, typo, s, halves);
+    // Clip paint and layout to a real half-height box. Merely hiding the
+    // full source column leaves its long overflow in browser print pagination.
+    // Keep a full A4 of horizontal space so crossing text boxes stay visible.
+    for (const half of sheet.querySelectorAll<HTMLElement>('.phalf')) {
+      const col = half.querySelector<HTMLElement>('.pcol')!;
+      const clone = col.firstElementChild as HTMLElement;
+      clone.style.top = col.style.top;
+      clone.style.width = `${textWidth(typo)}mm`;
+      col.style.top = '0';
+      col.style.height = `${fitPitch(typo).usable}mm`;
+      col.style.width = `${A4_W}mm`;
+      col.style.contain = 'strict';
+    }
+    host.appendChild(sheet);
+  }
 }

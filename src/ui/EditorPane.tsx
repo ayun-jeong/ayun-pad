@@ -431,7 +431,7 @@ export function EditorPane({ onAppendPage,onDeletePage,canDeletePage, noteId, zo
         </div>
       </FoldedSurface>
       {!reading&&<div className="page-tail" style={{top:surfaceHeight+16*zoom,left:GUTTER_MM*PX_PER_MM*zoom,width:(folded?210:HALF_W)*PX_PER_MM*zoom,height:297*PX_PER_MM*zoom}}>
-        <span className="page-total">총 {contentHalves}페이지 · A4 {Math.ceil(contentHalves/2)}장</span>
+        <span className="page-total">반쪽 {contentHalves}페이지 · 인쇄 A4 {Math.ceil(contentHalves/2)}장</span>
         <button type="button" className="add-page-placeholder" aria-label="새 페이지 추가" onPointerDown={e=>e.stopPropagation()} onClick={()=>onAppendPage(contentHalves)}><span className="add-page-content"><span className="add-page-plus" aria-hidden="true">＋</span><span>새 페이지 추가</span><small>반쪽 {contentHalves+1}페이지</small></span></button>
         {contentHalves>1&&canDeletePage(contentHalves-1)&&<button type="button" className="delete-last-page" aria-label="마지막 빈 페이지 삭제" onPointerDown={e=>e.stopPropagation()} onClick={()=>onDeletePage(contentHalves-1,contentHalves)}>마지막 빈 페이지 삭제</button>}
       </div>}

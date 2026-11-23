@@ -73,7 +73,7 @@ export function MoreMenu({ mode, pageWidth, onPageWidth, zoom, reading, syncText
         </button>
       </div>
       {mode === 'edit' && item('인쇄 미리보기 · 쪽 정리', () => act('view-a4'), `${A}3`)}
-      {item('인쇄 · PDF', () => act('print'), `${M}P`)}
+      {item('A4 인쇄 · PDF', () => act('print'), `${M}P`)}
       <hr />
       <button type="button" role="menuitem" className={`account-menu-item ${syncState}`} aria-label="계정 · 동기화" onClick={run(onAccount)}>
         <i className="sync-dot" aria-hidden="true" /><span>계정 · 동기화<small>{syncText}</small></span>
