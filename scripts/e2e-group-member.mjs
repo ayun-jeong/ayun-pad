@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';import {spawn} from 'node:child_process';import puppeteer from 'puppeteer-core';
-const url='http://localhost:4356/ayun-pad/',server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--port','4356','--strictPort'],{stdio:'ignore'}),sleep=ms=>new Promise(r=>setTimeout(r,ms));let browser;
+const url=process.env.E2E_URL??'http://localhost:4356/ayun-pad/',server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--port','4356','--strictPort'],{stdio:'ignore'}),sleep=ms=>new Promise(r=>setTimeout(r,ms));let browser;
 try{
  for(let i=0;i<60;i++){try{if((await fetch(url)).ok)break;}catch{}await sleep(200);}
- browser=await puppeteer.launch({executablePath:process.env.CHROME??'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,args:['--disable-gpu']});const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.setViewport({width:1440,height:1000});await page.goto(url,{waitUntil:'networkidle0'});await page.waitForSelector('.editor');await page.evaluate(async()=>await window.__ayunpad.doc().ready);const noteId=await page.evaluate(()=>window.__ayunpad.doc().id);
+ browser=await puppeteer.launch({executablePath:process.env.CHROME??'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,args:['--disable-gpu']});await browser.defaultBrowserContext().overridePermissions(new URL(url).origin,['clipboard-read','clipboard-write']);const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.setViewport({width:1440,height:1000});await page.goto(url,{waitUntil:'networkidle0'});await page.waitForSelector('.editor');await page.evaluate(async()=>await window.__ayunpad.doc().ready);const noteId=await page.evaluate(()=>window.__ayunpad.doc().id);
  await page.evaluate(()=>{const m=window.__ayunpad.doc().shapes,a=(x,y)=>({l:null,r:0,x,y}),base={group:'members',c:'k',w:.2};
  m.set('member-a',{...base,id:'member-a',t:'text',frame:'rect',stroke:'k',a:a(10,50),bw:30,bh:12,text:'AAA',doc:{type:'doc',content:[{type:'line',content:[{type:'text',text:'AAA'}]}]},z:0});
  m.set('member-b',{...base,id:'member-b',t:'ellipse',a:a(55,50),b:a(85,65),z:1});m.set('member-c',{...base,id:'member-c',t:'path',pts:[a(10,90),a(80,100)],head:1,z:2});});await page.waitForSelector('.tbox[data-sid="member-a"]');
@@ -11,6 +11,23 @@ try{
  const dbl=async(x,y)=>{const p=await at(x,y);await page.mouse.click(p.x,p.y);await sleep(80);await page.mouse.click(p.x,p.y);await sleep(100);};
  await page.click('.tbox[data-sid="member-a"]');assert.equal(await selected(),3);const b0=await shape('member-b'),c0=await shape('member-c');
  await dbl(25,56);await page.waitForSelector('.tbox.tedit[data-sid="member-a"]');assert.equal(await selected(),1);await page.waitForSelector('[aria-label="그룹 전체 선택"]');
+ // Seed the clipboard with a different object, then copy a member with an empty caret selection.
+ await page.keyboard.press('Escape');await page.click('[aria-label="그룹 전체 선택"]');await dbl(45,95);
+ await page.keyboard.down('Meta');await page.keyboard.press('KeyC');await page.keyboard.up('Meta');
+ await page.keyboard.press('Escape');await dbl(25,56);await page.waitForSelector('.tbox.tedit[data-sid="member-a"]');
+ await page.keyboard.down('Meta');await page.keyboard.press('KeyC');await page.keyboard.up('Meta');
+ const copied=await page.evaluate(async()=>{const items=await navigator.clipboard.read();for(const item of items)if(item.types.includes('text/html'))return await (await item.getType('text/html')).text();return '';});
+ assert.ok(copied.includes('member-a'),'collapsed text caret copies the current member, replacing the old clipboard');assert.ok(!copied.includes('member-c'));
+ const countBefore=await page.evaluate(()=>window.__ayunpad.doc().shapes.size);
+ await page.evaluate(html=>{const dt=new DataTransfer();dt.setData('text/plain','AAA');dt.setData('text/html',html);document.activeElement.dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true}));},copied);await sleep(200);
+ assert.equal(await page.evaluate(()=>window.__ayunpad.doc().shapes.size),countBefore+1);
+ const added=await page.evaluate(()=>[...window.__ayunpad.doc().shapes.values()].filter(s=>!s.id.startsWith('member-')));assert.equal(added.length,1);assert.equal(added[0].t,'text');assert.equal(added[0].text,'AAA');
+ await page.evaluate(()=>{const m=window.__ayunpad.doc().shapes;for(const id of [...m.keys()])if(!id.startsWith('member-'))m.delete(id);});
+ await page.keyboard.press('Escape');await dbl(25,56);await page.waitForSelector('.tbox.tedit[data-sid="member-a"]');
+ await page.$eval('.tbox.tedit[data-sid="member-a"] .ln',e=>{const r=document.createRange();r.selectNodeContents(e);const s=getSelection();s.removeAllRanges();s.addRange(r);});await sleep(100);
+ await page.keyboard.down('Meta');await page.keyboard.press('KeyC');await page.keyboard.up('Meta');
+ const textCopy=await page.evaluate(async()=>await navigator.clipboard.readText());assert.equal(textCopy,'AAA','selected text still copies as text');
+ await page.keyboard.press('ArrowRight');
  await page.keyboard.press('End');await page.keyboard.type(' edit');await page.click('.tb-bar-floating [aria-label="보라 글자"]');await page.click('.tb-bar-floating [aria-label="도형 테두리 색"]');await page.click('.tb-frame-palette [aria-label="파랑 테두리"]');
  assert.equal((await shape('member-a')).text,'AAA edit');assert.equal((await shape('member-a')).stroke,'b');assert.equal((await shape('member-a')).group,'members');assert.deepEqual(await shape('member-b'),b0);assert.deepEqual(await shape('member-c'),c0);
  await page.click('[aria-label="그룹 전체 선택"]');assert.equal(await selected(),3);console.log('ok  단일 클릭은 그룹 전체 · 더블클릭은 글상자 하나 · 글/글자색/선 색 수정 시 다른 구성원 그대로');

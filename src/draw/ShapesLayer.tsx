@@ -1493,6 +1493,16 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       if(e.key==='Escape'&&document.querySelector('.top [data-top-menu][aria-expanded="true"]'))return;
       const t = e.target as HTMLElement | null;
       if (t?.closest('.arrange-menu, .reference-popover') || (e.key === 'Escape' && document.querySelector('.arrange-menu'))) return;
+      // A double-click enters the member's text editor with a collapsed caret.
+      // With no selected text, Copy still means the selected group member.
+      const memberBox = ix.member && t?.closest('.tb-edit') ? liveBox() : null;
+      if (memberBox?.state.selection.empty && (keyId(e) === 'mod+KeyC' || keyId(e) === 'mod+KeyX')) {
+        if (copySel()) {
+          e.preventDefault(); e.stopImmediatePropagation();
+          if (keyId(e) === 'mod+KeyX') remove();
+        }
+        return;
+      }
       if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       const d = drawRef.current;
       if (!d) return;
@@ -1640,7 +1650,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       void insertImages(files,c?toMM({clientX:c.left,clientY:c.top}):null);return;
     }
     const inTextBox=!!t?.closest?.('.tb-edit');
-    if(inTextBox){const list=shapesIn(e.clipboardData);if(list?.some(r=>r.t==='image')){e.preventDefault();e.stopImmediatePropagation();pasted.current=true;pasteShapes(list,null);}return;}
+    if(inTextBox){const list=shapesIn(e.clipboardData);if(list?.length&&(list.some(r=>r.t==='image')||(ix.member&&liveBox()?.state.selection.empty))){e.preventDefault();e.stopImmediatePropagation();pasted.current=true;pasteShapes(list,null);}return;}
     const editable = !!t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.isContentEditable);
     const inBody = !!t && editor.contains(t) && !t.closest('.wg');
     const list = shapesIn(e.clipboardData);

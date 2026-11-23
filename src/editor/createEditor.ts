@@ -1,3 +1,4 @@
+import {selectionBoundaryPlugin} from './selectionBoundary';
 import {tableKeyboard} from './tables';
 import {tableToolbar} from './tableToolbar';
 import { baseKeymap, chainCommands, deleteSelection, joinBackward, joinForward, selectNodeBackward, selectNodeForward, toggleMark } from 'prosemirror-commands';
@@ -55,7 +56,7 @@ function paperPlugin(settings: RuleSettings): Plugin {
 }
 
 export function enginePlugins(o: EngineOptions): Plugin[] {
-  const plugins: Plugin[] = [readOnlyPlugin(o.settings)];
+  const plugins: Plugin[] = [readOnlyPlugin(o.settings), selectionBoundaryPlugin()];
   if (o.main) plugins.push(paperPlugin(o.settings), ySyncPlugin(o.main.fragment), yUndoPlugin(o.main.undoManager ? { undoManager: o.main.undoManager } : undefined), slashPlugin(o.host));
   plugins.push(tableKeyboard(()=>!!o.settings.readOnly,()=>{o.stopCapturing?.();o.main?.undoManager?.stopCapturing();}),columnResizing({View:TableViewClass,cellMinWidth:24,defaultCellMinWidth:40,handleWidth:0}),tableEditing({allowTableNodeSelection:true}),tableCursorPlugin(),tableToolbar(()=>!!o.settings.readOnly,()=>{o.stopCapturing?.();o.main?.undoManager?.stopCapturing();}));
   plugins.push(treePastePlugin());

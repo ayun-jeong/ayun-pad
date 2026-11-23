@@ -10,6 +10,7 @@
     "test": "vitest run",
     "e2e": "node scripts/e2e.mjs",
     "e2e:path-selection": "node scripts/e2e-path-selection.mjs",
+    "e2e:selection-clear": "node scripts/e2e-selection-clear.mjs",
     "e2e:tree-paste": "node scripts/e2e-tree-paste.mjs",
     "e2e:star": "node scripts/e2e-star.mjs",
     "e2e:draw": "node scripts/e2e-draw.mjs",

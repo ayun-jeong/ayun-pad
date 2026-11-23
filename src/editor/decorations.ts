@@ -88,6 +88,8 @@ function hlLevels(nodes: Node[], infos: LineInfo[], styles: (AutoStyle | null)[]
     const p = parent[i];
     level[i] = shared.get(group[i]) ?? (p >= 0 ? eff[p] + 1 : infos[i].depth - 1);
     eff[i] = manual[i] ?? level[i];
+    // Descendants belong to the last topic in A–B, not the first topic A.
+    for (const span of styles[i]?.branches ?? []) eff[i] = manualLevel(nodes[i], span) ?? eff[i] + 1;
   }
   return level;
 }
