@@ -205,7 +205,7 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
   .app { display: block !important; }
   .app > :not(.print-root) { display: none !important; }
   .print-root { display: block !important; }
-  .print-root { --hl-b: rgba(0, 100, 232, 0.12); --hl-g: rgba(82, 212, 7, 0.12); }
+  .print-root { --hl-b: rgba(0, 100, 232, 0.12); --hl-g: rgba(82, 212, 7, 0.12); --hl-p: rgba(77, 0, 232, 0.12); }
   .print-root .psheet { break-after: page; break-inside: avoid; }
   .print-root .psheet:last-child { break-after: auto; }
   .print-root, .print-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
