@@ -37,7 +37,7 @@ export function ImageEditor({image,onClose,onApply}:{image:ImageShape;onClose():
    <button onClick={()=>setEdit(imageEdit())}>원본으로</button>
   </div>
   <div className="image-edit-stage">
-   {source&&aspect?<svg ref={stage} viewBox="0 0 1 1" preserveAspectRatio="none" style={{aspectRatio:oriented,width:oriented>=1?'min(100%, 760px)':`min(100%, ${oriented*480}px)`}} onPointerMove={move} onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}}>
+   {source&&aspect?<svg ref={stage} viewBox="0 0 1 1" preserveAspectRatio="none" style={{aspectRatio:oriented,width:`min(100%, 760px, ${oriented*55}dvh)`}} onPointerMove={move} onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}}>
     <ImagePixels source={source} edit={edit}/>
     <path d={`M0 0H1V1H0Z M${c.x} ${c.y}V${c.y+c.h}H${c.x+c.w}V${c.y}Z`} fill="rgba(0,0,0,.55)" fillRule="evenodd" pointerEvents="none"/>
     <rect className="crop-region" x={c.x} y={c.y} width={c.w} height={c.h} fill="transparent" stroke="white" strokeWidth="2" vectorEffect="non-scaling-stroke" onPointerDown={e=>begin(e,'move')} tabIndex={0} role="button" aria-label="자르기 영역 이동" onKeyDown={e=>{const amount=e.shiftKey?.05:.01;if(e.key.startsWith('Arrow')){e.preventDefault();crop({x:Math.min(1-c.w,Math.max(0,c.x+(e.key==='ArrowLeft'?-amount:e.key==='ArrowRight'?amount:0))),y:Math.min(1-c.h,Math.max(0,c.y+(e.key==='ArrowUp'?-amount:e.key==='ArrowDown'?amount:0)))});}}}/>
