@@ -12,7 +12,7 @@ export function lineText(node: Node): string {
 
 // 가지선은 줄 앞 여백(padding)에 배경 그림으로 그린다. 글자 사이에 아무것도 끼우지 않아서 커서·한글 입력에 영향이 없다.
 // 칸 모양: '' 빈칸, 'v' │, 't' ├─, 'l' └─, 'd' ┌─(제목 없는 트리의 첫 가지), 그리고 옆 가지(글 바로 옆 ┬─)의 첫 칸 'f' ┬─ · 'h' ──
-export type TreeCell = Cell | 'f' | 'h';
+export type TreeCell = Cell | 'f' | 'h' | 's';
 const LINE = 'linear-gradient(var(--tree),var(--tree))';
 // base(c): 칸 c의 왼쪽 끝. 보통은 var(--ind) × c, 옆 가지 안에서는 부모 글 끝에서부터 센다.
 export function treeBackground(cells: TreeCell[], base: (c: number) => string = (c) => `calc(var(--ind) * ${c})`): string {
@@ -25,7 +25,7 @@ export function treeBackground(cells: TreeCell[], base: (c: number) => string = 
     if (t === 'v' || t === 't') layers.push(`${LINE} ${x} 0 / var(--tw) 100% no-repeat`);
     if (t === 'l') layers.push(`${LINE} ${x} 0 / var(--tw) calc(var(--lh) / 2 + var(--tw) / 2) no-repeat`);
     if (t === 't' || t === 'l' || t === 'd') layers.push(`${LINE} calc(${b} + var(--ind) / 2) ${midY} / calc(var(--ind) / 2 - var(--tgap)) var(--tw) no-repeat`);
-    if (t === 'f' || t === 'd') layers.push(`${LINE} ${x} ${midY} / var(--tw) 100% no-repeat`); // ┬ ┌ 의 아래로 내려가는 줄
+    if (t === 'f' || t === 'd' || t === 's') layers.push(`${LINE} ${x} ${midY} / var(--tw) 100% no-repeat`); // ┬ ┌ 의 아래로 내려가는 줄
     if (t === 'f' || t === 'h') layers.push(`${LINE} ${b} ${midY} / calc(var(--ind) - var(--tgap)) var(--tw) no-repeat`); // 부모 글 바로 옆부터 가로줄
   });
   return layers.join(',');
@@ -146,7 +146,7 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
     auto && n.type.name === 'line' ? autoStyle(lineText(n), n.attrs.kind as Kind, n.attrs.kind !== 'branch' && tree[k].hasBranchChild) : null,
   );
   const levels = auto ? hlLevels(nodes, infos, styles) : [];
-  const stack: { d: number; x: number; first: number }[] = [];
+  const stack: { d: number; x: number; first: number; row: number }[] = [];
   let i = 0;
   container.forEach((node, offset) => {
     const pos = base + offset;
@@ -161,12 +161,16 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
       return `calc(var(--ind) * ${c})`;
     };
     const top = stack[stack.length - 1];
+    const visualRow = top?.first === i ? top.row : i;
     let layout = '';
     let bg: string;
     const firstCells = (source: Cell[]): TreeCell[] => {
       const cells: TreeCell[] = [...source];
       const own = cells[top.d - 1];
       cells[top.d - 1] = own === 't' ? 'f' : own === 'l' ? 'h' : own === 'v' ? 'v' : '';
+      // Nested first side children overlap the same visual row. Their ancestor
+      // stems also begin at the junction, rather than at the paragraph's top.
+      for (const entry of stack) if (entry.row === visualRow && cells[entry.d - 1] === 'v') cells[entry.d - 1] = 's';
       return cells;
     };
     if (top && top.first === i && node.type.name === 'line') {
@@ -188,7 +192,7 @@ function decorate(container: Node, base: number, decos: Decoration[], auto: bool
     const previewAttrs = hasPreview ? { 'data-branch-editing': 'true' } : {};
     if (sideX && node.type.name === 'line' && node.attrs.side && i + 1 < infos.length && infos[i + 1].depth === infos[i].depth + 1) {
       const x = node.attrs.id ? sideX[node.attrs.id as string] : undefined;
-      if (x !== undefined && x >= 0) stack.push({ d, x, first: i + 1 });
+      if (x !== undefined && x >= 0) stack.push({ d, x, first: i + 1, row: visualRow });
     }
     if (node.type.name !== 'line') {
       decos.push(Decoration.node(pos, pos + node.nodeSize, { ...previewAttrs, style, class: 'blk', 'data-depth': String(node.attrs.depth ?? 1) }));

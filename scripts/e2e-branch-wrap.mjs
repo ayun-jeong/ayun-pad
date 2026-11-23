@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';import {spawn} from 'node:child_process';import {inflateSync} from 'node:zlib';import puppeteer from 'puppeteer-core';
-const url='http://localhost:4358/ayun-pad/',server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--port','4358','--strictPort'],{stdio:'ignore'}),sleep=ms=>new Promise(r=>setTimeout(r,ms));let browser;
+const url=process.env.E2E_URL??'http://localhost:4358/ayun-pad/',server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--port','4358','--strictPort'],{stdio:'ignore'}),sleep=ms=>new Promise(r=>setTimeout(r,ms));let browser;
 // Read browser screenshot pixels without adding an image-processing dependency.
 function pngRows(bytes){const b=Buffer.from(bytes),idat=[];let width,height,bpp;
  for(let p=8;p<b.length;){const n=b.readUInt32BE(p),type=b.toString('ascii',p+4,p+8),data=b.subarray(p+8,p+8+n);if(type==='IHDR'){width=data.readUInt32BE(0);height=data.readUInt32BE(4);assert.equal(data[8],8);bpp=data[9]===6?4:data[9]===2?3:0;assert.ok(bpp);}if(type==='IDAT')idat.push(data);p+=12+n;}
@@ -20,5 +20,11 @@ try{
  await page.evaluate(()=>{const m=window.__ayunpad.doc().shapes,s=m.get('wrap');m.set('wrap',{...s,bw:55});});await sleep(250);await continuity('폭 축소');assert.deepEqual(await page.evaluate(()=>window.__ayunpad.doc().shapes.get('wrap').doc),saved);
  await page.click('.paper-width-options button:last-child');await page.waitForSelector('.fold-live-window');await sleep(300);await continuity('한 장 보기');
  await page.evaluate(()=>window.dispatchEvent(new Event('beforeprint')));await page.waitForSelector('.print-root .tbox');const printed=await page.$eval('.print-root .tbox[data-sid="wrap"] [data-id="wrap-leaf"]',e=>({margin:parseFloat(getComputedStyle(e).marginLeft),background:e.getAttribute('style')??''}));assert.equal(printed.margin,0);assert.equal((printed.background.match(/linear-gradient/g)??[]).length,3);await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));assert.deepEqual(errors,[]);
+ // Nested first side rows must not redraw the ancestor stem above the junction.
+ await page.evaluate(()=>{const line=(id,depth,text,side=false)=>({type:'line',attrs:{id,depth,kind:'branch',side},content:[{type:'text',text}]});const m=window.__ayunpad.doc().shapes,s=m.get('wrap');m.set('wrap',{...s,bw:90,doc:{type:'doc',content:[line('business',1,'사업'),line('esg',2,'ESG 활동',true),line('env',3,'E',true),line('renew',4,'신재생 에너지: 설명'),line('eers',4,'EERS 보급'),line('social',3,'S',true),line('aid',4,'지원'),line('gov',3,'G')]}});});await sleep(350);
+ const stem=await page.$eval('.paper .tbox[data-sid="wrap"] [data-id="env"]',el=>{const r=document.createRange();r.selectNodeContents(el);const b=r.getBoundingClientRect(),box=el.getBoundingClientRect(),zoom=el.closest('.zoom-inner'),scale=new DOMMatrix(getComputedStyle(zoom).transform).a,font=parseFloat(getComputedStyle(el).fontSize)*scale;return{x:Math.floor(b.left-font*.75/2+font*.02)-2,y:Math.ceil(box.top+1),width:5,height:Math.max(2,Math.floor(box.height/2-3))};});
+ const pixels=pngRows(await page.screenshot({clip:stem}));let red=0;for(const row of pixels.rows)for(let x=0;x<pixels.width;x++){const k=x*pixels.bpp;if(row[k]>170&&row[k]>row[k+1]*1.65&&row[k]>row[k+2]*1.65)red++;}
+ assert.equal(red,0,'E·S·G ancestor stem must not protrude above the first side junction');
+ assert.deepEqual(errors,[]);
  console.log('ok  긴 옆 가지 자동 줄바꿈의 세로선이 픽셀 기준으로 이어짐 · 폭 축소·한 장 보기에서도 연속 · 원문 유지 · 인쇄에 동일한 가지선');
 }finally{await browser?.close();server.kill();}

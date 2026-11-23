@@ -47,3 +47,20 @@ describe('입력 중 빈 가지 표시',()=>{
   expect(state.doc).toBe(doc);
  });
 });
+
+describe('중첩 첫 옆가지의 윗부분',()=>{
+ it('겹쳐 놓인 첫 손자 줄에서도 조상 세로선은 접점에서 시작한다',()=>{
+  const line=(id:string,depth:number,side=false)=>schema.node('line',{id,depth,kind:'branch',side},schema.text(id));
+  const doc=schema.node('doc',null,[line('사업',1),line('ESG',2,true),line('E',3,true),line('renewable',4),line('EERS',4),line('S',3,true),line('support',4),line('G',3)]);
+  const set=buildDecorations(doc,true,{ESG:50,E:65,S:65});
+  let at=0;const styles=doc.content.content.map(n=>{const d=set.find(at,at+n.nodeSize).find(d=>d.from===at&&d.to===at+n.nodeSize);at+=n.nodeSize;return (d as unknown as {type:{attrs:{style:string}}}).type.attrs.style;});
+  expect(styles[3]).toContain('margin-top:calc(-1 * var(--lh))');
+  expect(styles[3]).toContain('65.00px');
+  // One full-height outer ancestor remains; the ESG ancestor starts at midline.
+  expect((styles[3].match(/var\(--tw\) 100% no-repeat/g)??[]).length).toBe(2);
+  expect(styles[3]).toContain('50.00px');
+  expect(styles[4]).not.toContain('margin-top');
+  expect(styles[6]).toContain('50.00px');
+  expect(doc.child(1).attrs.side).toBe(true);
+ });
+});
