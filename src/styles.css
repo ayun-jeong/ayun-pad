@@ -14,7 +14,7 @@
   --pen-b: #0064e8;
   --pen-k: #000000;
   --pen-p: #4d00e8;
-  --pen-y: #ffcb10;
+  --pen-y: #ffb300;
   --pen-g: #52d407;
   --hl-r: rgba(236, 53, 53, 0.2);
   --hl-y: rgba(255, 203, 16, 0.3);
@@ -161,7 +161,7 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
 .pen-b { color: var(--pen-b); }
 .pen-k { color: var(--pen-k); }
 .pen-p { color: var(--pen-p); }
-.pen-y { color: #e69a00; }
+.pen-y { color: var(--pen-y); }
 .pen-g { color: var(--pen-g); }
 .mf { line-height: 0; }
 /* 형광펜: 글자 높이의 절반쯤 되는 얇은 띠, 끝은 비스듬하고 번진 펜 자국. 띠마다 끝 모양을 조금씩 다르게. */
@@ -178,7 +178,7 @@ kbd { font-family: var(--mono); font-size: 12px; display: inline-block; min-widt
 .circ-b { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%230064E8' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
 .circ-k { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%23000000' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
 .circ-p { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%234D00E8' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
-.circ-y { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%23FFCB10' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
+.circ-y { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%23FFB300' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
 .circ-g { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 40' preserveAspectRatio='none'%3E%3Cpath d='M14 8C33 2 76 2 91 10C100 16 97 31 79 35C57 39 22 38 9 31C1 25 5 12 22 7C30 5 38 4 47 4.5' fill='none' stroke='%2352D407' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
 .pad-text u { text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
 

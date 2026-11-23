@@ -14,7 +14,7 @@ export const PEN = {
   b: '#0064E8',
   k: '#000000',
   p: '#4D00E8',
-  y: '#FFCB10',
+  y: '#FFB300',
   g: '#52D407',
 } as const;
 

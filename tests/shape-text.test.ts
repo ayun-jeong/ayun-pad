@@ -9,7 +9,7 @@ describe('도형 안의 글상자', () => {
     expect(style.border).toBe('0.35mm dashed #EC3535');
     expect(style.borderRadius).toBe('50%');
     expect(style.color).toBe('#4D00E8');
-    expect(style.background).toContain('#FFCB10');
+    expect(style.background).toContain('#FFB300');
     expect(style.minHeight).toContain('30mm');
   });
   it('네모의 기본 위아래 여백은 0.25mm로 작게 둔다', () => {
