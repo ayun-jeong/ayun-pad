@@ -825,3 +825,23 @@ body.pdragging, body.pdragging * { cursor: grabbing !important; user-select: non
 /* Empty input branches are visible only while editing, never in print clones. */
 .print-root [data-branch-editing] { background: var(--idle-tree, none) !important; }
 @media print { .pad-text [data-branch-editing] { background: var(--idle-tree, none) !important; } }
+
+/* Reversible photo adjustments; keep tools outside the note canvas. */
+.image-editor{width:min(920px,calc(100vw - 24px));max-height:92dvh;padding:0;border:1px solid #e1e4eb;border-radius:20px;background:#fff;color:#17191e;box-shadow:0 24px 100px #10182840;overflow:auto}
+.image-editor::backdrop{background:#131b2b80;backdrop-filter:blur(3px)}
+.image-editor header,.image-editor footer{display:flex;align-items:center;gap:12px;padding:16px 20px}
+.image-editor header>div{display:flex;align-items:baseline;gap:12px;flex:1}
+.image-editor header strong{font-size:18px}.image-editor header span,.image-editor footer>span{font-size:13px;color:#737c8a}
+.image-editor button{border:1px solid #e1e4eb;border-radius:9px;background:#fff;color:inherit;padding:8px 12px;font:inherit;font-size:13px;cursor:pointer}
+.image-editor button:hover{background:#f1f4f8}.image-editor button:disabled{opacity:.45;cursor:default}
+.image-editor .primary{background:#17191e;color:#fff;border-color:#17191e}.image-editor footer>span{margin-right:auto}
+.image-edit-tools{display:flex;flex-wrap:wrap;gap:6px;padding:0 20px 12px}
+.image-edit-tools [aria-pressed=true]{background:#eaf2ff;border-color:#80adf7}
+.image-edit-stage{padding:20px;background:#e9edf3;min-height:150px;display:flex;align-items:center;justify-content:center;overflow:auto}
+.image-edit-stage svg{display:block;height:auto;max-height:55dvh;overflow:visible;touch-action:none;user-select:none;background:repeating-conic-gradient(#fff 0% 25%,#e1e5eb 0% 50%) 0 0/16px 16px}
+.crop-region{cursor:move}.crop-handle.nw,.crop-handle.se{cursor:nwse-resize}.crop-handle.ne,.crop-handle.sw{cursor:nesw-resize}
+.image-crop-options{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:12px 20px;font-size:13px}
+.crop-fields{display:flex;gap:10px;flex-wrap:wrap;margin-left:auto}.crop-fields label{display:flex;align-items:center;gap:4px;color:#727b8b}
+.crop-fields input{width:52px;min-height:32px;padding:3px 5px;border:1px solid #d9dee7;border-radius:6px;font:inherit;color:#17191e}
+@media(max-width:600px){.image-editor header>div{display:block}.image-editor header span{display:block;margin-top:4px}.crop-fields{width:100%;margin-top:8px}.image-edit-stage{padding:12px}}
+@media print{.image-editor{display:none!important}}

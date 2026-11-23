@@ -1,3 +1,5 @@
+import {ImageEditor,ImagePixels} from './ImageEditor';
+import {imageEdit,type ImageEdit} from './imageEdit';
 import { pathBoxHandles, resizePath } from './pathTransform';
 import { handwrittenStar } from './star';
 import type {EditorView} from 'prosemirror-view';
@@ -159,6 +161,7 @@ const CURVE_PX = 4; // 선 · 화살표를 그릴 때 누른 채 이만큼 끌�
 
 function CanvasImage({r}:{r:Resolved & {t:'image'}}){
   const source=useImageSource(r.asset,r.dataUrl),b=boxOf(r.a,r.b);
+  if(source&&r.edit){const edit=imageEdit(r.edit),c=edit.crop;return <svg data-sid={r.id} className="edited-image" x={b.x} y={b.y} width={b.w} height={b.h} viewBox={`${c.x} ${c.y} ${c.w} ${c.h}`} preserveAspectRatio="none" overflow="hidden"><ImagePixels source={source} edit={edit}/></svg>;}
   return source ? <image data-sid={r.id} x={b.x} y={b.y} width={b.w} height={b.h} href={source} preserveAspectRatio="none" /> : <g data-sid={r.id}><rect x={b.x} y={b.y} width={b.w} height={b.h} fill="#f0f2f6"/><text x={b.x+2} y={b.y+4} fontSize="2.5" fill="#727b8b">이미지 불러오는 중…</text></g>;
 }
 function ShapeSvg({ r }: { r: Resolved }) {
@@ -249,6 +252,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   const ix = useRef<Ix>({ pathEdit: null, member: null, history: new DrawingHistory(), sel: [], wsel: [], drawing: null, cursor: null, press: null, node: null, box: null, drag: null, drafts: new Map(), marquee: null, guides: null, last: null, pid: null }).current;
   // 새 글상자는 첫 글자를 쓸 때 저장한다(그냥 나가면 흔적 없이 사라지고 되돌리기 칸도 안 남는다)
   const [pending, setPending] = useState<TextShape | null>(null);
+  const [imageEditing,setImageEditing]=useState<string|null>(null);
   const geo = useRef<{ lines: Lines; W: number; H: number } | null>(null);
   const wasActive = useRef(false);
   const textH = useRef(new Map<string, number>());
@@ -1036,8 +1040,9 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       enterMember(insideShape.id);
       if(insideShape.t==='path'){ix.pathEdit=insideShape.id;ix.node=null;}
       if (insideShape.t === 'text') { focusBox(insideShape.id, {x:e.clientX,y:e.clientY}); return repaint(); }
-      if (insideShape.t === 'path' || insideShape.t === 'image') return repaint();
+      if (insideShape.t === 'path') return repaint();
     }
+    if(dbl && insideShape?.t==='image'){pickOnly([insideShape.id]);ix.drag=null;ix.pid=null;setImageEditing(insideShape.id);return repaint();}
     if(dbl && insideShape?.t==='path' && ix.pathEdit!==insideShape.id){
       pickOnly([insideShape.id]);ix.pathEdit=insideShape.id;ix.node=null;return repaint();
     }
@@ -1490,6 +1495,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
       return;
     }
     const onKey = (e: KeyboardEvent) => {
+      if(document.querySelector('dialog.image-editor[open]'))return;
       if(e.key==='Escape'&&document.querySelector('.top [data-top-menu][aria-expanded="true"]'))return;
       const t = e.target as HTMLElement | null;
       if (t?.closest('.arrange-menu, .reference-popover') || (e.key === 'Escape' && document.querySelector('.arrange-menu'))) return;
@@ -1639,6 +1645,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   },[src]);
   const pasteRef = useRef<(e: ClipboardEvent) => void>(() => undefined);
   pasteRef.current = (e: ClipboardEvent) => {
+    if(document.querySelector('dialog.image-editor[open]'))return;
     if (readRef.current) return; // 읽기 모드: 노트에 붙이지 않는다(입력 칸에는 원래대로)
     const t = e.target as HTMLElement | null;
     const files=imageFiles(e.clipboardData);
@@ -1685,6 +1692,7 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   // 읽기 모드로 바뀌면 고치던 글상자 · 고른 그림 · 그리기를 끝낸다
   useEffect(() => {
     if (!reading) return;
+    setImageEditing(null);
     setEditing(null);
     setPending(null);
     ix.sel = [];
@@ -1731,6 +1739,20 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
   const mq = ix.marquee?.moved ? boxOf(ix.marquee.a, ix.marquee.b) : null;
   const guides = reading?null:tableGuides.current??ix.guides;
 
+  const editingImage=imageEditing?shapes.get(imageEditing):null;
+  const applyImageEdit=(edit:ImageEdit,aspect:number)=>{
+    const current=imageEditing?byId(imageEditing):null;
+    if(current?.t!=='image'||reading){setImageEditing(null);return;}
+    const old=imageEdit(current.edit),b=boxOf(current.a,current.b);
+    let unitW=b.w/old.crop.w,unitH=b.h/old.crop.h;
+    const swapped=(old.turn%2)!==(edit.turn%2);
+    if(swapped)[unitW,unitH]=[unitH,unitW];
+    const x=swapped?b.x:Math.max(0,b.x+(edit.crop.x-old.crop.x)*unitW);
+    const y=swapped?b.y:Math.max(0,b.y+(edit.crop.y-old.crop.y)*unitH);
+    const updated={...current,edit,aspect,a:{x,y},b:{x:x+Math.max(.5,unitW*edit.crop.w),y:y+Math.max(.5,unitH*edit.crop.h)}};
+    um?.stopCapturing();write(()=>shapes.set(current.id,clean(unresolve(updated,lines))));um?.stopCapturing();
+    setImageEditing(null);repaint();
+  };
   return (
     <div
       ref={layer}
@@ -1747,10 +1769,12 @@ export function ShapesLayer({ ydoc, shapes, um, src, mapPoint, editor, pitch, ti
         if (target) {
           enterMember(target.id);
           if(target.t==='path' && ix.pathEdit!==target.id){pickOnly([target.id]);ix.pathEdit=target.id;ix.node=null;}
+          if(target.t==='image'){setImageEditing(target.id);ix.drag=null;ix.pid=null;}
           if (target.t === 'rect' || target.t === 'ellipse') editShape(target.id); else repaint();
         }
       }}
     >
+      {editingImage?.t==='image'&&!reading&&<ImageEditor key={editingImage.id} image={editingImage} onClose={()=>setImageEditing(null)} onApply={applyImageEdit}/>}
       <svg className="shapes-svg" style={{zIndex:resolved.length+2}} viewBox={`0 0 ${W.toFixed(3)} ${H.toFixed(3)}`} preserveAspectRatio="xMinYMin meet" aria-hidden="true">
         {ix.drag?.mode === 'move' && ix.drag.copy && ix.drag.moved &&
           ix.drag.bases.map((b) =>

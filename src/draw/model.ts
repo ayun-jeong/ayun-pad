@@ -1,3 +1,4 @@
+import type {ImageEdit} from './imageEdit';
 import * as Y from 'yjs';
 import { colorOf } from '../editor/model';
 
@@ -45,6 +46,7 @@ export interface BoxShape extends Base {
 export interface ImageShape extends Base {
   t: 'image'; a: Anchor; b: Anchor; asset: string; name?: string;
   aspect?:number; // 원본 비율: 변 손잡이로 변형해도 모서리는 원본 비율을 유지
+  edit?: ImageEdit; // 원본은 유지하고 자르기·회전·뒤집기만 저장
   dataUrl?: string; // 클립보드에만 포함하며 저장할 때는 별도 파일로 분리한다.
 }
 
