@@ -1,3 +1,4 @@
+import {freezePrintTypography} from './printLayout';
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { A4_W, fitPitch, halfLabel, textWidth, type Typo } from '../editor/layout';
 import { buildHalf, buildSheet, countHalves, labelled, PX_PER_MM } from './pages';
@@ -275,6 +276,8 @@ export function buildPrintSheets(host: HTMLElement, source: HTMLElement, typo: T
     for (const half of sheet.querySelectorAll<HTMLElement>('.phalf')) {
       const col = half.querySelector<HTMLElement>('.pcol')!;
       const clone = col.firstElementChild as HTMLElement;
+      freezePrintTypography(source,clone);
+      half.querySelector('.half-page-number')?.remove();
       clone.style.top = col.style.top;
       clone.style.width = `${textWidth(typo)}mm`;
       col.style.top = '0';

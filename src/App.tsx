@@ -1,3 +1,4 @@
+import {preparePrintFonts} from './ui/printLayout';
 import { bindImageAssets, imageSource } from './store/imageAssets';
 import { copyGroups, expandGroups } from './draw/groups';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
@@ -548,12 +549,13 @@ export function App() {
         case 'print':
           void (async()=>{
             try{
+              await preparePrintFonts(srcRef.current);
               const images=[...(docRef.current?.shapes.values()??[])].filter(s=>s.t==='image');
               const sources=await Promise.all(images.map(s=>imageSource(s.asset)));
               if(sources.some(s=>!s)){toast('이미지를 불러온 뒤 다시 인쇄해 주세요');return;}
               await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
               window.print();
-            }catch{toast('이미지를 불러오지 못했어요. 다시 시도해 주세요');}
+            }catch{toast('인쇄 자료를 불러오지 못했어요. 다시 시도해 주세요');}
           })();
           break;
         case 'search': {
