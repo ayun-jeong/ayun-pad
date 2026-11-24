@@ -14,7 +14,7 @@ const hhmm = (t: number) => new Date(t).toTimeString().slice(0, 5);
 export function statusText(s: SyncStatus): string {
   if (s.state === 'local') return '이 기기에만 저장 중';
   if (s.state === 'syncing') return '동기화 중… · 서버에 반영하는 중입니다';
-  if (s.state === 'offline') return '오프라인 · 이 기기에 저장해 두고 다시 연결되면 올립니다';
+  if (s.state === 'offline') return '서버 동기화 대기 · 이 기기에 저장해 두고 다시 시도합니다';
   return s.at ? `동기화됨 · ${hhmm(s.at)}` : '동기화됨';
 }
 
@@ -75,6 +75,7 @@ export function Account({ status, toast, onClose, onVersions }: Props) {
       </button>
       <p style={{ margin: 0, fontWeight: 600 }}>{status.email}</p>
       <p className="note">{statusText(status)}</p>
+      {status.state === 'offline' && status.error && <p className="note" role="status">{status.error}</p>}
       <div className="chips">
         <button
           type="button"

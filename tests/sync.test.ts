@@ -1,24 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from '@supabase/supabase-js';
 import * as Y from 'yjs';
-import { fromB64 } from '../src/store/b64';
+import { fromB64, toB64 } from '../src/store/b64';
 import { syncRequest } from '../src/store/syncRequest';
 
 const mock = vi.hoisted(() => ({
-  read: (_table: string, _id: string): Promise<unknown> => Promise.resolve({ data: null, error: null }),
+  read: (_table: string, _id: string, _limit?: number, _from?: number): Promise<unknown> => Promise.resolve({ data: null, error: null }),
   write: (_row: { update: string }): Promise<unknown> => Promise.resolve({ error: null }),
 }));
 vi.mock('../src/store/supabase', () => ({ supabase: {
+  rpc: async () => ({ error: null }),
   from(table: string) {
-    let id = '';
+    let id = '', limit = 0, from = 0;
     let row: { update: string } | undefined;
     const query = {
-      select() { return query; }, eq(_key: string, value: string) { id = value; return query; },
-      gt() { return query; }, order() { return query; }, limit() { return query; },
+      select() { return query; }, eq(key: string, value: string) { if (key === 'doc_id') id = value; return query; },
+      gt(_key: string, value: number) { from = value; return query; }, order() { return query; }, limit(value: number) { limit = value; return query; },
       maybeSingle() { return query; }, abortSignal() { return query; },
       insert(value: { update: string }) { row = value; return query; },
       then(resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) {
-        return (row ? mock.write(row) : mock.read(table, id)).then(resolve, reject);
+        return (row ? mock.write(row) : mock.read(table, id, limit, from)).then(resolve, reject);
       },
     };
     return query;
@@ -108,6 +109,25 @@ describe('sync recovery without losing local edits', () => {
     hub.resyncAll(); await settle();
     expect(hub.status().state).toBe('synced');
     hub.detach('one');
+  });
+
+  it('reads a long history in small pages and still merges every update', async () => {
+    const hub = hubWithUser(), source = new Y.Doc(), local = new Y.Doc();
+    const rows: { id: number; update: string }[] = [];
+    source.on('update', update => rows.push({ id: rows.length + 1, update: toB64(update) }));
+    for (let i = 0; i < 235; i++) source.getText('text').insert(i, '가');
+    const pages: number[] = [];
+    mock.read = async (table, _id, limit = 0, from = 0) => {
+      if (table === 'pad_docs') return { data: null, error: null };
+      if (limit > 100) return { data: null, error: { code: '57014' } };
+      const data = rows.filter(row => row.id > from).slice(0, limit);
+      pages.push(data.length);
+      return { data, error: null };
+    };
+    hub.attach('large', local); await settle();
+    expect(pages).toEqual([100, 100, 35]);
+    expect(local.getText('text').toString()).toBe(source.getText('text').toString());
+    hub.detach('large');
   });
 
   it('retries a closed note from an independent copy after its editor is destroyed', async () => {

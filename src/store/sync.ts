@@ -16,6 +16,7 @@ export interface SyncStatus {
   at: number | null;
   email: string | null;
   userId: string | null;
+  error?: string;
 }
 
 interface Row {
@@ -26,7 +27,14 @@ interface Row {
 }
 
 const isPersistence = (origin: unknown) => origin !== null && typeof origin === 'object' && 'whenSynced' in (origin as object);
-const PAGE = 1000;
+const PAGE = 100;
+
+const syncErrorText = (error: unknown): string => {
+  const e = error as { code?: string; message?: string } | null;
+  if (e?.code === '57014') return '서버에서 노트 조회 시간이 초과됐어요. 자동으로 다시 시도합니다.';
+  if (e?.code === 'PGRST301' || e?.code === 'PGRST303') return '로그인 인증을 확인하지 못했어요. 연결을 다시 시도합니다.';
+  return '서버 요청을 완료하지 못했어요. 자동으로 다시 시도합니다.';
+};
 
 // 문서 하나(목록 또는 노트)를 서버와 맞춘다.
 // 올리기: 이 기기에서 생긴 조각을 0.8초 모아 한 줄로 넣는다.
@@ -110,12 +118,13 @@ class DocSync {
   }
 
   private async doPull(): Promise<void> {
-    if (!this.hub.session) return;
+    const userId = this.hub.session?.user.id;
+    if (!userId) return;
     this.hub.begin();
     const server = new Y.Doc();
     let failure: unknown = null;
     try {
-      const base = await syncRequest(signal => supabase.from('pad_docs').select('state, upto').eq('doc_id', this.docId).abortSignal(signal).maybeSingle());
+      const base = await syncRequest(signal => supabase.from('pad_docs').select('state, upto').eq('user_id', userId).eq('doc_id', this.docId).abortSignal(signal).maybeSingle());
       if (base.error) throw base.error;
       const apply = (b64: string) => {
         const u = fromB64(b64);
@@ -126,7 +135,7 @@ class DocSync {
       let maxId = base.data?.upto ?? 0;
       let count = 0;
       for (let from = maxId; ; ) {
-        const rows = await syncRequest(signal => supabase.from('pad_updates').select('id, update').eq('doc_id', this.docId).gt('id', from).order('id').limit(PAGE).abortSignal(signal));
+        const rows = await syncRequest(signal => supabase.from('pad_updates').select('id, update').eq('user_id', userId).eq('doc_id', this.docId).gt('id', from).order('id').limit(PAGE).abortSignal(signal));
         if (rows.error) throw rows.error;
         for (const r of rows.data) {
           apply(r.update);
@@ -172,7 +181,7 @@ export class SyncHub {
   private recovery = new Map<string, DocSync>();
   private channel: RealtimeChannel | null = null;
   private inflight = 0;
-  private failures = new Set<string>();
+  private failures = new Map<string, string>();
   private lastOk: number | null = null;
   private listeners = new Set<Listener>();
   private retry = 0;
@@ -210,7 +219,7 @@ export class SyncHub {
     const user = this.session?.user ?? null;
     let state: SyncState = 'local';
     if (user) state = this.failures.size ? 'offline' : this.inflight > 0 || [...this.docs.values()].some(d => d.hasPending()) ? 'syncing' : 'synced';
-    return { state, at: this.lastOk, email: user?.email ?? null, userId: user?.id ?? null };
+    return { state, at: this.lastOk, email: user?.email ?? null, userId: user?.id ?? null, error: this.failures.values().next().value };
   }
 
   subscribeStatus(fn: Listener): () => void {
@@ -232,7 +241,7 @@ export class SyncHub {
   end(err: unknown, key: string) {
     this.inflight = Math.max(0, this.inflight - 1);
     if (err) {
-      this.failures.add(key);
+      this.failures.set(key, syncErrorText(err));
       window.clearTimeout(this.retry);
       this.retry = window.setTimeout(() => this.resyncAll(), 15000);
     } else {
