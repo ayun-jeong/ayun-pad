@@ -43,6 +43,20 @@ const hubWithUser = () => {
 const settle = () => vi.advanceTimersByTimeAsync(0);
 
 describe('sync recovery without losing local edits', () => {
+  it('shares an ongoing history download with background search indexing', async () => {
+    const hub = hubWithUser(), editor = new Y.Doc(), index = new Y.Doc();
+    editor.getText('text').insert(0, '편집 중인 최신 내용');
+    let reads = 0;
+    mock.read = async table => {
+      reads++;
+      return { data: table === 'pad_docs' ? null : [], error: null };
+    };
+    hub.attach('shared', editor);
+    await hub.pullOnce('shared', index);
+    expect(reads).toBe(2); // one base + one history, shared by both consumers
+    expect(index.getText('text').toString()).toBe('편집 중인 최신 내용');
+    hub.detach('shared');
+  });
   it('backs off failures without repeatedly pulling healthy documents', async () => {
     const hub = hubWithUser();
     const reads: Record<string, number> = {};

@@ -46,6 +46,7 @@ class DocSync {
   private timer = 0;
   private pulling: Promise<void> | null = null;
   private pushes = 0;
+  private pushedBytes = 0;
   private flushing: Promise<void> | null = null;
   private detached = false;
 
@@ -102,7 +103,11 @@ class DocSync {
           this.pending.unshift(merged);
           throw error;
         }
-        if (++this.pushes % 60 === 0) void this.pull();
+        this.pushedBytes += merged.byteLength;
+        if (++this.pushes % 60 === 0 || this.pushedBytes >= 2 * 1024 * 1024) {
+          this.pushedBytes = 0;
+          void this.pull();
+        }
       }
     } catch (error) {
       failure = error;
@@ -136,11 +141,13 @@ class DocSync {
       if (base.data?.state) apply(base.data.state);
       let maxId = base.data?.upto ?? 0;
       let count = 0;
+      let bytes = 0;
       for (let from = maxId; ; ) {
         const rows = await syncRequest(signal => supabase.from('pad_updates').select('id, update').eq('user_id', userId).eq('doc_id', this.docId).gt('id', from).order('id').limit(PAGE).abortSignal(signal));
         if (rows.error) throw rows.error;
         for (const r of rows.data) {
           apply(r.update);
+          bytes += r.update.length;
           maxId = Math.max(maxId, r.id);
         }
         count += rows.data.length;
@@ -153,7 +160,7 @@ class DocSync {
         if (error) throw error;
         Y.applyUpdate(server, missing);
       }
-      if (count > 40) {
+      if (count > 40 || bytes >= 2 * 1024 * 1024) {
         const { error } = await syncRequest(signal => supabase.rpc('pad_compact', { p_doc: this.docId, p_state: toB64(Y.encodeStateAsUpdate(server)), p_upto: maxId }).abortSignal(signal));
         if (error) throw error;
       }
@@ -308,6 +315,14 @@ export class SyncHub {
   // 열려 있지 않은 노트: 한 번 받고 서버에 없는 부분을 올린다(다른 기기에서 고친 노트를 이 기기에도 받아 두기).
   async pullOnce(docId: string, ydoc: Y.Doc): Promise<void> {
     if (!this.session) return;
+    const attached = this.docs.get(docId);
+    if (attached) {
+      // Search indexing must share the editor's ongoing download rather than
+      // downloading the same large history a second time in the background.
+      await attached.pull();
+      if (attached.ydoc !== ydoc) Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(attached.ydoc), REMOTE);
+      return;
+    }
     const d = new DocSync(this, docId, ydoc, false);
     await d.pull();
   }
