@@ -46,16 +46,31 @@ create policy pad_versions_own on public.pad_versions for all to authenticated u
 -- 조각 합치기: 합친 상태를 저장하고 그 안에 든 조각(id <= p_upto)을 지운다. 다른 기기가 더 많이 합쳐 뒀으면 상태는 그대로 둔다.
 create or replace function public.pad_compact(p_doc text, p_state text, p_upto bigint)
 returns void
-language sql
+language plpgsql
 security invoker
 set search_path = public
 as $$
+declare
+  v_user uuid := auth.uid();
+begin
+  if v_user is null then
+    raise exception 'Authentication required' using errcode = '28000';
+  end if;
   insert into public.pad_docs (user_id, doc_id, state, upto, updated_at)
-  values (auth.uid(), p_doc, p_state, p_upto, now())
+  values (v_user, p_doc, p_state, p_upto, now())
   on conflict (user_id, doc_id) do update
     set state = excluded.state, upto = excluded.upto, updated_at = now()
     where pad_docs.upto <= excluded.upto;
-  delete from public.pad_updates where user_id = auth.uid() and doc_id = p_doc and id <= p_upto;
+
+  -- The snapshot already contains ALL updates through p_upto. Leftover rows
+  -- can be cleaned by later calls, without being downloaded again.
+  delete from public.pad_updates
+  where user_id = v_user and doc_id = p_doc and id in (
+    select id from public.pad_updates
+    where user_id = v_user and doc_id = p_doc and id <= p_upto
+    order by id limit 20
+  );
+end;
 $$;
 
 -- 버전 기록 솎기: 30일 지난 건 지우고, 하루 지난 건 하루에 하나만 남긴다.

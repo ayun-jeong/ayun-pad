@@ -17,6 +17,7 @@ export interface SyncStatus {
   email: string | null;
   userId: string | null;
   error?: string;
+  maintenance?: boolean;
 }
 
 interface Row {
@@ -161,8 +162,9 @@ class DocSync {
         Y.applyUpdate(server, missing);
       }
       if (count > 40 || bytes >= 2 * 1024 * 1024) {
-        const { error } = await syncRequest(signal => supabase.rpc('pad_compact', { p_doc: this.docId, p_state: toB64(Y.encodeStateAsUpdate(server)), p_upto: maxId }).abortSignal(signal));
-        if (error) throw error;
+        // All edits have been acknowledged already. Maintenance failure must
+        // retry the snapshot, not download the entire history all over again.
+        await this.hub.compact(this.docId, toB64(Y.encodeStateAsUpdate(server)), maxId);
       }
     } catch (e) {
       failure = e;
@@ -196,6 +198,9 @@ export class SyncHub {
   private retry = 0;
   private retryDelay = 15000;
   private lastVisibleSync = 0;
+  private compactions = new Map<string, { state: string; upto: number; userId: string }>();
+  private compacting: Promise<void> | null = null;
+  private compactionRetry = 0;
   onLogin: ((userId: string) => Promise<void> | void) | null = null;
 
   async init() {
@@ -235,7 +240,7 @@ export class SyncHub {
     const user = this.session?.user ?? null;
     let state: SyncState = 'local';
     if (user) state = this.failures.size ? 'offline' : this.inflight > 0 || [...this.docs.values()].some(d => d.hasPending()) ? 'syncing' : 'synced';
-    return { state, at: this.lastOk, email: user?.email ?? null, userId: user?.id ?? null, error: this.failures.values().next().value };
+    return { state, at: this.lastOk, email: user?.email ?? null, userId: user?.id ?? null, error: this.failures.values().next().value, maintenance: this.compactions.size > 0 };
   }
 
   subscribeStatus(fn: Listener): () => void {
@@ -299,6 +304,35 @@ export class SyncHub {
     if (recovered.ydoc !== ydoc) Y.applyUpdate(recovered.ydoc, Y.encodeStateAsUpdate(ydoc), REMOTE);
   }
 
+  async compact(docId: string, state: string, upto: number) {
+    const userId = this.session?.user.id;
+    if (!userId) return;
+    const queued = this.compactions.get(docId);
+    if (!queued || queued.userId !== userId || queued.upto <= upto) this.compactions.set(docId, { state, upto, userId });
+    await this.retryCompactions();
+  }
+
+  private retryCompactions(): Promise<void> {
+    this.compacting ??= this.doCompact().finally(() => { this.compacting = null; });
+    return this.compacting;
+  }
+
+  private async doCompact() {
+    window.clearTimeout(this.compactionRetry);
+    this.compactionRetry = 0;
+    for (const [docId, snapshot] of this.compactions) {
+      if (snapshot.userId !== this.session?.user.id) { this.compactions.delete(docId); continue; }
+      try {
+        const { error } = await syncRequest(signal => supabase.rpc('pad_compact', {
+          p_doc: docId, p_state: snapshot.state, p_upto: snapshot.upto,
+        }).abortSignal(signal));
+        if (!error && this.compactions.get(docId) === snapshot) this.compactions.delete(docId);
+      } catch { /* The acknowledged snapshot stays queued for maintenance retry. */ }
+    }
+    if (this.compactions.size) this.compactionRetry = window.setTimeout(() => void this.retryCompactions(), 60000);
+    this.emit();
+  }
+
   // 열린 문서: 실시간으로 주고받는다.
   attach(docId: string, ydoc: Y.Doc): void {
     this.docs.get(docId)?.destroy();
@@ -329,6 +363,7 @@ export class SyncHub {
 
   resyncAll(failedOnly = false) {
     if (!this.session) return;
+    if (this.compactions.size) void this.retryCompactions();
     const needsRetry = (id: string) => !failedOnly || this.failures.has(`${id}:pull`) || this.failures.has(`${id}:push`);
     this.docs.forEach((d) => {
       if (needsRetry(d.docId)) void d.flush().then(() => d.pull());

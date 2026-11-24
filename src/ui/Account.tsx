@@ -76,6 +76,7 @@ export function Account({ status, toast, onClose, onVersions }: Props) {
       <p style={{ margin: 0, fontWeight: 600 }}>{status.email}</p>
       <p className="note">{statusText(status)}</p>
       {status.state === 'offline' && status.error && <p className="note" role="status">{status.error}</p>}
+      {status.state === 'synced' && status.maintenance && <p className="note">노트 전송은 완료했어요. 오래된 변경 기록 정리는 다시 시도합니다.</p>}
       <div className="chips">
         <button
           type="button"

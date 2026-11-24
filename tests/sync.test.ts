@@ -6,10 +6,11 @@ import { syncRequest } from '../src/store/syncRequest';
 
 const mock = vi.hoisted(() => ({
   read: (_table: string, _id: string, _limit?: number, _from?: number): Promise<unknown> => Promise.resolve({ data: null, error: null }),
+  compact: vi.fn(async (_name: string, _args: { p_state: string; p_upto: number }) => ({ error: null as null | { code: string } })),
   write: (_row: { update: string }): Promise<unknown> => Promise.resolve({ error: null }),
 }));
 vi.mock('../src/store/supabase', () => ({ supabase: {
-  rpc: async () => ({ error: null }),
+  rpc: (name: string, args: { p_state: string; p_upto: number }) => ({ abortSignal: () => mock.compact(name, args) }),
   from(table: string) {
     let id = '', limit = 0, from = 0;
     let row: { update: string } | undefined;
@@ -32,6 +33,7 @@ beforeEach(() => {
   vi.stubGlobal('window', { setTimeout, clearTimeout });
   mock.read = async table => ({ data: table === 'pad_docs' ? null : [], error: null });
   mock.write = async () => ({ error: null });
+  mock.compact.mockReset().mockResolvedValue({ error: null });
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
@@ -57,6 +59,33 @@ describe('sync recovery without losing local edits', () => {
     expect(index.getText('text').toString()).toBe('편집 중인 최신 내용');
     hub.detach('shared');
   });
+  it('keeps acknowledged notes synced when only compaction fails and retries without downloading again', async () => {
+    const hub = hubWithUser(), doc = new Y.Doc(), source = new Y.Doc();
+    const rows: { id: number; update: string }[] = [];
+    source.on('update', update => rows.push({ id: rows.length + 1, update: toB64(update) }));
+    for (let i = 0; i < 41; i++) source.getText('text').insert(i, '가');
+    let reads = 0;
+    mock.read = async (table, _id, limit = 0, from = 0) => {
+      reads++;
+      return { data: table === 'pad_docs' ? null : rows.filter(row => row.id > from).slice(0, limit), error: null };
+    };
+    mock.compact.mockResolvedValue({ error: { code: '57014' } });
+    hub.attach('maintenance', doc); await settle();
+    expect(hub.status().state).toBe('synced');
+    expect(hub.status().maintenance).toBe(true);
+    const before = reads;
+    mock.compact.mockResolvedValue({ error: null });
+    await vi.advanceTimersByTimeAsync(60001);
+    expect(reads).toBe(before);
+    expect(hub.status().maintenance).toBe(false);
+    const restored = new Y.Doc();
+    const args = mock.compact.mock.calls.at(-1)![1];
+    Y.applyUpdate(restored, fromB64(args.p_state));
+    expect(restored.getText('text').toString()).toBe(source.getText('text').toString());
+    expect(args.p_upto).toBe(41);
+    hub.detach('maintenance');
+  });
+
   it('backs off failures without repeatedly pulling healthy documents', async () => {
     const hub = hubWithUser();
     const reads: Record<string, number> = {};
