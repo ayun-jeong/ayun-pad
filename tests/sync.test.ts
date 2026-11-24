@@ -43,6 +43,27 @@ const hubWithUser = () => {
 const settle = () => vi.advanceTimersByTimeAsync(0);
 
 describe('sync recovery without losing local edits', () => {
+  it('backs off failures without repeatedly pulling healthy documents', async () => {
+    const hub = hubWithUser();
+    const reads: Record<string, number> = {};
+    mock.read = async (table, id) => {
+      reads[id] = (reads[id] ?? 0) + 1;
+      return id === 'bad' ? { data: null, error: { code: '57014' } }
+        : { data: table === 'pad_docs' ? null : [], error: null };
+    };
+    hub.attach('bad', new Y.Doc()); hub.attach('good', new Y.Doc());
+    await settle();
+    const healthyReads = reads.good;
+    await vi.advanceTimersByTimeAsync(15001);
+    expect(reads.bad).toBe(2);
+    expect(reads.good).toBe(healthyReads);
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(reads.bad).toBe(2);
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(reads.bad).toBe(3);
+    expect(reads.good).toBe(healthyReads);
+    hub.detach('bad'); hub.detach('good');
+  });
   it('leaves syncing after a never-resolving request and recovers on retry', async () => {
     const hub = hubWithUser(), doc = new Y.Doc();
     doc.getText('text').insert(0, '최신 로컬 필기');

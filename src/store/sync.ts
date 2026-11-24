@@ -185,6 +185,8 @@ export class SyncHub {
   private lastOk: number | null = null;
   private listeners = new Set<Listener>();
   private retry = 0;
+  private retryDelay = 15000;
+  private lastVisibleSync = 0;
   onLogin: ((userId: string) => Promise<void> | void) | null = null;
 
   async init() {
@@ -196,7 +198,12 @@ export class SyncHub {
     });
     window.addEventListener('online', () => this.resyncAll());
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') this.resyncAll();
+      if (document.visibilityState === 'visible') {
+        if (Date.now() - this.lastVisibleSync >= 30000) {
+          this.lastVisibleSync = Date.now();
+          this.resyncAll();
+        }
+      }
       else this.flushAll();
     });
     window.addEventListener('pagehide', () => this.flushAll());
@@ -242,8 +249,13 @@ export class SyncHub {
     this.inflight = Math.max(0, this.inflight - 1);
     if (err) {
       this.failures.set(key, syncErrorText(err));
-      window.clearTimeout(this.retry);
-      this.retry = window.setTimeout(() => this.resyncAll(), 15000);
+      if (!this.retry) {
+        this.retry = window.setTimeout(() => {
+          this.retry = 0;
+          this.resyncAll(true);
+        }, this.retryDelay);
+        this.retryDelay = Math.min(120000, this.retryDelay * 2);
+      }
     } else {
       this.failures.delete(key);
       if (key.endsWith(':pull')) {
@@ -255,7 +267,12 @@ export class SyncHub {
           recovered.ydoc.destroy();
         }
       }
-      if (!this.inflight && !this.failures.size && ![...this.docs.values()].some(d => d.hasPending())) this.lastOk = Date.now();
+      if (!this.inflight && !this.failures.size && ![...this.docs.values()].some(d => d.hasPending())) {
+        this.lastOk = Date.now();
+        window.clearTimeout(this.retry);
+        this.retry = 0;
+        this.retryDelay = 15000;
+      }
     }
     this.emit();
   }
@@ -293,13 +310,14 @@ export class SyncHub {
     await d.pull();
   }
 
-  resyncAll() {
+  resyncAll(failedOnly = false) {
     if (!this.session) return;
+    const needsRetry = (id: string) => !failedOnly || this.failures.has(`${id}:pull`) || this.failures.has(`${id}:push`);
     this.docs.forEach((d) => {
-      void d.flush().then(() => d.pull());
+      if (needsRetry(d.docId)) void d.flush().then(() => d.pull());
     });
     this.recovery.forEach((d) => {
-      if (!this.docs.has(d.docId)) void d.pull();
+      if (!this.docs.has(d.docId) && needsRetry(d.docId)) void d.pull();
     });
   }
 
