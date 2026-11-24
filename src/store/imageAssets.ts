@@ -2,6 +2,7 @@ import {useEffect,useState} from 'react';
 import type {Library} from './library';
 import {supabase} from './supabase';
 import {hub} from './sync';
+import {syncRequest} from './syncRequest';
 export interface ImageMeta {id:string;mime:string;width:number;height:number;bytes:number;owner?:string;}
 interface ImageFile extends ImageMeta {blob:Blob;uploadedFor?:string[];}
 const DB='ayunpad-images';
@@ -24,13 +25,13 @@ export function bindImageAssets(lib:Library){library=lib;const map=lib.ydoc.getM
 }
 export async function uploadImage(id:string):Promise<void>{const uid=hub.session?.user.id;if(!uid||!library)return;const key=uid+':'+id;if(uploading.has(key))return uploading.get(key)!;
  const run=(async()=>{const file=await readFile(id);if(!file)return;const lib=library;if(!lib)return;
-  if(!file.uploadedFor?.includes(uid)){hub.begin();try{const {error}=await supabase.storage.from(BUCKET).upload(path(uid,id),file.blob,{upsert:true,contentType:file.mime});if(error)throw error;await putFile({...file,uploadedFor:[...new Set([...(file.uploadedFor??[]),uid])]});hub.end(null);}catch(error){hub.end(error as Error);return;}}
+  if(!file.uploadedFor?.includes(uid)){hub.begin();try{const {error}=await syncRequest(()=>supabase.storage.from(BUCKET).upload(path(uid,id),file.blob,{upsert:true,contentType:file.mime}),60000);if(error)throw error;await putFile({...file,uploadedFor:[...new Set([...(file.uploadedFor??[]),uid])]});hub.end(null,`image:${key}`);}catch(error){hub.end(error,`image:${key}`);return;}}
   if(hub.session?.user.id!==uid)return;const map=lib.ydoc.getMap<ImageMeta>('images'),current=map.get(id);if(!current||current.owner!==uid){map.set(id,{id,mime:file.mime,width:file.width,height:file.height,bytes:file.bytes,owner:uid});emit();}
  })().finally(()=>uploading.delete(key));uploading.set(key,run);return run;
 }
 export async function uploadPendingImages(){if(!hub.session)return;try{for(const file of await allFiles())await uploadImage(file.id);}catch{/* IndexedDB failure is reported when inserting an image. */}}
 export async function imageSource(id:string):Promise<string|undefined>{if(sources.has(id))return sources.get(id);if(loading.has(id))return loading.get(id)!;
- const run=(async()=>{let file=await readFile(id);if(!file){const meta=library?.ydoc.getMap<ImageMeta>('images').get(id),uid=hub.session?.user.id;if(!meta||!uid)return;const {data,error}=await supabase.storage.from(BUCKET).download(path(meta.owner??uid,id));if(error||!data)return;file={...meta,blob:data,uploadedFor:[uid]};await putFile(file);}
+ const run=(async()=>{let file=await readFile(id);if(!file){const meta=library?.ydoc.getMap<ImageMeta>('images').get(id),uid=hub.session?.user.id;if(!meta||!uid)return;const {data,error}=await syncRequest(signal=>supabase.storage.from(BUCKET).download(path(meta.owner??uid,id),{}, {signal}));if(error||!data)return;file={...meta,blob:data,uploadedFor:[uid]};await putFile(file);}
  const src=await asDataURL(file.blob);sources.set(id,src);return src;})().catch(()=>undefined).finally(()=>loading.delete(id));loading.set(id,run);return run;
 }
 export function useImageSource(id:string,portable?:string){const [source,setSource]=useState<string|undefined>(()=>sources.get(id)??portable);useEffect(()=>{let alive=true;const load=()=>{void imageSource(id).then(src=>{if(alive)setSource(src??portable);});};listeners.add(load);load();return()=>{alive=false;listeners.delete(load);};},[id,portable]);return source;}

@@ -2,7 +2,7 @@ import { exportImages, importImageSource, uploadPendingImages } from './imageAss
 import * as Y from 'yjs';
 import { fromB64, toB64 } from './b64';
 import type { Library } from './library';
-import { openNote } from './noteDoc';
+import { openNote, type NoteDoc } from './noteDoc';
 import { hub } from './sync';
 
 // 백업: 과목 · 노트 목록과 모든 노트(글 · 그림 · 글자 모양)를 JSON 파일 하나로.
@@ -17,15 +17,15 @@ interface Backup {
   images?: Record<string,string>;
 }
 
-export async function exportBackup(lib: Library): Promise<{ blob: Blob; notes: number }> {
+export async function exportBackup(lib: Library, activeNote?: NoteDoc | null): Promise<{ blob: Blob; notes: number }> {
   const notes: Record<string, string> = {};
   const images=new Set<string>();
   for (const n of lib.notes.values()) {
-    const d = openNote(n.id);
+    const d = activeNote?.id === n.id ? activeNote : openNote(n.id);
     await d.ready;
     for(const shape of d.shapes.values())if(shape.t==='image')images.add(shape.asset);
     notes[n.id] = toB64(Y.encodeStateAsUpdate(d.ydoc));
-    d.destroy();
+    if (d !== activeNote) d.destroy();
   }
   const data: Backup = { app: 'ayun-pad', version: 1, exportedAt: new Date().toISOString(), library: toB64(Y.encodeStateAsUpdate(lib.ydoc)), notes, images:await exportImages(images) };
   return { blob: new Blob([JSON.stringify(data)], { type: 'application/json' }), notes: Object.keys(notes).length };

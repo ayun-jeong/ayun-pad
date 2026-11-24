@@ -2,6 +2,7 @@ import type { RealtimeChannel, Session } from '@supabase/supabase-js';
 import * as Y from 'yjs';
 import { fromB64, toB64 } from './b64';
 import { supabase } from './supabase';
+import { syncRequest } from './syncRequest';
 
 // 서버에서 받은 조각에 붙이는 표시(이 조각은 다시 올리지 않는다)
 export const REMOTE = Symbol('remote');
@@ -35,6 +36,8 @@ class DocSync {
   private timer = 0;
   private pulling: Promise<void> | null = null;
   private pushes = 0;
+  private flushing: Promise<void> | null = null;
+  private detached = false;
 
   constructor(
     private readonly hub: SyncHub,
@@ -46,6 +49,7 @@ class DocSync {
   }
 
   destroy() {
+    this.detached = true;
     if (this.live) this.ydoc.off('update', this.onLocal);
     window.clearTimeout(this.timer);
     void this.flush();
@@ -65,20 +69,37 @@ class DocSync {
     return this.pending.length > 0;
   }
 
-  async flush(): Promise<void> {
+  flush(): Promise<void> {
+    this.flushing ??= this.doFlush().finally(() => { this.flushing = null; });
+    return this.flushing;
+  }
+
+  private async doFlush(): Promise<void> {
     if (!this.hub.session || !this.pending.length) return;
-    const merged = this.pending.length === 1 ? this.pending[0] : Y.mergeUpdates(this.pending);
-    this.pending = [];
+    const key = `${this.docId}:push`;
     this.hub.begin();
-    const { error } = await supabase.from('pad_updates').insert({ doc_id: this.docId, update: toB64(merged), client: CLIENT_ID });
-    if (error) {
-      this.pending.unshift(merged);
-      this.hub.end(error);
-      return;
+    let failure: unknown = null;
+    try {
+      while (this.hub.session && this.pending.length) {
+        const merged = this.pending.length === 1 ? this.pending[0] : Y.mergeUpdates(this.pending);
+        this.pending = [];
+        try {
+          const { error } = await syncRequest(signal => supabase.from('pad_updates')
+            .insert({ doc_id: this.docId, update: toB64(merged), client: CLIENT_ID }).abortSignal(signal));
+          if (error) throw error;
+        } catch (error) {
+          // Keep the exact update for retry, including edits made while uploading.
+          this.pending.unshift(merged);
+          throw error;
+        }
+        if (++this.pushes % 60 === 0) void this.pull();
+      }
+    } catch (error) {
+      failure = error;
+    } finally {
+      if (failure && this.detached) this.hub.queueRecovery(this.docId, this.ydoc);
+      this.hub.end(failure, key);
     }
-    this.hub.end(null);
-    // 오래 쓰는 동안 조각이 너무 쌓이지 않게 가끔 합친다.
-    if (++this.pushes % 60 === 0) void this.pull();
   }
 
   pull(): Promise<void> {
@@ -91,10 +112,11 @@ class DocSync {
   private async doPull(): Promise<void> {
     if (!this.hub.session) return;
     this.hub.begin();
+    const server = new Y.Doc();
+    let failure: unknown = null;
     try {
-      const base = await supabase.from('pad_docs').select('state, upto').eq('doc_id', this.docId).maybeSingle();
+      const base = await syncRequest(signal => supabase.from('pad_docs').select('state, upto').eq('doc_id', this.docId).abortSignal(signal).maybeSingle());
       if (base.error) throw base.error;
-      const server = new Y.Doc();
       const apply = (b64: string) => {
         const u = fromB64(b64);
         Y.applyUpdate(server, u);
@@ -104,7 +126,7 @@ class DocSync {
       let maxId = base.data?.upto ?? 0;
       let count = 0;
       for (let from = maxId; ; ) {
-        const rows = await supabase.from('pad_updates').select('id, update').eq('doc_id', this.docId).gt('id', from).order('id').limit(PAGE);
+        const rows = await syncRequest(signal => supabase.from('pad_updates').select('id, update').eq('doc_id', this.docId).gt('id', from).order('id').limit(PAGE).abortSignal(signal));
         if (rows.error) throw rows.error;
         for (const r of rows.data) {
           apply(r.update);
@@ -116,18 +138,20 @@ class DocSync {
       }
       const missing = Y.encodeStateAsUpdate(this.ydoc, Y.encodeStateVector(server));
       if (missing.length > 2) {
-        const { error } = await supabase.from('pad_updates').insert({ doc_id: this.docId, update: toB64(missing), client: CLIENT_ID });
+        const { error } = await syncRequest(signal => supabase.from('pad_updates').insert({ doc_id: this.docId, update: toB64(missing), client: CLIENT_ID }).abortSignal(signal));
         if (error) throw error;
         Y.applyUpdate(server, missing);
       }
       if (count > 40) {
-        const { error } = await supabase.rpc('pad_compact', { p_doc: this.docId, p_state: toB64(Y.encodeStateAsUpdate(server)), p_upto: maxId });
+        const { error } = await syncRequest(signal => supabase.rpc('pad_compact', { p_doc: this.docId, p_state: toB64(Y.encodeStateAsUpdate(server)), p_upto: maxId }).abortSignal(signal));
         if (error) throw error;
       }
-      server.destroy();
-      this.hub.end(null);
     } catch (e) {
-      this.hub.end(e as Error);
+      failure = e;
+    } finally {
+      server.destroy();
+      if (failure && (!this.live || this.detached)) this.hub.queueRecovery(this.docId, this.ydoc);
+      this.hub.end(failure, `${this.docId}:pull`);
     }
   }
 
@@ -143,9 +167,12 @@ type Listener = (s: SyncStatus) => void;
 export class SyncHub {
   session: Session | null = null;
   private docs = new Map<string, DocSync>();
+  // A closed/search-only document must also be retried. Keep an independent copy
+  // so the editor can destroy its document without losing the retry's content.
+  private recovery = new Map<string, DocSync>();
   private channel: RealtimeChannel | null = null;
   private inflight = 0;
-  private failed = false;
+  private failures = new Set<string>();
   private lastOk: number | null = null;
   private listeners = new Set<Listener>();
   private retry = 0;
@@ -155,7 +182,8 @@ export class SyncHub {
     const { data } = await supabase.auth.getSession();
     await this.setSession(data.session);
     supabase.auth.onAuthStateChange((_event, s) => {
-      void this.setSession(s);
+      // Leave the auth callback before starting requests that acquire its session lock.
+      window.setTimeout(() => void this.setSession(s), 0);
     });
     window.addEventListener('online', () => this.resyncAll());
     document.addEventListener('visibilitychange', () => {
@@ -181,7 +209,7 @@ export class SyncHub {
   status(): SyncStatus {
     const user = this.session?.user ?? null;
     let state: SyncState = 'local';
-    if (user) state = this.inflight > 0 ? 'syncing' : this.failed ? 'offline' : 'synced';
+    if (user) state = this.failures.size ? 'offline' : this.inflight > 0 || [...this.docs.values()].some(d => d.hasPending()) ? 'syncing' : 'synced';
     return { state, at: this.lastOk, email: user?.email ?? null, userId: user?.id ?? null };
   }
 
@@ -201,21 +229,39 @@ export class SyncHub {
     this.emit();
   }
 
-  end(err: Error | null) {
+  end(err: unknown, key: string) {
     this.inflight = Math.max(0, this.inflight - 1);
     if (err) {
-      this.failed = true;
+      this.failures.add(key);
       window.clearTimeout(this.retry);
       this.retry = window.setTimeout(() => this.resyncAll(), 15000);
-    } else if (this.inflight === 0) {
-      this.failed = false;
-      this.lastOk = Date.now();
+    } else {
+      this.failures.delete(key);
+      if (key.endsWith(':pull')) {
+        const docId = key.slice(0, -5);
+        if (!this.docs.get(docId)?.hasPending()) this.failures.delete(`${docId}:push`);
+        const recovered = this.recovery.get(docId);
+        if (recovered) {
+          this.recovery.delete(docId);
+          recovered.ydoc.destroy();
+        }
+      }
+      if (!this.inflight && !this.failures.size && ![...this.docs.values()].some(d => d.hasPending())) this.lastOk = Date.now();
     }
     this.emit();
   }
 
   dirty() {
     if (this.session && !this.inflight) this.emit();
+  }
+
+  queueRecovery(docId: string, ydoc: Y.Doc) {
+    let recovered = this.recovery.get(docId);
+    if (!recovered) {
+      recovered = new DocSync(this, docId, new Y.Doc(), false);
+      this.recovery.set(docId, recovered);
+    }
+    if (recovered.ydoc !== ydoc) Y.applyUpdate(recovered.ydoc, Y.encodeStateAsUpdate(ydoc), REMOTE);
   }
 
   // 열린 문서: 실시간으로 주고받는다.
@@ -242,6 +288,9 @@ export class SyncHub {
     if (!this.session) return;
     this.docs.forEach((d) => {
       void d.flush().then(() => d.pull());
+    });
+    this.recovery.forEach((d) => {
+      if (!this.docs.has(d.docId)) void d.pull();
     });
   }
 

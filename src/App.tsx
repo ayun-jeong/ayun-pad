@@ -1072,7 +1072,7 @@ export function App() {
   const onExport = useCallback(async () => {
     toast('백업 파일을 만드는 중…');
     try{
-    const { blob, notes } = await exportBackup(lib);
+    const { blob, notes } = await exportBackup(lib, docRef.current);
     const d = new Date();
     const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
     download(blob, `ayunpad-backup-${stamp}.json`);

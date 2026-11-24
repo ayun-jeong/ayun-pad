@@ -13,7 +13,7 @@ const hhmm = (t: number) => new Date(t).toTimeString().slice(0, 5);
 
 export function statusText(s: SyncStatus): string {
   if (s.state === 'local') return '이 기기에만 저장 중';
-  if (s.state === 'syncing') return '동기화 중…';
+  if (s.state === 'syncing') return '동기화 중… · 서버에 반영하는 중입니다';
   if (s.state === 'offline') return '오프라인 · 이 기기에 저장해 두고 다시 연결되면 올립니다';
   return s.at ? `동기화됨 · ${hhmm(s.at)}` : '동기화됨';
 }
@@ -80,7 +80,7 @@ export function Account({ status, toast, onClose, onVersions }: Props) {
           type="button"
           onClick={() => {
             hub.resyncAll();
-            toast('동기화를 다시 했어요');
+            toast('동기화를 다시 시도합니다. 완료되면 동기화됨으로 표시돼요');
           }}
         >
           지금 동기화
