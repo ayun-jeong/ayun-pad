@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';import {spawn,execFileSync} from 'node:child_process';import {mkdirSync,readFileSync} from 'node:fs';import puppeteer from 'puppeteer-core';
+const url=process.env.E2E_URL??'http://localhost:4378/ayun-pad/',server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--port','4378','--strictPort'],{stdio:'ignore'}),sleep=ms=>new Promise(r=>setTimeout(r,ms));let browser;
+try{
+ for(let i=0;i<60;i++){try{if((await fetch(url)).ok)break;}catch{}await sleep(200);}
+ browser=await puppeteer.launch({executablePath:process.env.CHROME??'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});const page=await browser.newPage();await page.setViewport({width:1440,height:1200});await page.goto(url,{waitUntil:'networkidle0'});await page.waitForSelector('.editor');await page.$eval('.addnote',e=>e.click());await page.waitForSelector('.sheet-src');
+ await page.evaluate(()=>{const d=window.__ayunpad.doc(),a=(x,y)=>({l:null,r:0,x,y});d.meta.set('halves',4);for(let i=0;i<4;i++)d.shapes.set(`edge-${i}`,{id:`edge-${i}`,t:'rect',a:a(0,i*291),b:a(100,(i+1)*291),c:'r',w:2,z:i});});await page.waitForFunction(()=>document.querySelector('.sheet-src').dataset.halves==='4');await sleep(250);
+ await page.evaluate(()=>window.dispatchEvent(new Event('beforeprint')));await page.emulateMediaType('print');
+ const png=await (await page.$('.print-root .psheet')).screenshot();
+ const sampleEdges=async bytes=>page.evaluate(async data=>{const img=new Image();img.src=data;await img.decode();const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const x=c.getContext('2d');x.drawImage(img,0,0);const sample=(a,b)=>[...x.getImageData(Math.round(a*img.width/210),Math.round(b*img.height/297),1,1).data];return{left:sample(2.5,20),top:sample(20,2.5),bottom:sample(20,294.5),right:sample(207.5,20)};},'data:image/png;base64,'+Buffer.from(bytes).toString('base64'));
+ const pixels=await sampleEdges(png);
+ for(const [edge,[r,g,b]]of Object.entries(pixels))assert.ok(r>170&&r>g*1.6&&r>b*1.6,`${edge} stroke within the page margin must remain visible: ${[r,g,b]}`);
+ mkdirSync('/tmp/ayun-pad-print',{recursive:true});await page.pdf({path:'/tmp/ayun-pad-print/edges.pdf',format:'A4',preferCSSPageSize:true,printBackground:true});const info=execFileSync('pdfinfo',['/tmp/ayun-pad-print/edges.pdf'],{encoding:'utf8'});assert.equal(Number(info.match(/Pages:\s*(\d+)/)[1]),2);
+ execFileSync('pdftoppm',['-f','1','-singlefile','-scale-to','1100','-png','/tmp/ayun-pad-print/edges.pdf','/tmp/ayun-pad-print/edges-review']);const pdfPixels=await sampleEdges(readFileSync('/tmp/ayun-pad-print/edges-review.png'));for(const [edge,[r,g,b]]of Object.entries(pdfPixels))assert.ok(r>170&&r>g*1.6&&r>b*1.6,`${edge} PDF margin stroke must remain visible`);
+ console.log('ok top/bottom/left/right ink in A4 margins remains visible; four halves still produce two PDF pages');
+}finally{await browser?.close();server.kill();}

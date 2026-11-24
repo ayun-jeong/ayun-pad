@@ -1,6 +1,6 @@
 import {freezePrintTypography} from './printLayout';
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { A4_W, fitPitch, halfLabel, textWidth, type Typo } from '../editor/layout';
+import { A4_W, A4_H, HALF_W, fitPitch, halfLabel, textWidth, type Typo } from '../editor/layout';
 import { buildHalf, buildSheet, countHalves, labelled, PX_PER_MM } from './pages';
 
 export type ViewMode = 'edit' | 'half' | 'a4';
@@ -270,18 +270,24 @@ export function buildPrintSheets(host: HTMLElement, source: HTMLElement, typo: T
   const halves = countHalves(source, typo);
   for (let s = 0; s < Math.ceil(halves / 2); s++) {
     const sheet = buildSheet(source, typo, s, halves);
-    // Clip paint and layout to a real half-height box. Merely hiding the
-    // full source column leaves its long overflow in browser print pagination.
-    // Keep a full A4 of horizontal space so crossing text boxes stay visible.
+    // Bound the long source to a physical A4 sheet, including its margins.
+    // Clipping at the text column trims glyph overhang and strokes at the
+    // edges; removing containment entirely creates phantom PDF pages.
     for (const half of sheet.querySelectorAll<HTMLElement>('.phalf')) {
+      const win = half.querySelector<HTMLElement>('.pwin')!;
+      const index = Number(half.dataset.half);
+      const x = (index % 2) * HALF_W + (index % 2 ? typo.mInner : typo.mOuter);
       const col = half.querySelector<HTMLElement>('.pcol')!;
       const clone = col.firstElementChild as HTMLElement;
       freezePrintTypography(source,clone);
       half.querySelector('.half-page-number')?.remove();
-      clone.style.top = col.style.top;
+      clone.style.top = `${typo.mTop - index * fitPitch(typo).usable}mm`;
+      clone.style.left = `${x}mm`;
+      win.style.clipPath = `inset(${-typo.mTop}mm -${A4_W}mm)`;
       clone.style.width = `${textWidth(typo)}mm`;
-      col.style.top = '0';
-      col.style.height = `${fitPitch(typo).usable}mm`;
+      col.style.left = `${-x}mm`;
+      col.style.top = `${-typo.mTop}mm`;
+      col.style.height = `${A4_H}mm`;
       col.style.width = `${A4_W}mm`;
       col.style.contain = 'strict';
     }
