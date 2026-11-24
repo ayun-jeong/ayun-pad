@@ -1,4 +1,4 @@
-import {freezePrintTypography} from './printLayout';
+import {freezePrintTypography,keepWholePrintLines} from './printLayout';
 import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { A4_W, A4_H, HALF_W, fitPitch, halfLabel, textWidth, type Typo } from '../editor/layout';
 import { buildHalf, buildSheet, countHalves, labelled, PX_PER_MM } from './pages';
@@ -293,4 +293,5 @@ export function buildPrintSheets(host: HTMLElement, source: HTMLElement, typo: T
     }
     host.appendChild(sheet);
   }
+  keepWholePrintLines(host,typo.mTop);
 }

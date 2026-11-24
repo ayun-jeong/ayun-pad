@@ -33,3 +33,35 @@ export async function preparePrintFonts(source:HTMLElement|null):Promise<void>{
  await Promise.allSettled([...fonts].map(([font,text])=>document.fonts.load(font,text)));
  await document.fonts.ready;
 }
+
+// Margin bleed must not repeat the preceding/next half's text. Assign each
+// visual line by its center, then reveal its complete glyphs on that half.
+export function keepWholePrintLines(host:HTMLElement,marginMm:number):void{
+ const previous=host.style.cssText;
+ Object.assign(host.style,{display:'block',position:'absolute',left:'-20000px',top:'0',visibility:'hidden',width:'210mm'});
+ try{
+  for(const half of host.querySelectorAll<HTMLElement>('.phalf')){
+   const sheet=half.closest<HTMLElement>('.psheet')!,frame=sheet.getBoundingClientRect();
+   const start=frame.top+marginMm*96/25.4,end=frame.bottom-marginMm*96/25.4;
+   for(const paragraph of half.querySelectorAll<HTMLElement>('.ln')){
+    const range=document.createRange();range.selectNodeContents(paragraph);
+    const rects=[...range.getClientRects()].filter(r=>r.width>0&&r.height>0).sort((a,b)=>(a.top+a.bottom)-(b.top+b.bottom));
+    const rows:{top:number;bottom:number;center:number;height:number}[]=[];
+    for(const r of rects){
+     const center=(r.top+r.bottom)/2,last=rows[rows.length-1];
+     if(last&&Math.abs(center-last.center)<Math.min(r.height,last.height)*.45){last.top=Math.min(last.top,r.top);last.bottom=Math.max(last.bottom,r.bottom);}
+     else rows.push({top:r.top,bottom:r.bottom,center,height:r.height});
+    }
+    if(!rows.length)continue;
+    const owned=rows.filter(r=>r.center>=start-.01&&r.center<end-.01);
+    paragraph.dataset.printOwnedLines=String(owned.length);
+    if(!owned.length){paragraph.style.clipPath='inset(50% 0 50%)';continue;}
+    if(owned.length===rows.length)continue;
+    const bounds=paragraph.getBoundingClientRect();
+    const top=owned[0]===rows[0]?-10000:owned[0].top-bounds.top-1;
+    const bottom=owned[owned.length-1]===rows[rows.length-1]?-10000:bounds.bottom-owned[owned.length-1].bottom-1;
+    paragraph.style.clipPath=`inset(${top}px -210mm ${bottom}px)`;
+   }
+  }
+ }finally{host.style.cssText=previous;}
+}
