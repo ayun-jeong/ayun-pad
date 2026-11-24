@@ -27,7 +27,9 @@ interface Row {
 }
 
 const isPersistence = (origin: unknown) => origin !== null && typeof origin === 'object' && 'whenSynced' in (origin as object);
-const PAGE = 100;
+// A single historical update can contain several MB of replaced text. Even
+// 100 rows can exceed the database's JSON aggregation time/memory budget.
+const PAGE = 5;
 
 const syncErrorText = (error: unknown): string => {
   const e = error as { code?: string; message?: string } | null;

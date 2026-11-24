@@ -140,13 +140,14 @@ describe('sync recovery without losing local edits', () => {
     const pages: number[] = [];
     mock.read = async (table, _id, limit = 0, from = 0) => {
       if (table === 'pad_docs') return { data: null, error: null };
-      if (limit > 100) return { data: null, error: { code: '57014' } };
+      if (limit > 5) return { data: null, error: { code: '57014' } };
       const data = rows.filter(row => row.id > from).slice(0, limit);
       pages.push(data.length);
       return { data, error: null };
     };
     hub.attach('large', local); await settle();
-    expect(pages).toEqual([100, 100, 35]);
+    expect(pages.every(size => size <= 5)).toBe(true);
+    expect(pages.reduce((a, b) => a + b, 0)).toBe(235);
     expect(local.getText('text').toString()).toBe(source.getText('text').toString());
     hub.detach('large');
   });
